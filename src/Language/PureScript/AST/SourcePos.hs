@@ -53,7 +53,11 @@ data SourceSpan = SourceSpan
     -- ^ Start of the span
   , spanEnd :: SourcePos
     -- ^ End of the span
-  } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  -- } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Eq, Ord, Generic, NFData, Serialise)
+
+instance Show SourceSpan where
+  show _ = "ss"
 
 displayStartEndPos :: SourceSpan -> Text
 displayStartEndPos sp =

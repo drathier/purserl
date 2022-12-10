@@ -11,7 +11,7 @@ import Data.FileEmbed (embedFile)
 -- be included before pursuit.css in any HTML page using pursuit.css.
 --
 normalizeCss :: ByteString
-normalizeCss = $(embedFile "app/static/normalize.css")
+normalizeCss = $(embedFile "/Users/drathier/drathier/purescript2/app/static/normalize.css")
 
 -- |
 -- Like 'normalizeCss', but as a 'Text'.
@@ -22,7 +22,7 @@ normalizeCssT = decodeUtf8 normalizeCss
 -- CSS for use with generated HTML docs, as a UTF-8 encoded ByteString.
 --
 pursuitCss :: ByteString
-pursuitCss = $(embedFile "app/static/pursuit.css")
+pursuitCss = $(embedFile "/Users/drathier/drathier/purescript2/app/static/pursuit.css")
 
 -- |
 -- Like 'pursuitCss', but as a 'Text'.

@@ -1,3 +1,4 @@
+{-# LANGUAGE FunctionalDependencies #-}
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
 -- foreign import declarations.
@@ -37,6 +38,18 @@ import Language.PureScript.TypeClassDictionaries
 import Language.PureScript.Types
 
 import Paths_purescript as Paths
+
+import Debug.Trace
+import PrettyPrint
+import Control.Monad.Trans.State.Strict
+import Control.Monad
+import Data.Function ((&))
+import Data.Functor ((<&>))
+import Data.Monoid
+import Data.Semigroup
+import Language.PureScript.Names
+import qualified Language.PureScript.Names as N
+import Data.Foldable
 
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
@@ -195,6 +208,353 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
   qual :: a -> Qualified a
   qual = Qualified (ByModuleName efModuleName)
 
+
+
+-- type ExternsA =
+--   { imports :: Map ModuleName (Map CacheKey CacheShape)
+--   , exportShapes :: Map CacheKey CacheShape
+--   , exports :: Map CacheKey (WhatKindOfThingIsThisAndWhatAreItsParameters, Set (ModuleName, CacheKey))
+--   }
+--
+-- type CacheShape = (WhatKindOfThingIsThisAndWhatAreItsParameters, Set (ModuleName, CacheKey))
+--
+-- -- ASSUMPTION[drathier]: this data type is opaque and only has an Eq and Ord instance. This is so that we can store it as an opaque bytestring or hash later on.
+-- data WhatKindOfThingIsThisAndWhatAreItsParameters
+--   = PrimType ModuleName (ProperName 'TypeName)
+--   | TypeClassDictType ModuleName (ProperName 'TypeName)
+--   | OwnModuleRef ModuleName (ProperName 'TypeName)
+--   | CacheShapeTypeDecl
+--     (ProperName 'TypeName)
+--     [(Text, Maybe (Type ()))]
+--     (Type ())
+--   | CacheShapeForeignTypeDecl
+--     (ProperName 'TypeName)
+--     (Type ())
+--   | CacheShapeDataDecl
+--     DataDeclType
+--     (ProperName 'TypeName)
+--     [(Text, Maybe (Type ()))]
+--     [(ProperName 'ConstructorName, [(Ident, Type ())])]
+--   -- CacheShapeDataRecDecl
+--   --   DataDeclType
+--   --   (ProperName 'TypeName)
+--   --   [(Text, Maybe (Type ()))]
+--   --   [(ProperName 'ConstructorName, [(Ident, Type ())])]
+--   deriving (Show, Eq, Ord, Generic)
+--
+-- instance Serialise CacheShape
+--
+-- data CacheTypeDetails = CacheTypeDetails (M.Map (ModuleName, ProperName 'TypeName) (CacheShape, CacheTypeDetails))
+--   deriving (Show, Eq, Generic)
+--
+-- instance Serialise CacheTypeDetails
+
+
+-- Declarations suitable for caching, where things like SourcePos are removed
+data CSDeclaration
+  -- |
+  -- A data type declaration (data or newtype, name, arguments, data constructors)
+  --
+  = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration]
+  -- |
+  -- A minimal mutually recursive set of data type declarations
+  --
+  | CSDataBindingGroupDeclaration (NEL.NonEmpty Declaration)
+  -- |
+  -- A type synonym declaration (name, arguments, type)
+  --
+  | CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
+  -- |
+  -- A kind signature declaration
+  --
+  | CSKindDeclaration KindSignatureFor (ProperName 'TypeName) SourceType
+  -- |
+  -- A role declaration (name, roles)
+  --
+  | CSRoleDeclaration {-# UNPACK #-} !RoleDeclarationData
+  -- |
+  -- A type declaration for a value (name, ty)
+  --
+  | CSTypeDeclaration {-# UNPACK #-} !TypeDeclarationData
+  -- |
+  -- A value declaration (name, top-level binders, optional guard, value)
+  --
+  | CSValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
+  -- |
+  -- A declaration paired with pattern matching in let-in expression (binder, optional guard, value)
+  | CSBoundValueDeclaration Binder Expr
+  -- |
+  -- A minimal mutually recursive set of value declarations
+  --
+  | CSBindingGroupDeclaration (NEL.NonEmpty Ident, NameKind, Expr)
+  -- |
+  -- A foreign import declaration (name, type)
+  --
+  | CSExternDeclaration Ident SourceType
+  -- |
+  -- A data type foreign import (name, kind)
+  --
+  | CSExternDataDeclaration (ProperName 'TypeName) SourceType
+  -- |
+  -- A fixity declaration
+  --
+  | CSFixityDeclaration (Either ValueFixity TypeFixity)
+  -- |
+  -- A module import (module name, qualified/unqualified/hiding, optional "qualified as" name)
+  --
+  | CSImportDeclaration ModuleName ImportDeclarationType (Maybe ModuleName)
+  -- |
+  -- A type class declaration (name, argument, implies, member declarations)
+  --
+  | CSTypeClassDeclaration (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
+  -- |
+  -- A type instance declaration (instance chain, chain index, name,
+  -- dependencies, class name, instance types, member declarations)
+  --
+  -- The first @SourceAnn@ serves as the annotation for the entire
+  -- declaration, while the second @SourceAnn@ serves as the
+  -- annotation for the type class and its arguments.
+  | CSTypeInstanceDeclaration ChainId Integer (Either Text Ident) [SourceConstraint] (Qualified (ProperName 'ClassName)) [SourceType] TypeInstanceBody
+  deriving (Show)
+
+data CSDataConstructorDeclaration
+  = CSDataConstructorDeclaration
+    { csdataCtorName :: !(ProperName 'ConstructorName)
+    , csdataCtorFields :: ![(Ident, Type ())]
+    }
+  deriving (Show, Eq)
+
+data ToCSDB
+  = ToCSDB
+    { _referencedCtors :: M.Map (Qualified (ProperName 'TypeName)) ()
+    , _referencedTypeOp :: M.Map (Qualified (OpName 'TypeOpName)) ()
+    , _referencedTypeClass :: M.Map (Qualified (ProperName 'ClassName)) ()
+    }
+  deriving (Show, Eq)
+
+
+instance Semigroup ToCSDB where
+  ToCSDB a1 a2 a3 <> ToCSDB b1 b2 b3 = ToCSDB (a1 <> b1) (a2 <> b2) (a3 <> b3)
+
+instance Monoid ToCSDB where
+  mempty = ToCSDB mempty mempty mempty
+
+
+class ToCS a b | a -> b where
+  toCS :: a -> State ToCSDB b
+
+instance ToCS DataConstructorDeclaration CSDataConstructorDeclaration where
+  toCS (DataConstructorDeclaration _ ctorName ctorFields) =
+    do
+      ctorFields2 <-
+        ctorFields
+          & traverse
+            (\(ident, typeWithSrcAnn) ->
+              do
+                let t2 = const () <$> typeWithSrcAnn
+                storeTypeRefs typeWithSrcAnn
+                pure (ident, t2)
+            )
+      pure $
+        CSDataConstructorDeclaration
+          ctorName
+          ctorFields2
+
+
+storeConstraintTypes :: Constraint a -> State ToCSDB ()
+storeConstraintTypes (Constraint _ refTypeClass kindArgs targs mdata) = do
+  csdbPutTypeClass refTypeClass
+  traverse_ storeTypeRefs kindArgs
+  traverse_ storeTypeRefs targs
+
+-- CSDB put helpers
+
+csdbPutCtor :: Qualified (ProperName 'TypeName) -> State ToCSDB ()
+csdbPutCtor refCtor =
+  modify
+   (\v ->
+    v {
+      _referencedCtors =
+       M.insert
+        refCtor
+        ()
+        (_referencedCtors v)
+     }
+   )
+
+csdbPutTypeOp :: Qualified (OpName 'TypeOpName) -> State ToCSDB ()
+csdbPutTypeOp refTypeOp =
+  modify
+   (\v ->
+    v {
+      _referencedTypeOp =
+       M.insert
+        refTypeOp
+        ()
+        (_referencedTypeOp v)
+     }
+   )
+
+csdbPutTypeClass :: Qualified (ProperName 'ClassName) -> State ToCSDB ()
+csdbPutTypeClass refTypeClass =
+  modify
+   (\v ->
+    v {
+      _referencedTypeClass =
+       M.insert
+        refTypeClass
+        ()
+        (_referencedTypeClass v)
+     }
+   )
+
+
+storeTypeRefs :: Type a -> State ToCSDB ()
+storeTypeRefs t =
+  case t of
+    TUnknown _ _ -> pure ()
+    TypeVar _ _ -> pure ()
+    TypeLevelString _ _ -> pure ()
+    TypeLevelInt _ _ -> pure ()
+    TypeWildcard _ _ -> pure ()
+    TypeConstructor _ refCtor -> do
+      csdbPutCtor refCtor
+
+    TypeOp _ refTypeOp -> do
+      -- TODO[drathier]: is this ctor unused here? docs for it say it's desugared to a TypeConstructor
+      csdbPutTypeOp refTypeOp
+
+    TypeApp _ t1 t2 -> do
+      storeTypeRefs t1
+      storeTypeRefs t2
+
+    KindApp _ t1 t2 -> do
+      storeTypeRefs t1
+      storeTypeRefs t2
+
+    ForAll _ _ mt1 t2 _ -> do
+      traverse_ storeTypeRefs mt1
+      storeTypeRefs t2
+
+    ConstrainedType _ constraint t1 -> do
+      storeConstraintTypes constraint
+      storeTypeRefs t1
+
+    Skolem _ _ mt1 _ _ -> do
+      traverse_ storeTypeRefs mt1
+      pure ()
+
+    REmpty a -> pure ()
+
+    RCons _ _ t1 t2 -> do
+      storeTypeRefs t1
+      storeTypeRefs t2
+
+    KindedType _ t1 t2 -> do
+      storeTypeRefs t1
+      storeTypeRefs t2
+
+    BinaryNoParensType _ t1 t2 t3 -> do
+      storeTypeRefs t1
+      storeTypeRefs t2
+      storeTypeRefs t3
+
+    ParensInType _ t1 -> do
+      storeTypeRefs t1
+
+
+instance Eq CSDeclaration where
+  -- TODO[drathier]: fix this
+  a == b = show a == show b
+
+
+data DB
+  = DB
+    -- what things did we find?
+    {_dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDeclaration)]
+    }
+  deriving (Show, Eq)
+
+instance Semigroup DB where
+  DB a1 <> DB b1 = DB (a1 <> b1)
+
+instance Monoid DB where
+  mempty = DB mempty
+
+
+
+data CacheKey
+  = CNDataNewtypeDecl (ProperName 'TypeName)
+
+
+
+-- data DataConstructorDeclaration = DataConstructorDeclaration
+--   { dataCtorAnn :: !SourceAnn
+--   , dataCtorName :: !(ProperName 'ConstructorName)
+--   , dataCtorFields :: ![(Ident, SourceType)]
+--   } deriving (Show, Eq)
+
+-- type SourceType = Type SourceAnn
+
+findDeps :: [Declaration] -> [(Declaration, DB)]
+findDeps ds =
+  fmap (\a -> do
+    (a, mempty & execState (findDepsImpl a))
+   )
+   ds
+   & filter (\(_, db) -> db /= mempty)
+
+findDepsImpl :: Declaration -> State DB ()
+findDepsImpl d =
+  -- data Declaration
+  case d of
+    -- DataDeclaration SourceAnn DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [DataConstructorDeclaration]
+    DataDeclaration _ dataOrNewtype tname targs ctors -> do
+      db <- get
+
+      let (nctorsValue, nctorsDB) = mempty & runState (traverse toCS ctors)
+
+      put (
+        db
+          {
+            _dataOrNewtypeDecls =
+               M.insertWith (<>)
+                tname
+                [(nctorsDB, CSDataDeclaration dataOrNewtype tname targs nctorsValue)]
+                (_dataOrNewtypeDecls db)
+          }
+       )
+      -- pure $ f (show ("DataDeclaration", tname)) $
+      --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
+    -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
+    DataBindingGroupDeclaration _ -> pure ()
+    -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
+    TypeSynonymDeclaration _ _ _ _ -> pure ()
+    -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
+    KindDeclaration _ _ _ _ -> pure ()
+    -- RoleDeclaration {-# UNPACK #-} !RoleDeclarationData
+    RoleDeclaration _ -> pure ()
+    -- TypeDeclaration {-# UNPACK #-} !TypeDeclarationData
+    TypeDeclaration _ -> pure ()
+    -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
+    ValueDeclaration _ -> pure ()
+    -- BoundValueDeclaration SourceAnn Binder Expr
+    BoundValueDeclaration _ _ _ -> pure ()
+    -- BindingGroupDeclaration (NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
+    BindingGroupDeclaration _ -> pure ()
+    -- ExternDeclaration SourceAnn Ident SourceType
+    ExternDeclaration _ _ _ -> pure ()
+    -- ExternDataDeclaration SourceAnn (ProperName 'TypeName) SourceType
+    ExternDataDeclaration _ _ _ -> pure ()
+    -- FixityDeclaration SourceAnn (Either ValueFixity TypeFixity)
+    FixityDeclaration _ _ -> pure ()
+    -- ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
+    ImportDeclaration _ _ _ _ -> pure ()
+    -- TypeClassDeclaration SourceAnn (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
+    TypeClassDeclaration _ _ _ _ _ _ -> pure ()
+    TypeInstanceDeclaration _ _ _ _ _ _ _ _ _ -> pure ()
+
+
 -- | Generate an externs file for all declarations in a module.
 --
 -- The `Map Ident Ident` argument should contain any top-level `GenIdent`s that
@@ -204,7 +564,57 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 -- `L.P.Renamer.renameInModule`.)
 moduleToExternsFile :: Module -> Environment -> M.Map Ident Ident -> ExternsFile
 moduleToExternsFile (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExternsFile: module exports were not elaborated"
-moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents = ExternsFile{..}
+-- data Module = Module SourceSpan [Comment] ModuleName [Declaration] (Maybe [DeclarationRef])
+moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
+  let
+    sortDsByCtor :: Foldable f => f Declaration -> M.Map String [Declaration]
+    sortDsByCtor dsx =
+      foldr sortDsByCtorImpl mempty dsx
+    sortDsByCtorImpl :: Declaration -> M.Map String [Declaration] -> M.Map String [Declaration]
+    sortDsByCtorImpl d res =
+      case d of
+        DataDeclaration _ _ _ _ _ -> M.insertWith (<>) "DataDeclaration" [d] res
+        DataBindingGroupDeclaration _ -> M.insertWith (<>) "DataBindingGroupDeclaration" [d] res
+        TypeSynonymDeclaration _ _ _ _ -> M.insertWith (<>) "TypeSynonymDeclaration" [d] res
+        KindDeclaration _ _ _ _ -> M.insertWith (<>) "KindDeclaration" [d] res
+        RoleDeclaration _ -> M.insertWith (<>) "RoleDeclaration" [d] res
+        TypeDeclaration _ -> M.insertWith (<>) "TypeDeclaration" [d] res
+        ValueDeclaration _ -> M.insertWith (<>) "ValueDeclaration" [d] res
+        BoundValueDeclaration _ _ _ -> M.insertWith (<>) "BoundValueDeclaration" [d] res
+        BindingGroupDeclaration _ -> M.insertWith (<>) "BindingGroupDeclaration" [d] res
+        ExternDeclaration _ _ _ -> M.insertWith (<>) "ExternDeclaration" [d] res
+        ExternDataDeclaration _ _ _ -> M.insertWith (<>) "ExternDataDeclaration" [d] res
+        FixityDeclaration _ _ -> M.insertWith (<>) "FixityDeclaration" [d] res
+        ImportDeclaration _ _ _ _ -> M.insertWith (<>) "ImportDeclaration" [d] res
+        TypeClassDeclaration _ _ _ _ _ _ -> M.insertWith (<>) "TypeClassDeclaration" [d] res
+        TypeInstanceDeclaration _ _ _ _ _ _ _ _ _ -> M.insertWith (<>) "TypeInstanceDeclaration" [d] res
+
+    sds = sortDsByCtor ds
+
+
+  in
+
+  let !_ = trace (show ("###moduleToExternsFile mn", mn)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.BoundValueDeclaration", M.lookup "BoundValueDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.BindingGroupDeclaration", M.lookup "BindingGroupDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.ExternDeclaration", M.lookup "ExternDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.ExternDataDeclaration", M.lookup "ExternDataDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.FixityDeclaration", M.lookup "FixityDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.ImportDeclaration", M.lookup "ImportDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.DataDeclaration", M.lookup "DataDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.DataBindingGroupDeclaration", M.lookup "DataBindingGroupDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.TypeSynonymDeclaration", M.lookup "TypeSynonymDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.KindDeclaration", M.lookup "KindDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.RoleDeclaration", M.lookup "RoleDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.TypeDeclaration", M.lookup "TypeDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.ValueDeclaration", M.lookup "ValueDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile exps", exps)) () in
+  let !_ = trace (show ("###moduleToExternsFile renamedIdents", renamedIdents)) () in
+  let !_ = trace (show ("-------")) () in
+  let !_ = trace (sShow ("###moduleToExternsFile findDeps", findDeps ds)) () in
+  ExternsFile{..}
   where
   efVersion       = T.pack (showVersion Paths.version)
   efModuleName    = mn
