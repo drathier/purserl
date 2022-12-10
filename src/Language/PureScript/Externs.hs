@@ -250,63 +250,73 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 -- instance Serialise CacheTypeDetails
 
 
--- Declarations suitable for caching, where things like SourcePos are removed
-data CSDeclaration
-  -- |
-  -- A data type declaration (data or newtype, name, arguments, data constructors)
-  --
-  = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration]
+-- Declarations suitable for caching, where things like SourcePos are removed, and each ctor is isolated
+data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration]
+  deriving (Show)
   -- |
   -- A minimal mutually recursive set of data type declarations
   --
-  | CSDataBindingGroupDeclaration (NEL.NonEmpty Declaration)
+data CSDataBindingGroupDeclaration = CSDataBindingGroupDeclaration (NEL.NonEmpty Declaration)
+  deriving (Show)
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
-  | CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
+data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
+  deriving (Show)
   -- |
   -- A kind signature declaration
   --
-  | CSKindDeclaration KindSignatureFor (ProperName 'TypeName) SourceType
+data CSKindDeclaration = CSKindDeclaration KindSignatureFor (ProperName 'TypeName) SourceType
+  deriving (Show)
   -- |
   -- A role declaration (name, roles)
   --
-  | CSRoleDeclaration {-# UNPACK #-} !RoleDeclarationData
+data CSRoleDeclaration = CSRoleDeclaration {-# UNPACK #-} !RoleDeclarationData
+  deriving (Show)
   -- |
   -- A type declaration for a value (name, ty)
   --
-  | CSTypeDeclaration {-# UNPACK #-} !TypeDeclarationData
+data CSTypeDeclaration = CSTypeDeclaration {-# UNPACK #-} !TypeDeclarationData
+  deriving (Show)
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
-  | CSValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
+data CSValueDeclaration = CSValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
+  deriving (Show)
   -- |
   -- A declaration paired with pattern matching in let-in expression (binder, optional guard, value)
-  | CSBoundValueDeclaration Binder Expr
+data CSBoundValueDeclaration = CSBoundValueDeclaration Binder Expr
+  deriving (Show)
   -- |
   -- A minimal mutually recursive set of value declarations
   --
-  | CSBindingGroupDeclaration (NEL.NonEmpty Ident, NameKind, Expr)
+data CSBindingGroupDeclaration = CSBindingGroupDeclaration (NEL.NonEmpty Ident, NameKind, Expr)
+  deriving (Show)
   -- |
   -- A foreign import declaration (name, type)
   --
-  | CSExternDeclaration Ident SourceType
+data CSExternDeclaration = CSExternDeclaration Ident SourceType
+  deriving (Show)
   -- |
   -- A data type foreign import (name, kind)
   --
-  | CSExternDataDeclaration (ProperName 'TypeName) SourceType
+data CSExternDataDeclaration = CSExternDataDeclaration (ProperName 'TypeName) SourceType
+  deriving (Show)
   -- |
   -- A fixity declaration
   --
-  | CSFixityDeclaration (Either ValueFixity TypeFixity)
+data CSFixityDeclaration = CSFixityDeclaration (Either ValueFixity TypeFixity)
+  deriving (Show)
   -- |
   -- A module import (module name, qualified/unqualified/hiding, optional "qualified as" name)
   --
-  | CSImportDeclaration ModuleName ImportDeclarationType (Maybe ModuleName)
+data CSImportDeclaration = CSImportDeclaration ModuleName ImportDeclarationType (Maybe ModuleName)
+  deriving (Show)
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
-  | CSTypeClassDeclaration (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
+data CSTypeClassDeclaration = CSTypeClassDeclaration (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
+  deriving (Show)
   -- |
   -- A type instance declaration (instance chain, chain index, name,
   -- dependencies, class name, instance types, member declarations)
@@ -314,8 +324,42 @@ data CSDeclaration
   -- The first @SourceAnn@ serves as the annotation for the entire
   -- declaration, while the second @SourceAnn@ serves as the
   -- annotation for the type class and its arguments.
-  | CSTypeInstanceDeclaration ChainId Integer (Either Text Ident) [SourceConstraint] (Qualified (ProperName 'ClassName)) [SourceType] TypeInstanceBody
+data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration ChainId Integer (Either Text Ident) [SourceConstraint] (Qualified (ProperName 'ClassName)) [SourceType] TypeInstanceBody
   deriving (Show)
+
+  -- TODO[drathier]: fix this hack
+instance Eq CSDataDeclaration where
+    a == b = show a == show b
+instance Eq CSDataBindingGroupDeclaration where
+    a == b = show a == show b
+instance Eq CSTypeSynonymDeclaration where
+    a == b = show a == show b
+instance Eq CSKindDeclaration where
+    a == b = show a == show b
+instance Eq CSRoleDeclaration where
+    a == b = show a == show b
+instance Eq CSTypeDeclaration where
+    a == b = show a == show b
+instance Eq CSValueDeclaration where
+    a == b = show a == show b
+instance Eq CSBoundValueDeclaration where
+    a == b = show a == show b
+instance Eq CSBindingGroupDeclaration where
+    a == b = show a == show b
+instance Eq CSExternDeclaration where
+    a == b = show a == show b
+instance Eq CSExternDataDeclaration where
+    a == b = show a == show b
+instance Eq CSFixityDeclaration where
+    a == b = show a == show b
+instance Eq CSImportDeclaration where
+    a == b = show a == show b
+instance Eq CSTypeClassDeclaration where
+    a == b = show a == show b
+instance Eq CSTypeInstanceDeclaration where
+    a == b = show a == show b
+
+
 
 data CSDataConstructorDeclaration
   = CSDataConstructorDeclaration
@@ -463,15 +507,10 @@ storeTypeRefs t =
       storeTypeRefs t1
 
 
-instance Eq CSDeclaration where
-  -- TODO[drathier]: fix this
-  a == b = show a == show b
-
-
 data DB
   = DB
     -- what things did we find?
-    {_dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDeclaration)]
+    {_dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
     }
   deriving (Show, Eq)
 
