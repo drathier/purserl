@@ -261,7 +261,7 @@ data CSDataBindingGroupDeclaration = CSDataBindingGroupDeclaration (NEL.NonEmpty
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
-data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
+data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ())
   deriving (Show)
   -- |
   -- A kind signature declaration
@@ -452,6 +452,36 @@ csdbPutTypeClass refTypeClass =
      }
    )
 
+-- DB put helpers
+
+dbPutDataDeclaration :: ProperName 'TypeName -> ToCSDB -> CSDataDeclaration -> State DB ()
+dbPutDataDeclaration tname nctorsDB csDataDeclaration =
+  modify
+   (\db ->
+    db
+      {
+        _dataOrNewtypeDecls =
+           M.insertWith (<>)
+            tname
+            [(nctorsDB, csDataDeclaration)]
+            (_dataOrNewtypeDecls db)
+      }
+   )
+
+dbPutTypeSynonymDeclaration :: ProperName 'TypeName -> CSTypeSynonymDeclaration -> State DB ()
+dbPutTypeSynonymDeclaration tname csDataDeclaration =
+  modify
+   (\db ->
+    db
+      {
+        _typeSynonymDecls =
+           M.insertWith (<>)
+            tname
+            [csDataDeclaration]
+            (_typeSynonymDecls db)
+      }
+   )
+
 
 storeTypeRefs :: Type a -> State ToCSDB ()
 storeTypeRefs t =
@@ -510,15 +540,17 @@ storeTypeRefs t =
 data DB
   = DB
     -- what things did we find?
-    {_dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
+    -- NOTE[drathier]: this gathers a list of direct dependencies, not transitive dependencies, and it doesn't fetch the shape of the dependencies. It's just the set of things we depend on, for us to fetch later.
+    { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
+    , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
     }
   deriving (Show, Eq)
 
 instance Semigroup DB where
-  DB a1 <> DB b1 = DB (a1 <> b1)
+  DB a1 a2 <> DB b1 b2 = DB (a1 <> b1) (a2 <> b2)
 
 instance Monoid DB where
-  mempty = DB mempty
+  mempty = DB mempty mempty
 
 
 
@@ -549,27 +581,29 @@ findDepsImpl d =
   case d of
     -- DataDeclaration SourceAnn DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [DataConstructorDeclaration]
     DataDeclaration _ dataOrNewtype tname targs ctors -> do
-      db <- get
-
       let (nctorsValue, nctorsDB) = mempty & runState (traverse toCS ctors)
 
-      put (
-        db
-          {
-            _dataOrNewtypeDecls =
-               M.insertWith (<>)
-                tname
-                [(nctorsDB, CSDataDeclaration dataOrNewtype tname targs nctorsValue)]
-                (_dataOrNewtypeDecls db)
-          }
-       )
+      dbPutDataDeclaration tname nctorsDB (CSDataDeclaration dataOrNewtype tname targs nctorsValue)
       -- pure $ f (show ("DataDeclaration", tname)) $
       --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
     -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
     DataBindingGroupDeclaration recDecls ->
       traverse_ findDepsImpl recDecls
     -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
-    TypeSynonymDeclaration _ _ _ _ -> pure ()
+    TypeSynonymDeclaration _ tname targs stype -> do
+      -- TODO[drathier]: find some source code that leaves targs with a Just SourceType.
+      let ntargs =
+            targs <&>
+                ( \case
+                    (targName, Just _) -> error "unhandled case; TypeSynonymDeclaration targ is Just"
+                    (targName, Nothing) ->
+                      (targName, Nothing)
+                )
+
+      let nstype = const () <$> stype
+
+      dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype)
+
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
     KindDeclaration _ _ _ _ -> pure ()
     -- RoleDeclaration {-# UNPACK #-} !RoleDeclarationData
