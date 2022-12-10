@@ -566,7 +566,8 @@ findDepsImpl d =
       -- pure $ f (show ("DataDeclaration", tname)) $
       --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
     -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
-    DataBindingGroupDeclaration _ -> pure ()
+    DataBindingGroupDeclaration recDecls ->
+      traverse_ findDepsImpl recDecls
     -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
     TypeSynonymDeclaration _ _ _ _ -> pure ()
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
