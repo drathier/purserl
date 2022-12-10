@@ -50,6 +50,7 @@ import Data.Semigroup
 import Language.PureScript.Names
 import qualified Language.PureScript.Names as N
 import Data.Foldable
+import Language.PureScript.Roles (Role)
 
 
 -- | The data which will be serialized to an externs file
@@ -252,7 +253,7 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 
 
 -- Declarations suitable for caching, where things like SourcePos are removed, and each ctor is isolated
-data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration] (Maybe CSKindDeclaration)
+data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration] (Maybe CSKindDeclaration) (Maybe CSRoleDeclaration)
   deriving (Show)
   -- |
   -- A type synonym declaration (name, arguments, type)
@@ -267,7 +268,7 @@ data CSKindDeclaration = CSKindDeclaration (Type ())
   -- |
   -- A role declaration (name, roles)
   --
-data CSRoleDeclaration = CSRoleDeclaration {-# UNPACK #-} !RoleDeclarationData
+data CSRoleDeclaration = CSRoleDeclaration [Role]
   deriving (Show)
   -- |
   -- A type declaration for a value (name, ty)
@@ -565,29 +566,44 @@ data CacheKey
 findDeps :: [Declaration] -> [(Declaration, DB)]
 findDeps ds =
   let
-    (kinds, otherDs) =
+    (kindsMap, rolesMap, otherDs) =
       ds
-      & mapEither (\case
-          KindDeclaration _ kindSignatureFor referencedName stype ->
-            Left ((kindSignatureFor, referencedName), CSKindDeclaration (const () <$> stype))
-          d -> Right d
+      & flattenDecls
+      & foldl (\(akind, arole, aother) d ->
+        let
+          addKind key value = (M.insert key value akind, arole, aother)
+          addRole key value = (akind, M.insert key value arole, aother)
+          addOther other = (akind, arole, other : aother)
+        in
+          case d of
+            KindDeclaration _ kindSignatureFor referencedName stype ->
+              addKind (kindSignatureFor, referencedName) (CSKindDeclaration (const () <$> stype))
+            RoleDeclaration (RoleDeclarationData _ tname roles) ->
+              addRole tname (CSRoleDeclaration roles)
+            d -> addOther d
         )
+      (mempty, mempty, mempty)
 
-    kindsMap =
-      M.fromList kinds
-
+    getKind :: KindSignatureFor -> ProperName 'TypeName -> Maybe CSKindDeclaration
     getKind kindSignatureFor tname =
       M.lookup (kindSignatureFor, tname) kindsMap
+
+    getRole :: ProperName 'TypeName -> Maybe CSRoleDeclaration
+    getRole tname =
+      M.lookup tname rolesMap
   in
 
   otherDs
     <&> (\a -> do
-      (a, mempty & execState (findDepsImpl getKind a))
+      (a, mempty & execState (findDepsImpl getKind getRole a))
      )
     & filter (\(_, db) -> db /= mempty)
 
-findDepsImpl :: (KindSignatureFor -> ProperName 'TypeName -> Maybe CSKindDeclaration) -> Declaration -> State DB ()
-findDepsImpl getKind d =
+findDepsImpl
+  :: (KindSignatureFor -> ProperName 'TypeName -> Maybe CSKindDeclaration)
+  -> (ProperName 'TypeName -> Maybe CSRoleDeclaration)
+  -> Declaration -> State DB ()
+findDepsImpl getKind getRole d =
   -- data Declaration
   case d of
     -- DataDeclaration SourceAnn DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [DataConstructorDeclaration]
@@ -599,12 +615,12 @@ findDepsImpl getKind d =
               Data -> getKind DataSig tname
               Newtype -> getKind NewtypeSig tname
 
-      dbPutDataDeclaration tname nctorsDB (CSDataDeclaration dataOrNewtype tname targs nctorsValue mkind)
+      dbPutDataDeclaration tname nctorsDB (CSDataDeclaration dataOrNewtype tname targs nctorsValue mkind (getRole tname))
       -- pure $ f (show ("DataDeclaration", tname)) $
       --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
     -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
-    DataBindingGroupDeclaration recDecls ->
-      traverse_ (findDepsImpl getKind) recDecls
+    DataBindingGroupDeclaration _ ->
+      error "[drathier]: should be unreachable, all DataBindingGroupDeclaration ctors should have been flattened earlier"
     -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
     TypeSynonymDeclaration _ tname targs stype -> do
       -- TODO[drathier]: find some source code that leaves targs with a Just SourceType.
@@ -625,7 +641,9 @@ findDepsImpl getKind d =
       error "[drathier]: should be unreachable, all KindDeclaration ctors should have been filtered out earlier"
 
     -- RoleDeclaration {-# UNPACK #-} !RoleDeclarationData
-    RoleDeclaration _ -> pure ()
+    RoleDeclaration _ ->
+      -- ASSUMPTION[drathier]: got this compiler error when testing, assuming it to be true forever "Role declarations are only supported for data types, not for type synonyms nor type classes." We'll likely incorrectly  cache things wrt this if this changes in the future. Testing also shows that it works fine for newtypes, so I'm supporting that.
+      error "[drathier]: should be unreachable, all RoleDeclaration ctors should have been filtered out earlier"
     -- TypeDeclaration {-# UNPACK #-} !TypeDeclarationData
     TypeDeclaration _ -> pure ()
     -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
@@ -778,8 +796,3 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
 
 externsFileName :: FilePath
 externsFileName = "externs.cbor"
-
--- TODO[drathier]: this is taken from filtrable as I didn't want to touch the build files. Should we depend on filtrable instead? It's also specialized to [a] since mapMaybe is.
-mapEither :: (a -> Either b c) -> [a] -> ([b], [c])
-mapEither f = (,) <$> mapMaybe (either Just (pure Nothing) . f)
-                  <*> mapMaybe (either (pure Nothing) Just . f)
