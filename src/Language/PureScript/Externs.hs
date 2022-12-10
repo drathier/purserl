@@ -51,6 +51,7 @@ import Language.PureScript.Names
 import qualified Language.PureScript.Names as N
 import Data.Foldable
 
+
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
   -- NOTE: Make sure to keep `efVersion` as the first field in this
@@ -251,22 +252,17 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 
 
 -- Declarations suitable for caching, where things like SourcePos are removed, and each ctor is isolated
-data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration]
-  deriving (Show)
-  -- |
-  -- A minimal mutually recursive set of data type declarations
-  --
-data CSDataBindingGroupDeclaration = CSDataBindingGroupDeclaration (NEL.NonEmpty Declaration)
+data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration] (Maybe CSKindDeclaration)
   deriving (Show)
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
-data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ())
+data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) (Maybe CSKindDeclaration)
   deriving (Show)
   -- |
   -- A kind signature declaration
   --
-data CSKindDeclaration = CSKindDeclaration KindSignatureFor (ProperName 'TypeName) SourceType
+data CSKindDeclaration = CSKindDeclaration (Type ())
   deriving (Show)
   -- |
   -- A role declaration (name, roles)
@@ -329,8 +325,6 @@ data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration ChainId Integer (Eith
 
   -- TODO[drathier]: fix this hack
 instance Eq CSDataDeclaration where
-    a == b = show a == show b
-instance Eq CSDataBindingGroupDeclaration where
     a == b = show a == show b
 instance Eq CSTypeSynonymDeclaration where
     a == b = show a == show b
@@ -541,6 +535,7 @@ data DB
   = DB
     -- what things did we find?
     -- NOTE[drathier]: this gathers a list of direct dependencies, not transitive dependencies, and it doesn't fetch the shape of the dependencies. It's just the set of things we depend on, for us to fetch later.
+    -- TODO[drathier]: make sure all these lists are singletons
     { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
     }
@@ -569,26 +564,47 @@ data CacheKey
 
 findDeps :: [Declaration] -> [(Declaration, DB)]
 findDeps ds =
-  fmap (\a -> do
-    (a, mempty & execState (findDepsImpl a))
-   )
-   ds
-   & filter (\(_, db) -> db /= mempty)
+  let
+    (kinds, otherDs) =
+      ds
+      & mapEither (\case
+          KindDeclaration _ kindSignatureFor referencedName stype ->
+            Left ((kindSignatureFor, referencedName), CSKindDeclaration (const () <$> stype))
+          d -> Right d
+        )
 
-findDepsImpl :: Declaration -> State DB ()
-findDepsImpl d =
+    kindsMap =
+      M.fromList kinds
+
+    getKind kindSignatureFor tname =
+      M.lookup (kindSignatureFor, tname) kindsMap
+  in
+
+  otherDs
+    <&> (\a -> do
+      (a, mempty & execState (findDepsImpl getKind a))
+     )
+    & filter (\(_, db) -> db /= mempty)
+
+findDepsImpl :: (KindSignatureFor -> ProperName 'TypeName -> Maybe CSKindDeclaration) -> Declaration -> State DB ()
+findDepsImpl getKind d =
   -- data Declaration
   case d of
     -- DataDeclaration SourceAnn DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [DataConstructorDeclaration]
     DataDeclaration _ dataOrNewtype tname targs ctors -> do
       let (nctorsValue, nctorsDB) = mempty & runState (traverse toCS ctors)
 
-      dbPutDataDeclaration tname nctorsDB (CSDataDeclaration dataOrNewtype tname targs nctorsValue)
+      let mkind =
+            case dataOrNewtype of
+              Data -> getKind DataSig tname
+              Newtype -> getKind NewtypeSig tname
+
+      dbPutDataDeclaration tname nctorsDB (CSDataDeclaration dataOrNewtype tname targs nctorsValue mkind)
       -- pure $ f (show ("DataDeclaration", tname)) $
       --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
     -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
     DataBindingGroupDeclaration recDecls ->
-      traverse_ findDepsImpl recDecls
+      traverse_ (findDepsImpl getKind) recDecls
     -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
     TypeSynonymDeclaration _ tname targs stype -> do
       -- TODO[drathier]: find some source code that leaves targs with a Just SourceType.
@@ -602,10 +618,12 @@ findDepsImpl d =
 
       let nstype = const () <$> stype
 
-      dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype)
+      dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype (getKind TypeSynonymSig tname))
 
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
-    KindDeclaration _ _ _ _ -> pure ()
+    KindDeclaration _ _ _ _ ->
+      error "[drathier]: should be unreachable, all KindDeclaration ctors should have been filtered out earlier"
+
     -- RoleDeclaration {-# UNPACK #-} !RoleDeclarationData
     RoleDeclaration _ -> pure ()
     -- TypeDeclaration {-# UNPACK #-} !TypeDeclarationData
@@ -760,3 +778,8 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
 
 externsFileName :: FilePath
 externsFileName = "externs.cbor"
+
+-- TODO[drathier]: this is taken from filtrable as I didn't want to touch the build files. Should we depend on filtrable instead? It's also specialized to [a] since mapMaybe is.
+mapEither :: (a -> Either b c) -> [a] -> ([b], [c])
+mapEither f = (,) <$> mapMaybe (either Just (pure Nothing) . f)
+                  <*> mapMaybe (either (pure Nothing) Just . f)
