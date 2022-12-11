@@ -278,7 +278,7 @@ data CSTypeDeclaration = CSTypeDeclaration {-# UNPACK #-} !TypeDeclarationData
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
-data CSValueDeclaration = CSValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
+data CSValueDeclaration = CSValueDeclaration NameKind [Binder] ToCSDB
   deriving (Show)
   -- |
   -- A declaration paired with pattern matching in let-in expression (binder, optional guard, value)
@@ -365,18 +365,23 @@ data CSDataConstructorDeclaration
 
 data ToCSDB
   = ToCSDB
-    { _referencedCtors :: M.Map (Qualified (ProperName 'TypeName)) ()
+    -- TODO[drathier]: all these Qualified contain SourcePos if it's referring to something in the current module. We generally don't want to store SourcePos, but since it's only local, we're already rebuilding the module at that point, so I'll leave it in.
+    { _referencedCtors :: M.Map (Qualified (ProperName 'ConstructorName)) ()
+    -- NOTE[drathier]: it's likely that we only care about the types of ctors, not types themselves, as using ctors means we care about the type shape changing, but if we just refer to the type we probably don't care what its internal structure is.
+    , _referencedTypes :: M.Map (Qualified (ProperName 'TypeName)) ()
     , _referencedTypeOp :: M.Map (Qualified (OpName 'TypeOpName)) ()
     , _referencedTypeClass :: M.Map (Qualified (ProperName 'ClassName)) ()
+    , _referencedValues :: M.Map (Qualified Ident) ()
+    , _referencedValueOp :: M.Map (Qualified (OpName 'ValueOpName)) ()
     }
   deriving (Show, Eq)
 
 
 instance Semigroup ToCSDB where
-  ToCSDB a1 a2 a3 <> ToCSDB b1 b2 b3 = ToCSDB (a1 <> b1) (a2 <> b2) (a3 <> b3)
+  ToCSDB a1 a2 a3 a4 a5 a6 <> ToCSDB b1 b2 b3 b4 b5 b6 = ToCSDB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6)
 
 instance Monoid ToCSDB where
-  mempty = ToCSDB mempty mempty mempty
+  mempty = ToCSDB mempty mempty mempty mempty mempty mempty
 
 
 class ToCS a b | a -> b where
@@ -399,6 +404,133 @@ instance ToCS DataConstructorDeclaration CSDataConstructorDeclaration where
           ctorName
           ctorFields2
 
+instance ToCS (Type SourceAnn) () where
+  toCS t = storeTypeRefs t
+
+instance ToCS GuardedExpr () where
+  toCS (GuardedExpr guards expr) =
+    do
+      nguards <- traverse toCS guards
+      nexpr <- toCS expr
+      pure ()
+
+instance ToCS Guard () where
+  toCS guard =
+    case guard of
+        ConditionGuard expr -> toCS expr
+        PatternGuard binder expr -> do
+          toCS binder
+          toCS expr
+
+instance ToCS Expr () where
+  toCS expr =
+    case expr of
+      Literal _ lit -> toCS lit
+      UnaryMinus _ e -> toCS e
+      BinaryNoParens e1 e2 e3 -> do
+        toCS e1
+        toCS e2
+        toCS e3
+      Parens e -> toCS e
+      Accessor _ e -> toCS e
+      ObjectUpdate e obj -> do
+        toCS e
+        traverse_ (traverse_ toCS) obj
+      ObjectUpdateNested e tree -> do
+         toCS e
+         traverse_ toCS tree
+      Abs binder e -> do
+        toCS binder
+        toCS e
+      App e1 e2 -> do
+        toCS e1
+        toCS e2
+      Unused e -> toCS e
+      Var _ qIdent -> csdbPutIdent qIdent
+      Op _ qValueOpName -> csdbPutValueOp qValueOpName
+      IfThenElse e1 e2 e3 -> do
+        toCS e1
+        toCS e2
+        toCS e3
+      Constructor _ qCtorName -> csdbPutCtor qCtorName
+      Case exprs cases -> do
+        traverse_ toCS exprs
+        traverse_ toCS cases
+      TypedValue _ e sourceType -> do
+        toCS e
+        toCS sourceType
+
+      Let whereOrLet decls inExpr -> do
+        toCS decls
+        toCS inExpr
+      Do _ doNotationElems -> do
+        traverse_ toCS doNotationElems
+
+      Ado _ doNotationElems inExpr -> do
+        traverse_ toCS doNotationElems
+        toCS inExpr
+
+      TypeClassDictionary _ _ _ -> error "[drathier]: should be unreachable, all TypeClassDictionary ctors should have been expanded already"
+      DeferredDictionary _ _ -> error "[drathier]should be unreachable, all DeferredDictionary ctors should have been expanded already"
+      DerivedInstancePlaceholder _ _ -> error "[drathier]should be unreachable, all DerivedInstancePlaceholder ctors should have been expanded already"
+      AnonymousArgument -> error "[drathier]: shshould be unreachable, all AnonymousArgument ctors should have been expanded already"
+      Hole _ -> error "[drathier]: should be unreachable, all Hole ctors should have been expanded already"
+      PositionedValue _ _ e -> toCS e
+
+instance ToCS a () => ToCS (Literal a) () where
+  toCS expr =
+    case expr of
+      NumericLiteral _ -> pure ()
+      StringLiteral _ -> pure ()
+      CharLiteral _ -> pure ()
+      BooleanLiteral _ -> pure ()
+      ArrayLiteral arr -> traverse_ toCS arr
+      ObjectLiteral obj -> traverse_ (traverse_ toCS) obj
+
+
+instance ToCS DoNotationElement () where
+  toCS doNotationElement =
+    case doNotationElement of
+      DoNotationValue e -> toCS e
+      DoNotationBind binder e -> do
+        toCS binder
+        toCS e
+      DoNotationLet decls -> do
+        toCS decls
+      PositionedDoNotationElement _ _ elem -> toCS elem
+
+instance ToCS Binder () where
+  toCS binder =
+    case binder of
+      NullBinder -> pure ()
+      LiteralBinder _ literal -> toCS literal
+      VarBinder _ _ -> pure ()
+      ConstructorBinder _ ctorName binders -> do
+        csdbPutCtor ctorName
+        traverse_ toCS binders
+      OpBinder _ _ -> error "[drathier]: should be unreachable, all OpBinder ctors should have been desugared already"
+      BinaryNoParensBinder _ _ _ -> error "[drathier]: should be unreachable, all BinaryNoParensBinder ctors should have been desugared already"
+      ParensInBinder _ -> error "[drathier]: should be unreachable, all ParensInBinder ctors should have been desugared already"
+      NamedBinder _ _ innerBinder -> toCS innerBinder
+      PositionedBinder _ _ innerBinder -> toCS innerBinder
+      TypedBinder sourceType innerBinder -> do
+        toCS sourceType
+        toCS innerBinder
+
+instance ToCS CaseAlternative () where
+  toCS (CaseAlternative binders guardedExprs) = do
+    traverse_ toCS binders
+    traverse_ toCS guardedExprs
+
+instance ToCS [Declaration] () where
+  toCS ds = do
+    -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
+    findDeps ds
+    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls) -> do
+      dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
+      valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
+    )
+
 
 storeConstraintTypes :: Constraint a -> State ToCSDB ()
 storeConstraintTypes (Constraint _ refTypeClass kindArgs targs mdata) = do
@@ -408,7 +540,7 @@ storeConstraintTypes (Constraint _ refTypeClass kindArgs targs mdata) = do
 
 -- CSDB put helpers
 
-csdbPutCtor :: Qualified (ProperName 'TypeName) -> State ToCSDB ()
+csdbPutCtor :: Qualified (ProperName 'ConstructorName) -> State ToCSDB ()
 csdbPutCtor refCtor =
   modify
    (\v ->
@@ -418,6 +550,19 @@ csdbPutCtor refCtor =
         refCtor
         ()
         (_referencedCtors v)
+     }
+   )
+
+csdbPutType :: Qualified (ProperName 'TypeName) -> State ToCSDB ()
+csdbPutType refType =
+  modify
+   (\v ->
+    v {
+      _referencedTypes =
+       M.insert
+        refType
+        ()
+        (_referencedTypes v)
      }
    )
 
@@ -444,6 +589,32 @@ csdbPutTypeClass refTypeClass =
         refTypeClass
         ()
         (_referencedTypeClass v)
+     }
+   )
+
+csdbPutIdent :: Qualified Ident -> State ToCSDB ()
+csdbPutIdent refValue =
+  modify
+   (\v ->
+    v {
+      _referencedValues =
+       M.insert
+        refValue
+        ()
+        (_referencedValues v)
+     }
+   )
+
+csdbPutValueOp :: Qualified (OpName 'ValueOpName) -> State ToCSDB ()
+csdbPutValueOp refOp =
+  modify
+   (\v ->
+    v {
+      _referencedValueOp =
+       M.insert
+        refOp
+        ()
+        (_referencedValueOp v)
      }
    )
 
@@ -478,6 +649,21 @@ dbPutTypeSynonymDeclaration tname csDataDeclaration =
    )
 
 
+dbPutValueDeclaration :: Ident -> CSValueDeclaration -> State DB ()
+dbPutValueDeclaration ident csValueDeclaration =
+  -- TODO[drathier]: implement
+  modify
+   (\db ->
+    db
+      {
+        _valueDecls =
+           M.insertWith (<>)
+            ident
+            [csValueDeclaration]
+            (_valueDecls db)
+      }
+   )
+
 storeTypeRefs :: Type a -> State ToCSDB ()
 storeTypeRefs t =
   case t of
@@ -486,8 +672,9 @@ storeTypeRefs t =
     TypeLevelString _ _ -> pure ()
     TypeLevelInt _ _ -> pure ()
     TypeWildcard _ _ -> pure ()
-    TypeConstructor _ refCtor -> do
-      csdbPutCtor refCtor
+    TypeConstructor _ refType -> do
+      -- [drathier]: this seems to be the type, not the constructor, which makes much more sense at the type level
+      csdbPutType refType
 
     TypeOp _ refTypeOp -> do
       -- TODO[drathier]: is this ctor unused here? docs for it say it's desugared to a TypeConstructor
@@ -539,14 +726,15 @@ data DB
     -- TODO[drathier]: make sure all these lists are singletons
     { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
+    , _valueDecls :: M.Map Ident [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
     }
   deriving (Show, Eq)
 
 instance Semigroup DB where
-  DB a1 a2 <> DB b1 b2 = DB (a1 <> b1) (a2 <> b2)
+  DB a1 a2 a3 <> DB b1 b2 b3 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3)
 
 instance Monoid DB where
-  mempty = DB mempty mempty
+  mempty = DB mempty mempty mempty
 
 
 
@@ -647,7 +835,14 @@ findDepsImpl getKind getRole d =
     -- TypeDeclaration {-# UNPACK #-} !TypeDeclarationData
     TypeDeclaration _ -> pure ()
     -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
-    ValueDeclaration _ -> pure ()
+    ValueDeclaration (ValueDeclarationData _ ident namekind binders expr) -> do
+      -- TODO[drathier]: do we really need expr in here too? Yes, we need to know what modules its value and type refers to at least.
+
+      let !(nexprValue, nexprDB) = mempty & runState (traverse toCS expr)
+
+      dbPutValueDeclaration ident (CSValueDeclaration namekind binders nexprDB)
+
+      pure ()
     -- BoundValueDeclaration SourceAnn Binder Expr
     BoundValueDeclaration _ _ _ -> pure ()
     -- BindingGroupDeclaration (NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
