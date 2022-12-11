@@ -1,4 +1,5 @@
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE DeriveAnyClass #-}
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
 -- foreign import declarations.
@@ -287,12 +288,12 @@ data CSBindingGroupDeclaration = CSBindingGroupDeclaration (NEL.NonEmpty Ident, 
   -- |
   -- A foreign import declaration (name, type)
   --
-data CSExternDeclaration = CSExternDeclaration Ident SourceType
+data CSExternDeclaration = CSExternDeclaration ToCSDB
   deriving (Show)
   -- |
   -- A data type foreign import (name, kind)
   --
-data CSExternDataDeclaration = CSExternDataDeclaration (ProperName 'TypeName) SourceType
+data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
   deriving (Show)
   -- |
   -- A fixity declaration
@@ -376,7 +377,7 @@ instance Semigroup ToCSDB where
 instance Monoid ToCSDB where
   mempty = ToCSDB mempty mempty mempty mempty mempty mempty
 
-
+-- NOTE[drathier]: yes, I know Language.PureScript.AST.Traversals exists, but since not all things are newtype wrapped, I would've missed some cases using that, e.g. kind signatures
 class ToCS a b | a -> b where
   toCS :: a -> State ToCSDB b
 
@@ -516,9 +517,11 @@ instance ToCS [Declaration] () where
   toCS ds = do
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps ds
-    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls) -> do
+    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls) -> do
       dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
       valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
+      externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
+      externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
     )
 
 instance ToCS (Type SourceAnn) () where
@@ -660,6 +663,38 @@ dbPutValueDeclaration ident csValueDeclaration =
       }
    )
 
+
+dbPutExternDeclaration :: Ident -> CSExternDeclaration -> State DB ()
+dbPutExternDeclaration ident csExternDeclaration =
+  -- TODO[drathier]: implement
+  modify
+   (\db ->
+    db
+      {
+        _externDecls =
+           M.insertWith (<>)
+            ident
+            [csExternDeclaration]
+            (_externDecls db)
+      }
+   )
+
+
+dbPutExternDataDeclaration :: ProperName 'TypeName -> CSExternDataDeclaration -> State DB ()
+dbPutExternDataDeclaration tname csExternDataDeclaration =
+  -- TODO[drathier]: implement
+  modify
+   (\db ->
+    db
+      {
+        _externDataDecls =
+           M.insertWith (<>)
+            tname
+            [csExternDataDeclaration]
+            (_externDataDecls db)
+      }
+   )
+
 storeTypeRefs :: Type a -> State ToCSDB ()
 storeTypeRefs t =
   case t of
@@ -723,14 +758,16 @@ data DB
     { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
     , _valueDecls :: M.Map Ident [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
+    , _externDecls :: M.Map Ident [CSExternDeclaration]
+    , _externDataDecls :: M.Map (ProperName 'TypeName) [CSExternDataDeclaration]
     }
   deriving (Show, Eq)
 
 instance Semigroup DB where
-  DB a1 a2 a3 <> DB b1 b2 b3 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3)
+  DB a1 a2 a3 a4 a5 <> DB b1 b2 b3 b4 b5 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty
 
 
 
@@ -814,9 +851,7 @@ findDepsImpl getKind getRole d =
                     (targName, Nothing) ->
                       (targName, Nothing)
                 )
-
       let nstype = const () <$> stype
-
       dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype (getKind TypeSynonymSig tname))
 
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
@@ -833,20 +868,25 @@ findDepsImpl getKind getRole d =
     -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
     ValueDeclaration (ValueDeclarationData _ ident namekind binders expr) -> do
       -- TODO[drathier]: do we really need expr in here too? Yes, we need to know what modules its value and type refers to at least.
-
       let !(nexprValue, nexprDB) = mempty & runState (traverse toCS expr)
-
       dbPutValueDeclaration ident (CSValueDeclaration namekind binders nexprDB)
 
-      pure ()
     -- BoundValueDeclaration SourceAnn Binder Expr
-    BoundValueDeclaration _ _ _ -> pure ()
+    BoundValueDeclaration _ _ _ ->
+      error "ASSUMPTION[drathier]: should be unreachable, all BoundValueDeclaration ctors should have been desugared earlier"
     -- BindingGroupDeclaration (NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
-    BindingGroupDeclaration _ -> pure ()
+    BindingGroupDeclaration _ ->
+      error "ASSUMPTION[drathier]: should be unreachable, all BindingGroupDeclaration ctors should have been desugared earlier"
     -- ExternDeclaration SourceAnn Ident SourceType
-    ExternDeclaration _ _ _ -> pure ()
+    ExternDeclaration _ ident sourceType -> do
+      let !(_, ntypeDB) = mempty & runState (toCS sourceType)
+      dbPutExternDeclaration ident (CSExternDeclaration ntypeDB)
+
     -- ExternDataDeclaration SourceAnn (ProperName 'TypeName) SourceType
-    ExternDataDeclaration _ _ _ -> pure ()
+    ExternDataDeclaration _ tname sourceType -> do
+      let !(_, ntypeDB) = mempty & runState (toCS sourceType)
+      dbPutExternDataDeclaration tname (CSExternDataDeclaration ntypeDB)
+
     -- FixityDeclaration SourceAnn (Either ValueFixity TypeFixity)
     FixityDeclaration _ _ -> pure ()
     -- ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
