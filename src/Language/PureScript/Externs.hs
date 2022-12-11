@@ -998,6 +998,11 @@ findDepsImpl getKind getRole d =
       let (_, nconstraintsdb) = mempty & runState (traverse toCS constraints)
       let nconstraints = fmap (const ()) <$> constraints
       let ntargs = targs <&> (\(a, sourceType) -> (a, fmap (const ()) <$> sourceType))
+      let !_ = nconstraints <&>
+            (\case
+              Constraint _ _ [] _ _ -> ()
+              v -> error ("ASSUMPTION[drathier]: the constraintKindArgs field of constraints for type classes is always empty." ++ show v)
+            )
       dbPutTypeClassDeclaration className (CSTypeClassDeclaration ntargs (nconstraints, nconstraintsdb) fnDeps ndecls)
 
     TypeInstanceDeclaration _ _ _ _ _ _ _ _ _ -> pure ()
