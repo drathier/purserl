@@ -271,11 +271,6 @@ data CSKindDeclaration = CSKindDeclaration (Type ())
 data CSRoleDeclaration = CSRoleDeclaration [Role]
   deriving (Show)
   -- |
-  -- A type declaration for a value (name, ty)
-  --
-data CSTypeDeclaration = CSTypeDeclaration {-# UNPACK #-} !TypeDeclarationData
-  deriving (Show)
-  -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
 data CSValueDeclaration = CSValueDeclaration NameKind [Binder] ToCSDB
@@ -332,8 +327,6 @@ instance Eq CSTypeSynonymDeclaration where
 instance Eq CSKindDeclaration where
     a == b = show a == show b
 instance Eq CSRoleDeclaration where
-    a == b = show a == show b
-instance Eq CSTypeDeclaration where
     a == b = show a == show b
 instance Eq CSValueDeclaration where
     a == b = show a == show b
@@ -396,16 +389,13 @@ instance ToCS DataConstructorDeclaration CSDataConstructorDeclaration where
             (\(ident, typeWithSrcAnn) ->
               do
                 let t2 = const () <$> typeWithSrcAnn
-                storeTypeRefs typeWithSrcAnn
+                toCS typeWithSrcAnn
                 pure (ident, t2)
             )
       pure $
         CSDataConstructorDeclaration
           ctorName
           ctorFields2
-
-instance ToCS (Type SourceAnn) () where
-  toCS t = storeTypeRefs t
 
 instance ToCS GuardedExpr () where
   toCS (GuardedExpr guards expr) =
@@ -530,6 +520,12 @@ instance ToCS [Declaration] () where
       dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
       valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
     )
+
+instance ToCS (Type SourceAnn) () where
+  toCS t = storeTypeRefs t
+
+instance ToCS (Type ()) () where
+  toCS = storeTypeRefs
 
 
 storeConstraintTypes :: Constraint a -> State ToCSDB ()
@@ -780,7 +776,6 @@ findDeps ds =
     getRole tname =
       M.lookup tname rolesMap
   in
-
   otherDs
     <&> (\a -> do
       (a, mempty & execState (findDepsImpl getKind getRole a))
@@ -833,7 +828,8 @@ findDepsImpl getKind getRole d =
       -- ASSUMPTION[drathier]: got this compiler error when testing, assuming it to be true forever "Role declarations are only supported for data types, not for type synonyms nor type classes." We'll likely incorrectly  cache things wrt this if this changes in the future. Testing also shows that it works fine for newtypes, so I'm supporting that.
       error "[drathier]: should be unreachable, all RoleDeclaration ctors should have been filtered out earlier"
     -- TypeDeclaration {-# UNPACK #-} !TypeDeclarationData
-    TypeDeclaration _ -> pure ()
+    TypeDeclaration _ ->
+      error "ASSUMPTION[drathier]: should be unreachable, all TypeDeclaration ctors should have been extracted earlier"
     -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
     ValueDeclaration (ValueDeclarationData _ ident namekind binders expr) -> do
       -- TODO[drathier]: do we really need expr in here too? Yes, we need to know what modules its value and type refers to at least.
