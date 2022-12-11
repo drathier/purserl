@@ -300,6 +300,12 @@ data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
   --
 data CSFixityDeclaration = CSFixityDeclaration (Either ValueFixity TypeFixity)
   deriving (Show)
+data CSOpFixity = CSOpFixity Fixity (Qualified Ident)
+  deriving (Show)
+data CSCtorFixity = CSCtorFixity Fixity (Qualified (ProperName 'ConstructorName))
+  deriving (Show)
+data CSTyOpFixity = CSTyOpFixity Fixity (Qualified (ProperName 'TypeName))
+  deriving (Show)
   -- |
   -- A module import (module name, qualified/unqualified/hiding, optional "qualified as" name)
   --
@@ -346,6 +352,13 @@ instance Eq CSImportDeclaration where
 instance Eq CSTypeClassDeclaration where
     a == b = show a == show b
 instance Eq CSTypeInstanceDeclaration where
+    a == b = show a == show b
+
+instance Eq CSOpFixity where
+    a == b = show a == show b
+instance Eq CSCtorFixity where
+    a == b = show a == show b
+instance Eq CSTyOpFixity where
     a == b = show a == show b
 
 
@@ -517,7 +530,7 @@ instance ToCS [Declaration] () where
   toCS ds = do
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps ds
-    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls) -> do
+    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity) -> do
       dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
       valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
       externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
@@ -650,7 +663,6 @@ dbPutTypeSynonymDeclaration tname csDataDeclaration =
 
 dbPutValueDeclaration :: Ident -> CSValueDeclaration -> State DB ()
 dbPutValueDeclaration ident csValueDeclaration =
-  -- TODO[drathier]: implement
   modify
    (\db ->
     db
@@ -666,7 +678,6 @@ dbPutValueDeclaration ident csValueDeclaration =
 
 dbPutExternDeclaration :: Ident -> CSExternDeclaration -> State DB ()
 dbPutExternDeclaration ident csExternDeclaration =
-  -- TODO[drathier]: implement
   modify
    (\db ->
     db
@@ -682,7 +693,6 @@ dbPutExternDeclaration ident csExternDeclaration =
 
 dbPutExternDataDeclaration :: ProperName 'TypeName -> CSExternDataDeclaration -> State DB ()
 dbPutExternDataDeclaration tname csExternDataDeclaration =
-  -- TODO[drathier]: implement
   modify
    (\db ->
     db
@@ -692,6 +702,51 @@ dbPutExternDataDeclaration tname csExternDataDeclaration =
             tname
             [csExternDataDeclaration]
             (_externDataDecls db)
+      }
+   )
+
+
+dbPutOpFixity :: OpName 'ValueOpName -> CSOpFixity -> State DB ()
+dbPutOpFixity tname csOpFixity =
+  modify
+   (\db ->
+    db
+      {
+        _opFixity =
+           M.insertWith (<>)
+            tname
+            [csOpFixity]
+            (_opFixity db)
+      }
+   )
+
+
+dbPutCtorFixity :: OpName 'ValueOpName -> CSCtorFixity -> State DB ()
+dbPutCtorFixity opName csCtorFixity =
+  modify
+   (\db ->
+    db
+      {
+        _ctorFixity =
+           M.insertWith (<>)
+            opName
+            [csCtorFixity]
+            (_ctorFixity db)
+      }
+   )
+
+
+dbPutTyOpFixity :: OpName 'TypeOpName -> CSTyOpFixity -> State DB ()
+dbPutTyOpFixity tyOpName csTyOpFixity =
+  modify
+   (\db ->
+    db
+      {
+        _tyOpFixity =
+           M.insertWith (<>)
+            tyOpName
+            [csTyOpFixity]
+            (_tyOpFixity db)
       }
    )
 
@@ -760,14 +815,17 @@ data DB
     , _valueDecls :: M.Map Ident [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
     , _externDecls :: M.Map Ident [CSExternDeclaration]
     , _externDataDecls :: M.Map (ProperName 'TypeName) [CSExternDataDeclaration]
+    , _opFixity :: M.Map (OpName 'ValueOpName) [CSOpFixity]
+    , _ctorFixity :: M.Map (OpName 'ValueOpName) [CSCtorFixity]
+    , _tyOpFixity :: M.Map (OpName 'TypeOpName) [CSTyOpFixity]
     }
   deriving (Show, Eq)
 
 instance Semigroup DB where
-  DB a1 a2 a3 a4 a5 <> DB b1 b2 b3 b4 b5 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5)
+  DB a1 a2 a3 a4 a5 a6 a7 a8 <> DB b1 b2 b3 b4 b5 b6 b7 b8 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty
 
 
 
@@ -888,7 +946,17 @@ findDepsImpl getKind getRole d =
       dbPutExternDataDeclaration tname (CSExternDataDeclaration ntypeDB)
 
     -- FixityDeclaration SourceAnn (Either ValueFixity TypeFixity)
-    FixityDeclaration _ _ -> pure ()
+    FixityDeclaration _ eitherValueType ->
+      case eitherValueType of
+        -- ValueFixityDeclaration :: SourceAnn -> Fixity -> Qualified (Either Ident (ProperName 'ConstructorName)) -> OpName 'ValueOpName -> Declaration
+        Left (ValueFixity fixity (N.Qualified qBy (Left ident)) localOpName) ->
+          dbPutOpFixity localOpName (CSOpFixity fixity (N.Qualified qBy ident))
+        Left (ValueFixity fixity (N.Qualified qBy (Right ctor)) localCtorName) ->
+          dbPutCtorFixity localCtorName (CSCtorFixity fixity (N.Qualified qBy ctor))
+        -- TypeFixityDeclaration :: SourceAnn -> Fixity -> Qualified (ProperName 'TypeName) -> OpName 'TypeOpName -> Declaration
+        Right (TypeFixity fixity tname tyOpName) ->
+          dbPutTyOpFixity tyOpName (CSTyOpFixity fixity tname)
+
     -- ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
     ImportDeclaration _ _ _ _ -> pure ()
     -- TypeClassDeclaration SourceAnn (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
