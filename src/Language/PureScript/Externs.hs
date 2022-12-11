@@ -314,7 +314,10 @@ data CSImportDeclaration = CSImportDeclaration ModuleName ImportDeclarationType 
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
-data CSTypeClassDeclaration = CSTypeClassDeclaration (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
+data CSTypeClassDeclaration = CSTypeClassDeclaration [(Text, Maybe (Type ()))] ([Constraint ()], ToCSDB) [FunctionalDependency] [CSTypeDeclaration]
+  deriving (Show)
+
+data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
   deriving (Show)
   -- |
   -- A type instance declaration (instance chain, chain index, name,
@@ -530,11 +533,16 @@ instance ToCS [Declaration] () where
   toCS ds = do
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps ds
-    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity) -> do
+    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls) -> do
       dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
       valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
       externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
       externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
+      tyClassDecls & traverse_ (traverse_ (\(CSTypeClassDeclaration _ (_, csdb) _ tyDeps) ->
+        do
+          modify (<> csdb)
+          tyDeps & traverse_ (\(CSTypeDeclaration _ _ csdb) -> modify (<> csdb))
+        ))
     )
 
 instance ToCS (Type SourceAnn) () where
@@ -543,6 +551,8 @@ instance ToCS (Type SourceAnn) () where
 instance ToCS (Type ()) () where
   toCS = storeTypeRefs
 
+instance ToCS (Constraint SourceAnn) () where
+  toCS = storeConstraintTypes
 
 storeConstraintTypes :: Constraint a -> State ToCSDB ()
 storeConstraintTypes (Constraint _ refTypeClass kindArgs targs mdata) = do
@@ -750,6 +760,20 @@ dbPutTyOpFixity tyOpName csTyOpFixity =
       }
    )
 
+dbPutTypeClassDeclaration :: ProperName 'ClassName -> CSTypeClassDeclaration -> State DB ()
+dbPutTypeClassDeclaration className csTypeClassDeclaration =
+  modify
+   (\db ->
+    db
+      {
+        _tyClassDecls =
+           M.insertWith (<>)
+            className
+            [csTypeClassDeclaration]
+            (_tyClassDecls db)
+      }
+   )
+
 storeTypeRefs :: Type a -> State ToCSDB ()
 storeTypeRefs t =
   case t of
@@ -818,14 +842,15 @@ data DB
     , _opFixity :: M.Map (OpName 'ValueOpName) [CSOpFixity]
     , _ctorFixity :: M.Map (OpName 'ValueOpName) [CSCtorFixity]
     , _tyOpFixity :: M.Map (OpName 'TypeOpName) [CSTyOpFixity]
+    , _tyClassDecls :: M.Map (ProperName 'ClassName) [CSTypeClassDeclaration]
     }
   deriving (Show, Eq)
 
 instance Semigroup DB where
-  DB a1 a2 a3 a4 a5 a6 a7 a8 <> DB b1 b2 b3 b4 b5 b6 b7 b8 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8)
+  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 
 
@@ -960,7 +985,21 @@ findDepsImpl getKind getRole d =
     -- ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
     ImportDeclaration _ _ _ _ -> pure ()
     -- TypeClassDeclaration SourceAnn (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
-    TypeClassDeclaration _ _ _ _ _ _ -> pure ()
+    TypeClassDeclaration _ className targs constraints fnDeps decls -> do
+      ndecls <- decls & traverse (\decl ->
+        case decl of
+          TypeDeclaration (TypeDeclarationData _ ident tipe) -> do
+            let (ntipe, ntipeDB) = mempty & runState (toCS tipe)
+            pure $ CSTypeDeclaration ident (const () <$> tipe) ntipeDB
+        )
+
+      -- TODO[drathier]: test the constraintKindArgs and constraintData fields of Constraint. I couldn't figure out a source input that would put anything in those fields.
+
+      let (_, nconstraintsdb) = mempty & runState (traverse toCS constraints)
+      let nconstraints = fmap (const ()) <$> constraints
+      let ntargs = targs <&> (\(a, sourceType) -> (a, fmap (const ()) <$> sourceType))
+      dbPutTypeClassDeclaration className (CSTypeClassDeclaration ntargs (nconstraints, nconstraintsdb) fnDeps ndecls)
+
     TypeInstanceDeclaration _ _ _ _ _ _ _ _ _ -> pure ()
 
 
@@ -1010,8 +1049,8 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
   let !_ = trace (show ("###moduleToExternsFile ds.ExternDataDeclaration", M.lookup "ExternDataDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.FixityDeclaration", M.lookup "FixityDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.ImportDeclaration", M.lookup "ImportDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
+  let !_ = trace (sShow ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
+  let !_ = trace (sShow ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.DataDeclaration", M.lookup "DataDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.DataBindingGroupDeclaration", M.lookup "DataBindingGroupDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.TypeSynonymDeclaration", M.lookup "TypeSynonymDeclaration" sds)) () in
