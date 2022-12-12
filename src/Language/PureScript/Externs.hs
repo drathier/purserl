@@ -1,5 +1,4 @@
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE DeriveAnyClass #-}
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
 -- foreign import declarations.
@@ -28,6 +27,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Version (showVersion)
 import qualified Data.Map as M
+import qualified Data.Map.Merge.Strict as M
 import qualified Data.List.NonEmpty as NEL
 
 import Language.PureScript.AST
@@ -75,6 +75,10 @@ data ExternsFile = ExternsFile
   -- ^ List of type and value declaration
   , efSourceSpan :: SourceSpan
   -- ^ Source span for error reporting
+  , efUpstreamCacheShapes :: M.Map ModuleName DB
+  -- ^ Shapes of things dependend upon by this module
+  , efOurCacheShapes :: DB
+  -- ^ Shapes of things in this module
   } deriving (Show, Generic)
 
 instance Serialise ExternsFile
@@ -255,70 +259,79 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 
 -- Declarations suitable for caching, where things like SourcePos are removed, and each ctor is isolated
 data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration] (Maybe CSKindDeclaration) (Maybe CSRoleDeclaration)
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSDataDeclaration
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
 data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) (Maybe CSKindDeclaration)
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSTypeSynonymDeclaration
   -- |
   -- A kind signature declaration
   --
 data CSKindDeclaration = CSKindDeclaration (Type ())
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSKindDeclaration
   -- |
   -- A role declaration (name, roles)
   --
 data CSRoleDeclaration = CSRoleDeclaration [Role]
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSRoleDeclaration
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
-data CSValueDeclaration = CSValueDeclaration NameKind [Binder] ToCSDB
-  deriving (Show)
-  -- |
-  -- A declaration paired with pattern matching in let-in expression (binder, optional guard, value)
-data CSBoundValueDeclaration = CSBoundValueDeclaration Binder Expr
-  deriving (Show)
-  -- |
-  -- A minimal mutually recursive set of value declarations
-  --
-data CSBindingGroupDeclaration = CSBindingGroupDeclaration (NEL.NonEmpty Ident, NameKind, Expr)
-  deriving (Show)
+data CSValueDeclaration = CSValueDeclaration NameKind Int (Type ()) ToCSDB
+  deriving (Show, Generic)
+
+instance Serialise CSValueDeclaration
+
   -- |
   -- A foreign import declaration (name, type)
   --
 data CSExternDeclaration = CSExternDeclaration ToCSDB
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSExternDeclaration
   -- |
   -- A data type foreign import (name, kind)
   --
 data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSExternDataDeclaration
   -- |
   -- A fixity declaration
   --
-data CSFixityDeclaration = CSFixityDeclaration (Either ValueFixity TypeFixity)
-  deriving (Show)
 data CSOpFixity = CSOpFixity Fixity (Qualified Ident)
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSOpFixity
 data CSCtorFixity = CSCtorFixity Fixity (Qualified (ProperName 'ConstructorName))
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSCtorFixity
 data CSTyOpFixity = CSTyOpFixity Fixity (Qualified (ProperName 'TypeName))
-  deriving (Show)
-  -- |
-  -- A module import (module name, qualified/unqualified/hiding, optional "qualified as" name)
-  --
-data CSImportDeclaration = CSImportDeclaration ModuleName ImportDeclarationType (Maybe ModuleName)
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSTyOpFixity
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
 data CSTypeClassDeclaration = CSTypeClassDeclaration [(Text, Maybe (Type ()))] ([Constraint ()], ToCSDB) [FunctionalDependency] [CSTypeDeclaration]
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSTypeClassDeclaration
 
 data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSTypeDeclaration
   -- |
   -- A type instance declaration (instance chain, chain index, name,
   -- dependencies, class name, instance types, member declarations)
@@ -327,13 +340,17 @@ data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
   -- declaration, while the second @SourceAnn@ serves as the
   -- annotation for the type class and its arguments.
 data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration (ChainId, Integer) ToCSDB (Qualified (ProperName 'ClassName)) ToCSDB (CSTypeInstanceBody, ToCSDB)
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise CSTypeInstanceDeclaration
 
 data CSTypeInstanceBody
   = CSDerivedInstance
   | CSNewtypeInstance
   | CSExplicitInstance
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Serialise CSTypeInstanceBody
 
 
   -- TODO[drathier]: fix this hack
@@ -347,17 +364,9 @@ instance Eq CSRoleDeclaration where
     a == b = show a == show b
 instance Eq CSValueDeclaration where
     a == b = show a == show b
-instance Eq CSBoundValueDeclaration where
-    a == b = show a == show b
-instance Eq CSBindingGroupDeclaration where
-    a == b = show a == show b
 instance Eq CSExternDeclaration where
     a == b = show a == show b
 instance Eq CSExternDataDeclaration where
-    a == b = show a == show b
-instance Eq CSFixityDeclaration where
-    a == b = show a == show b
-instance Eq CSImportDeclaration where
     a == b = show a == show b
 instance Eq CSTypeClassDeclaration where
     a == b = show a == show b
@@ -378,27 +387,45 @@ data CSDataConstructorDeclaration
     { csdataCtorName :: !(ProperName 'ConstructorName)
     , csdataCtorFields :: ![(Ident, Type ())]
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Serialise CSDataConstructorDeclaration
 
 data ToCSDB
-  = ToCSDB
-    -- TODO[drathier]: all these Qualified contain SourcePos if it's referring to something in the current module. We generally don't want to store SourcePos, but since it's only local, we're already rebuilding the module at that point, so I'll leave it in.
-    { _referencedCtors :: M.Map (Qualified (ProperName 'ConstructorName)) ()
-    -- NOTE[drathier]: it's likely that we only care about the types of ctors, not types themselves, as using ctors means we care about the type shape changing, but if we just refer to the type we probably don't care what its internal structure is.
-    , _referencedTypes :: M.Map (Qualified (ProperName 'TypeName)) ()
-    , _referencedTypeOp :: M.Map (Qualified (OpName 'TypeOpName)) ()
-    , _referencedTypeClass :: M.Map (Qualified (ProperName 'ClassName)) ()
-    , _referencedValues :: M.Map (Qualified Ident) ()
-    , _referencedValueOp :: M.Map (Qualified (OpName 'ValueOpName)) ()
-    }
-  deriving (Show, Eq)
+  = ToCSDB (M.Map ModuleName ToCSDBInner)
+  deriving (Show, Eq, Generic)
 
+runToCSDB :: ToCSDB -> M.Map ModuleName ToCSDBInner
+runToCSDB (ToCSDB a) = a
+
+instance Serialise ToCSDB
 
 instance Semigroup ToCSDB where
-  ToCSDB a1 a2 a3 a4 a5 a6 <> ToCSDB b1 b2 b3 b4 b5 b6 = ToCSDB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6)
+  ToCSDB a <> ToCSDB b = ToCSDB (M.unionWith (<>) a b)
 
 instance Monoid ToCSDB where
-  mempty = ToCSDB mempty mempty mempty mempty mempty mempty
+  mempty = ToCSDB mempty
+
+data ToCSDBInner
+  = ToCSDBInner
+    -- TODO[drathier]: all these Qualified contain SourcePos if it's referring to something in the current module. We generally don't want to store SourcePos, but since it's only local, we're already rebuilding the module at that point, so I'll leave it in.
+    { _referencedCtors :: M.Map (ProperName 'ConstructorName) ()
+    -- NOTE[drathier]: it's likely that we only care about the types of ctors, not types themselves, as using ctors means we care about the type shape changing, but if we just refer to the type we probably don't care what its internal structure is.
+    , _referencedTypes :: M.Map (ProperName 'TypeName) ()
+    , _referencedTypeOp :: M.Map (OpName 'TypeOpName) ()
+    , _referencedTypeClass :: M.Map (ProperName 'ClassName) ()
+    , _referencedValues :: M.Map Ident ()
+    , _referencedValueOp :: M.Map (OpName 'ValueOpName) ()
+    }
+  deriving (Show, Eq, Generic)
+
+instance Serialise ToCSDBInner
+
+instance Semigroup ToCSDBInner where
+  ToCSDBInner a1 a2 a3 a4 a5 a6 <> ToCSDBInner b1 b2 b3 b4 b5 b6 = ToCSDBInner (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6)
+
+instance Monoid ToCSDBInner where
+  mempty = ToCSDBInner mempty mempty mempty mempty mempty mempty
 
 -- NOTE[drathier]: yes, I know Language.PureScript.AST.Traversals exists, but since not all things are newtype wrapped, I would've missed some cases using that, e.g. kind signatures
 class ToCS a b | a -> b where
@@ -538,15 +565,17 @@ instance ToCS CaseAlternative () where
 
 instance ToCS [Declaration] () where
   toCS ds = do
+    let env = error "TODO[drathier]: missing env in ToCS"
+    let mn = error "TODO[drathier]: missing mn in ToCS"
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
-    findDeps ds
+    findDeps mn env ds
     <&> snd
     & traverse_ toCS
 
 instance ToCS DB () where
-  toCS (DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
+  toCS (DB dataOrNewtypeDecls ctorTypes typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
     dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
-    valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
+    valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ _ csdb) -> modify (<> csdb)))
     externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
     externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
     tyClassDecls & traverse_ (traverse_ (\(CSTypeClassDeclaration _ (_, csdb) _ tyDeps) ->
@@ -576,87 +605,105 @@ storeConstraintTypes (Constraint _ refTypeClass kindArgs targs mdata) = do
 -- CSDB put helpers
 
 csdbPutCtor :: Qualified (ProperName 'ConstructorName) -> State ToCSDB ()
-csdbPutCtor refCtor =
-  modify
-   (\v ->
-    v {
-      _referencedCtors =
-       M.insert
-        refCtor
-        ()
-        (_referencedCtors v)
-     }
+csdbPutCtor=
+  csdbPutHelper
+   (\v refCtor ->
+      v {
+        _referencedCtors =
+         M.insert
+          refCtor
+          ()
+          (_referencedCtors v)
+       }
    )
 
 csdbPutType :: Qualified (ProperName 'TypeName) -> State ToCSDB ()
-csdbPutType refType =
-  modify
-   (\v ->
-    v {
-      _referencedTypes =
-       M.insert
-        refType
-        ()
-        (_referencedTypes v)
-     }
+csdbPutType=
+  csdbPutHelper
+   (\v refType ->
+      v {
+        _referencedTypes =
+         M.insert
+          refType
+          ()
+          (_referencedTypes v)
+       }
    )
 
 csdbPutTypeOp :: Qualified (OpName 'TypeOpName) -> State ToCSDB ()
-csdbPutTypeOp refTypeOp =
-  modify
-   (\v ->
-    v {
-      _referencedTypeOp =
-       M.insert
-        refTypeOp
-        ()
-        (_referencedTypeOp v)
-     }
+csdbPutTypeOp =
+  csdbPutHelper
+   (\v refTypeOp ->
+      v {
+        _referencedTypeOp =
+         M.insert
+          refTypeOp
+          ()
+          (_referencedTypeOp v)
+       }
    )
 
 csdbPutTypeClass :: Qualified (ProperName 'ClassName) -> State ToCSDB ()
-csdbPutTypeClass refTypeClass =
-  modify
-   (\v ->
-    v {
-      _referencedTypeClass =
-       M.insert
-        refTypeClass
-        ()
-        (_referencedTypeClass v)
-     }
+csdbPutTypeClass =
+  csdbPutHelper
+   (\v refTypeClass ->
+      v {
+        _referencedTypeClass =
+         M.insert
+          refTypeClass
+          ()
+          (_referencedTypeClass v)
+       }
    )
 
 csdbPutIdent :: Qualified Ident -> State ToCSDB ()
-csdbPutIdent refValue =
-  modify
-   (\v ->
-    v {
-      _referencedValues =
-       M.insert
-        refValue
-        ()
-        (_referencedValues v)
-     }
+csdbPutIdent =
+  csdbPutHelper
+   (\v refValue ->
+      v {
+        _referencedValues =
+         M.insert
+          refValue
+          ()
+          (_referencedValues v)
+       }
    )
 
 csdbPutValueOp :: Qualified (OpName 'ValueOpName) -> State ToCSDB ()
-csdbPutValueOp refOp =
-  modify
-   (\v ->
-    v {
-      _referencedValueOp =
-       M.insert
-        refOp
-        ()
-        (_referencedValueOp v)
-     }
+csdbPutValueOp =
+  csdbPutHelper
+   (\v refOp ->
+      v {
+        _referencedValueOp =
+         M.insert
+          refOp
+          ()
+          (_referencedValueOp v)
+       }
    )
+
+
+csdbPutHelper :: (ToCSDBInner -> t -> ToCSDBInner) -> Qualified t -> State ToCSDB ()
+csdbPutHelper f (Qualified qBy ref) =
+  modify
+    (\(ToCSDB outer) ->
+      ToCSDB $
+      case qBy of
+        BySourcePos _ -> outer
+        ByModuleName mn ->
+          M.alter
+            (\maybeInner ->
+              Just (f (maybeInner & fromMaybe mempty) ref)
+            )
+            mn
+            outer
+    )
+
 
 -- DB put helpers
 
 dbPutDataDeclaration :: ProperName 'TypeName -> ToCSDB -> CSDataDeclaration -> State DB ()
-dbPutDataDeclaration tname nctorsDB csDataDeclaration =
+dbPutDataDeclaration tname nctorsDB csDataDeclaration@(CSDataDeclaration _ _ _ ctors _ _) =
   modify
    (\db ->
     db
@@ -666,6 +713,16 @@ dbPutDataDeclaration tname nctorsDB csDataDeclaration =
             tname
             [(nctorsDB, csDataDeclaration)]
             (_dataOrNewtypeDecls db)
+      , _ctorTypes =
+         foldr
+           (\(CSDataConstructorDeclaration ctorName _) m ->
+             M.insert
+              ctorName
+              tname
+              m
+            )
+            (_ctorTypes db)
+            ctors
       }
    )
 
@@ -861,7 +918,9 @@ data DB
     -- what things did we find?
     -- NOTE[drathier]: this gathers a list of direct dependencies, not transitive dependencies, and it doesn't fetch the shape of the dependencies. It's just the set of things we depend on, for us to fetch later.
     -- TODO[drathier]: make sure all these lists are singletons
+    -- TODO[drathier]: all that have a ToCSDB should have it separately like in this first row below, and the e.g. CSDataDeclaration should only contain the things that, if they change, should cause a recompile of things depending on this thing
     { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
+    , _ctorTypes :: M.Map (ProperName 'ConstructorName) (ProperName 'TypeName)
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
     , _valueDecls :: M.Map Ident [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
     , _externDecls :: M.Map Ident [CSExternDeclaration]
@@ -872,13 +931,15 @@ data DB
     , _tyClassDecls :: M.Map (ProperName 'ClassName) [CSTypeClassDeclaration]
     , _tyClassInstanceDecls :: M.Map Ident [CSTypeInstanceDeclaration]
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Serialise DB
 
 instance Semigroup DB where
-  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10)
+  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 
 
@@ -895,8 +956,8 @@ data CacheKey
 
 -- type SourceType = Type SourceAnn
 
-findDeps :: [Declaration] -> [(Declaration, DB)]
-findDeps ds =
+findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]
+findDeps mn env ds =
   let
     (kindsMap, rolesMap, otherDs) =
       ds
@@ -926,15 +987,18 @@ findDeps ds =
   in
   otherDs
     <&> (\a -> do
-      (a, mempty & execState (findDepsImpl getKind getRole a))
+      (a, mempty & execState (findDepsImpl getKind getRole mn env a))
      )
     & filter (\(_, db) -> db /= mempty)
 
 findDepsImpl
   :: (KindSignatureFor -> ProperName 'TypeName -> Maybe CSKindDeclaration)
   -> (ProperName 'TypeName -> Maybe CSRoleDeclaration)
-  -> Declaration -> State DB ()
-findDepsImpl getKind getRole d =
+  -> ModuleName
+  -> Environment
+  -> Declaration
+  -> State DB ()
+findDepsImpl getKind getRole mn env d =
   -- data Declaration
   case d of
     -- DataDeclaration SourceAnn DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [DataConstructorDeclaration]
@@ -950,8 +1014,10 @@ findDepsImpl getKind getRole d =
       -- pure $ f (show ("DataDeclaration", tname)) $
       --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
     -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
-    DataBindingGroupDeclaration _ ->
-      error "[drathier]: should be unreachable, all DataBindingGroupDeclaration ctors should have been flattened earlier"
+    DataBindingGroupDeclaration decls ->
+      -- rarely used here, but used by e.g. Data.Void
+      traverse_ (findDepsImpl getKind getRole mn env) decls
+
     -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
     TypeSynonymDeclaration _ tname targs stype -> do
       -- TODO[drathier]: find some source code that leaves targs with a Just SourceType.
@@ -977,17 +1043,26 @@ findDepsImpl getKind getRole d =
     TypeDeclaration _ ->
       error "ASSUMPTION[drathier]: should be unreachable, all TypeDeclaration ctors should have been extracted earlier"
     -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
-    ValueDeclaration (ValueDeclarationData _ ident namekind binders expr) -> do
+    ValueDeclaration (ValueDeclarationData _ ident namekind binders exprs) -> do
       -- TODO[drathier]: do we really need expr in here too? Yes, we need to know what modules its value and type refers to at least.
-      let !(nexprValue, nexprDB) = mempty & runState (traverse toCS expr)
-      dbPutValueDeclaration ident (CSValueDeclaration namekind binders nexprDB)
+      let !(_, nexprDB) = mempty & runState (traverse_ toCS exprs)
+      let tipe = case M.lookup (Qualified (ByModuleName mn) ident) (names env) of
+                    Nothing -> error "drathier1"
+                    Just (ty, _, _) -> const () <$> ty
+      dbPutValueDeclaration ident (CSValueDeclaration namekind (length binders) tipe nexprDB)
 
     -- BoundValueDeclaration SourceAnn Binder Expr
     BoundValueDeclaration _ _ _ ->
       error "ASSUMPTION[drathier]: should be unreachable, all BoundValueDeclaration ctors should have been desugared earlier"
     -- BindingGroupDeclaration (NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
-    BindingGroupDeclaration _ ->
-      error "ASSUMPTION[drathier]: should be unreachable, all BindingGroupDeclaration ctors should have been desugared earlier"
+    BindingGroupDeclaration decls ->
+      -- rarely used here, but used by e.g. instance HeytingAlgebra Boolean, since its type class function implementations call eachother (implies calls not)
+      decls
+        <&> (\((sourceAnn, ident), nameKind, expr) ->
+          ValueDeclaration (ValueDeclarationData sourceAnn ident nameKind [] [GuardedExpr [] expr])
+        )
+        & traverse_ (findDepsImpl getKind getRole mn env)
+
     -- ExternDeclaration SourceAnn Ident SourceType
     ExternDeclaration _ ident sourceType -> do
       let !(_, ntypeDB) = mempty & runState (toCS sourceType)
@@ -1065,10 +1140,10 @@ findDepsImpl getKind getRole d =
 -- happens in the CoreFn, not the original module AST, so it needs to be
 -- applied to the exported names here also. (The appropriate map is returned by
 -- `L.P.Renamer.renameInModule`.)
-moduleToExternsFile :: Module -> Environment -> M.Map Ident Ident -> ExternsFile
-moduleToExternsFile (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExternsFile: module exports were not elaborated"
+moduleToExternsFile :: M.Map ModuleName DB -> Module -> Environment -> M.Map Ident Ident -> ExternsFile
+moduleToExternsFile _ (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExternsFile: module exports were not elaborated"
 -- data Module = Module SourceSpan [Comment] ModuleName [Declaration] (Maybe [DeclarationRef])
-moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
+moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdents =
   let
     sortDsByCtor :: Foldable f => f Declaration -> M.Map String [Declaration]
     sortDsByCtor dsx =
@@ -1116,8 +1191,64 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
   let !_ = trace (show ("###moduleToExternsFile exps", exps)) () in
   let !_ = trace (show ("###moduleToExternsFile renamedIdents", renamedIdents)) () in
   let !_ = trace (show ("-------")) () in
-  let !_ = trace (show ("###moduleToExternsFile findDeps", findDeps ds)) () in
-  let !_ = trace (sShow ("###moduleToExternsFile findDepsDB", flip runState mempty $ toCS $ foldl (<>) mempty (snd <$> findDeps ds))) () in
+  let findDepsRes = findDeps mn env ds in
+  let !_ = trace (show ("###moduleToExternsFile findDeps", findDepsRes)) () in
+  let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
+  let csdbDeps = flip execState mempty $ toCS $ dbDeps in
+  let !_ = trace (show ("###moduleToExternsFile findDepsDB", dbDeps)) () in -- NOTE[drathier]: this is the beginning of the CacheShape data; i.e. what's the shape of this data, according to anyone who wants to use it
+  let !_ = trace (show ("###moduleToExternsFile findDepsCSDB", csdbDeps)) () in -- NOTE[drathier]: this will become the list of things we depend on from other modules, i.e. the things we need to look up, copy in, and diff against the old values to figure out if we should recompile or not
+
+  let efOurCacheShapes = dbDeps in
+
+  -- TODO[drathier]: handle imports? we only look at what's actually used, so what's the point?
+  -- TODO[drathier]: handle exports?
+  -- TODO[drathier]: handle re-exports?
+
+  let efUpstreamCacheShapes :: M.Map ModuleName DB
+      efUpstreamCacheShapes =
+          let local =
+                runToCSDB csdbDeps
+                -- don't look for ourselves or built-in modules in the upstream cache
+                & M.delete mn
+                & M.filterWithKey (\(ModuleName n) _ -> "Prim" `T.isPrefixOf` n == False)
+          in
+          M.merge
+            M.dropMissing
+            (M.mapMissing (\k a -> error ("[drathier]: cache key only in local: " <> show
+              ( "key", k
+              , "modu", mn
+              , "commonKeys", M.keys (M.intersection (const () <$> local) (const () <$> upstreamDBs))
+              , "localKeys", M.keys local
+              , "v", a
+              ))))
+            (M.zipWithMatched (\_mnDep up (ToCSDBInner
+                ctors
+                types
+                typeOp
+                typeClasses
+                values
+                valueOp) ->
+
+              -- DB mempty ctorShapes mempty valueShapes mempty mempty mempty mempty mempty typeClassShapes mempty
+
+              -- TODO[drathier]: it would be nice to check that each of the names we tried to look up matched exactly one thing when building this DB
+              DB
+                (M.intersectionWith (\_ b -> b) types (_dataOrNewtypeDecls up))
+                (M.intersectionWith (\_ b -> b) ctors (_ctorTypes up))
+                (M.intersectionWith (\_ b -> b) types (_typeSynonymDecls up))
+                (M.intersectionWith (\_ b -> b) values (_valueDecls up))
+                (M.intersectionWith (\_ b -> b) values (_externDecls up))
+                (M.intersectionWith (\_ b -> b) types (_externDataDecls up))
+                (M.intersectionWith (\_ b -> b) valueOp (_opFixity up))
+                (M.intersectionWith (\_ b -> b) valueOp (_ctorFixity up))
+                (M.intersectionWith (\_ b -> b) typeOp (_tyOpFixity up))
+                (M.intersectionWith (\_ b -> b) typeClasses (_tyClassDecls up))
+                (M.intersectionWith (\_ b -> b) values (_tyClassInstanceDecls up))
+        ))
+        upstreamDBs
+        local
+
+  in
   ExternsFile{..}
   where
   efVersion       = T.pack (showVersion Paths.version)
