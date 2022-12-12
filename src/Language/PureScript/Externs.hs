@@ -540,20 +540,23 @@ instance ToCS [Declaration] () where
   toCS ds = do
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps ds
-    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) -> do
-      dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
-      valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
-      externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
-      externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
-      tyClassDecls & traverse_ (traverse_ (\(CSTypeClassDeclaration _ (_, csdb) _ tyDeps) ->
-        do
-          modify (<> csdb)
-          tyDeps & traverse_ (\(CSTypeDeclaration _ _ csdb) -> modify (<> csdb))
-        ))
-      tyClassInstanceDecls & traverse_ (traverse_ (\(CSTypeInstanceDeclaration _ csdb1 _ csdb2 (_, csdb3)) ->
-          modify (<> csdb1 <> csdb2 <> csdb3)
-        ))
-    )
+    <&> snd
+    & traverse_ toCS
+
+instance ToCS DB () where
+  toCS (DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
+    dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
+    valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
+    externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
+    externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
+    tyClassDecls & traverse_ (traverse_ (\(CSTypeClassDeclaration _ (_, csdb) _ tyDeps) ->
+      do
+        modify (<> csdb)
+        tyDeps & traverse_ (\(CSTypeDeclaration _ _ csdb) -> modify (<> csdb))
+      ))
+    tyClassInstanceDecls & traverse_ (traverse_ (\(CSTypeInstanceDeclaration _ csdb1 _ csdb2 (_, csdb3)) ->
+        modify (<> csdb1 <> csdb2 <> csdb3)
+      ))
 
 instance ToCS (Type SourceAnn) () where
   toCS t = storeTypeRefs t
@@ -1113,7 +1116,8 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
   let !_ = trace (show ("###moduleToExternsFile exps", exps)) () in
   let !_ = trace (show ("###moduleToExternsFile renamedIdents", renamedIdents)) () in
   let !_ = trace (show ("-------")) () in
-  let !_ = trace (sShow ("###moduleToExternsFile findDeps", findDeps ds)) () in
+  let !_ = trace (show ("###moduleToExternsFile findDeps", findDeps ds)) () in
+  let !_ = trace (sShow ("###moduleToExternsFile findDepsDB", flip runState mempty $ toCS $ foldl (<>) mempty (snd <$> findDeps ds))) () in
   ExternsFile{..}
   where
   efVersion       = T.pack (showVersion Paths.version)
