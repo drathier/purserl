@@ -326,8 +326,15 @@ data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
   -- The first @SourceAnn@ serves as the annotation for the entire
   -- declaration, while the second @SourceAnn@ serves as the
   -- annotation for the type class and its arguments.
-data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration ChainId Integer (Either Text Ident) [SourceConstraint] (Qualified (ProperName 'ClassName)) [SourceType] TypeInstanceBody
+data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration (ChainId, Integer) ToCSDB (Qualified (ProperName 'ClassName)) ToCSDB (CSTypeInstanceBody, ToCSDB)
   deriving (Show)
+
+data CSTypeInstanceBody
+  = CSDerivedInstance
+  | CSNewtypeInstance
+  | CSExplicitInstance
+  deriving (Show, Eq)
+
 
   -- TODO[drathier]: fix this hack
 instance Eq CSDataDeclaration where
@@ -533,7 +540,7 @@ instance ToCS [Declaration] () where
   toCS ds = do
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps ds
-    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls) -> do
+    & traverse_ (\(_, DB dataOrNewtypeDecls typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) -> do
       dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
       valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ csdb) -> modify (<> csdb)))
       externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
@@ -542,6 +549,9 @@ instance ToCS [Declaration] () where
         do
           modify (<> csdb)
           tyDeps & traverse_ (\(CSTypeDeclaration _ _ csdb) -> modify (<> csdb))
+        ))
+      tyClassInstanceDecls & traverse_ (traverse_ (\(CSTypeInstanceDeclaration _ csdb1 _ csdb2 (_, csdb3)) ->
+          modify (<> csdb1 <> csdb2 <> csdb3)
         ))
     )
 
@@ -774,6 +784,20 @@ dbPutTypeClassDeclaration className csTypeClassDeclaration =
       }
    )
 
+dbPutTypeInstanceDeclaration :: Ident -> CSTypeInstanceDeclaration -> State DB ()
+dbPutTypeInstanceDeclaration ident csTypeInstanceDeclaration =
+  modify
+   (\db ->
+    db
+      {
+        _tyClassInstanceDecls =
+           M.insertWith (<>)
+            ident
+            [csTypeInstanceDeclaration]
+            (_tyClassInstanceDecls db)
+      }
+   )
+
 storeTypeRefs :: Type a -> State ToCSDB ()
 storeTypeRefs t =
   case t of
@@ -843,14 +867,15 @@ data DB
     , _ctorFixity :: M.Map (OpName 'ValueOpName) [CSCtorFixity]
     , _tyOpFixity :: M.Map (OpName 'TypeOpName) [CSTyOpFixity]
     , _tyClassDecls :: M.Map (ProperName 'ClassName) [CSTypeClassDeclaration]
+    , _tyClassInstanceDecls :: M.Map Ident [CSTypeInstanceDeclaration]
     }
   deriving (Show, Eq)
 
 instance Semigroup DB where
-  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9)
+  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 
 
@@ -1005,7 +1030,29 @@ findDepsImpl getKind getRole d =
             )
       dbPutTypeClassDeclaration className (CSTypeClassDeclaration ntargs (nconstraints, nconstraintsdb) fnDeps ndecls)
 
-    TypeInstanceDeclaration _ _ _ _ _ _ _ _ _ -> pure ()
+    -- TypeInstanceDeclaration SourceAnn SourceAnn ChainId Integer (Either Text Ident) [SourceConstraint] (Qualified (ProperName 'ClassName)) [SourceType] TypeInstanceBody
+    TypeInstanceDeclaration _ _ chainId chainIdIndex eitherTextIdentInstanceName dependencySourceConstraints className instanceSourceTypes derivedNewtypeExplicit -> do
+      let !(_, ndependencySourceConstraintsDB) = mempty & runState (traverse toCS dependencySourceConstraints)
+      let !(_, ninstanceSourceTypesDB) = mempty & runState (traverse toCS instanceSourceTypes)
+      let !(nderivedNewtypeExplicitNoDecls, nderivedNewtypeExplicit) = mempty & runState (
+                case derivedNewtypeExplicit of
+                  DerivedInstance -> pure CSDerivedInstance
+                  NewtypeInstance -> pure CSNewtypeInstance
+                  ExplicitInstance decls ->
+                    do
+                      toCS decls
+                      pure CSExplicitInstance
+                )
+      let !_ = dependencySourceConstraints <&>
+            (\case
+              Constraint _ _ [] _ _ -> ()
+              v -> error ("ASSUMPTION[drathier]: the constraintKindArgs field of constraints for type class instances is always empty." ++ show v)
+            )
+      let instanceName =
+            case eitherTextIdentInstanceName of
+              Left v -> error "ASSUMPTION[drathier]: we'll never get a Text value here; even generated instances have Idents"
+              Right v -> v
+      dbPutTypeInstanceDeclaration instanceName (CSTypeInstanceDeclaration (chainId, chainIdIndex) ndependencySourceConstraintsDB className ninstanceSourceTypesDB (nderivedNewtypeExplicitNoDecls, nderivedNewtypeExplicit))
 
 
 -- | Generate an externs file for all declarations in a module.
@@ -1054,8 +1101,8 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents =
   let !_ = trace (show ("###moduleToExternsFile ds.ExternDataDeclaration", M.lookup "ExternDataDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.FixityDeclaration", M.lookup "FixityDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.ImportDeclaration", M.lookup "ImportDeclaration" sds)) () in
-  let !_ = trace (sShow ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
-  let !_ = trace (sShow ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.DataDeclaration", M.lookup "DataDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.DataBindingGroupDeclaration", M.lookup "DataBindingGroupDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.TypeSynonymDeclaration", M.lookup "TypeSynonymDeclaration" sds)) () in
