@@ -23,7 +23,7 @@ import           Control.Monad.Writer.Class (MonadWriter(..))
 import           Data.Aeson (Value(String), (.=), object)
 import           Data.Bifunctor (bimap, first)
 import           Data.Either (partitionEithers)
-import           Data.Foldable (for_)
+import           Data.Foldable (for_, traverse_)
 import qualified Data.List.NonEmpty as NEL
 import qualified Data.Map as M
 import           Data.Maybe (fromMaybe, maybeToList)
@@ -109,6 +109,9 @@ data MakeActions m = MakeActions
   -- externs file, or if any of the requested codegen targets were not produced
   -- the last time this module was compiled, this function must return Nothing;
   -- this indicates that the module will have to be recompiled.
+  , touchOutputTimestamp :: ModuleName -> m (Maybe ())
+  -- ^ Set the time this module was last compiled to the current time. Similar
+  -- to and used with getOutputTimestamp.
   , readExterns :: ModuleName -> m (FilePath, Maybe ExternsFile)
   -- ^ Read the externs file for a module as a string and also return the actual
   -- path for the file.
@@ -174,7 +177,7 @@ buildMakeActions
   -- ^ Generate a prefix comment?
   -> MakeActions Make
 buildMakeActions outputDir filePathMap foreigns usePrefix =
-    MakeActions getInputTimestampsAndHashes getOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
+    MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
   getInputTimestampsAndHashes
@@ -233,6 +236,25 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
                 if externsTimestamp <= minimum modTimes
                   then Just externsTimestamp
                   else Nothing
+
+  touchOutputTimestamp :: ModuleName -> Make (Maybe ())
+  touchOutputTimestamp mn = do
+    -- first check that all relevant files exist, by fetching the timestamp of the existing cache files
+    externsTimestamp <- getOutputTimestamp mn
+    -- then touch them all, to mark them as up-to-date. If this fails partway through, the next getOutputTimestamp will consider it incomplete.
+    codegenTargets <- asks optionsCodegenTargets
+    case externsTimestamp of
+      Nothing -> pure Nothing
+      Just _ -> do
+        -- then, after reading all relevant files succeeded, we update their mtimes
+        touchTimestampMaybe (outputFilename mn externsFileName)
+        case NEL.nonEmpty (fmap (targetFilename mn) (S.toList codegenTargets)) of
+          Nothing ->
+            pure (Just ())
+          Just outputPaths -> do
+            mmodTimes <- traverse touchTimestampMaybe outputPaths
+            pure $ sequence_ mmodTimes
+
 
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
