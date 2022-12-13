@@ -511,11 +511,11 @@ instance ToCS Expr () where
         traverse_ toCS doNotationElems
         toCS inExpr
 
-      TypeClassDictionary _ _ _ -> error "[drathier]: should be unreachable, all TypeClassDictionary ctors should have been expanded already"
-      DeferredDictionary _ _ -> error "[drathier]should be unreachable, all DeferredDictionary ctors should have been expanded already"
-      DerivedInstancePlaceholder _ _ -> error "[drathier]should be unreachable, all DerivedInstancePlaceholder ctors should have been expanded already"
-      AnonymousArgument -> error "[drathier]: shshould be unreachable, all AnonymousArgument ctors should have been expanded already"
-      Hole _ -> error "[drathier]: should be unreachable, all Hole ctors should have been expanded already"
+      TypeClassDictionary _ _ _ -> internalError "[drathier]: should be unreachable, all TypeClassDictionary ctors should have been expanded already"
+      DeferredDictionary _ _ -> internalError "[drathier]should be unreachable, all DeferredDictionary ctors should have been expanded already"
+      DerivedInstancePlaceholder _ _ -> internalError "[drathier]should be unreachable, all DerivedInstancePlaceholder ctors should have been expanded already"
+      AnonymousArgument -> internalError "[drathier]: shshould be unreachable, all AnonymousArgument ctors should have been expanded already"
+      Hole _ -> internalError "[drathier]: should be unreachable, all Hole ctors should have been expanded already"
       PositionedValue _ _ e -> toCS e
 
 instance ToCS a () => ToCS (Literal a) () where
@@ -549,9 +549,9 @@ instance ToCS Binder () where
       ConstructorBinder _ ctorName binders -> do
         csdbPutCtor ctorName
         traverse_ toCS binders
-      OpBinder _ _ -> error "[drathier]: should be unreachable, all OpBinder ctors should have been desugared already"
-      BinaryNoParensBinder _ _ _ -> error "[drathier]: should be unreachable, all BinaryNoParensBinder ctors should have been desugared already"
-      ParensInBinder _ -> error "[drathier]: should be unreachable, all ParensInBinder ctors should have been desugared already"
+      OpBinder _ _ -> internalError "[drathier]: should be unreachable, all OpBinder ctors should have been desugared already"
+      BinaryNoParensBinder _ _ _ -> internalError "[drathier]: should be unreachable, all BinaryNoParensBinder ctors should have been desugared already"
+      ParensInBinder _ -> internalError "[drathier]: should be unreachable, all ParensInBinder ctors should have been desugared already"
       NamedBinder _ _ innerBinder -> toCS innerBinder
       PositionedBinder _ _ innerBinder -> toCS innerBinder
       TypedBinder sourceType innerBinder -> do
@@ -565,8 +565,8 @@ instance ToCS CaseAlternative () where
 
 instance ToCS [Declaration] () where
   toCS ds = do
-    let env = error "TODO[drathier]: missing env in ToCS"
-    let mn = error "TODO[drathier]: missing mn in ToCS"
+    let env = internalError "TODO[drathier]: missing env in ToCS"
+    let mn = internalError "TODO[drathier]: missing mn in ToCS"
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps mn env ds
     <&> snd
@@ -1024,7 +1024,7 @@ findDepsImpl getKind getRole mn env d =
       let ntargs =
             targs <&>
                 ( \case
-                    (targName, Just _) -> error "unhandled case; TypeSynonymDeclaration targ is Just"
+                    (targName, Just _) -> internalError "unhandled case; TypeSynonymDeclaration targ is Just"
                     (targName, Nothing) ->
                       (targName, Nothing)
                 )
@@ -1033,27 +1033,27 @@ findDepsImpl getKind getRole mn env d =
 
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
     KindDeclaration _ _ _ _ ->
-      error "[drathier]: should be unreachable, all KindDeclaration ctors should have been filtered out earlier"
+      internalError "[drathier]: should be unreachable, all KindDeclaration ctors should have been filtered out earlier"
 
     -- RoleDeclaration {-# UNPACK #-} !RoleDeclarationData
     RoleDeclaration _ ->
       -- ASSUMPTION[drathier]: got this compiler error when testing, assuming it to be true forever "Role declarations are only supported for data types, not for type synonyms nor type classes." We'll likely incorrectly  cache things wrt this if this changes in the future. Testing also shows that it works fine for newtypes, so I'm supporting that.
-      error "[drathier]: should be unreachable, all RoleDeclaration ctors should have been filtered out earlier"
+      internalError "[drathier]: should be unreachable, all RoleDeclaration ctors should have been filtered out earlier"
     -- TypeDeclaration {-# UNPACK #-} !TypeDeclarationData
     TypeDeclaration _ ->
-      error "ASSUMPTION[drathier]: should be unreachable, all TypeDeclaration ctors should have been extracted earlier"
+      internalError "ASSUMPTION[drathier]: should be unreachable, all TypeDeclaration ctors should have been extracted earlier"
     -- ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
     ValueDeclaration (ValueDeclarationData _ ident namekind binders exprs) -> do
       -- TODO[drathier]: do we really need expr in here too? Yes, we need to know what modules its value and type refers to at least.
       let !(_, nexprDB) = mempty & runState (traverse_ toCS exprs)
       let tipe = case M.lookup (Qualified (ByModuleName mn) ident) (names env) of
-                    Nothing -> error "drathier1"
+                    Nothing -> internalError "drathier1"
                     Just (ty, _, _) -> const () <$> ty
       dbPutValueDeclaration ident (CSValueDeclaration namekind (length binders) tipe nexprDB)
 
     -- BoundValueDeclaration SourceAnn Binder Expr
     BoundValueDeclaration _ _ _ ->
-      error "ASSUMPTION[drathier]: should be unreachable, all BoundValueDeclaration ctors should have been desugared earlier"
+      internalError "ASSUMPTION[drathier]: should be unreachable, all BoundValueDeclaration ctors should have been desugared earlier"
     -- BindingGroupDeclaration (NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
     BindingGroupDeclaration decls ->
       -- rarely used here, but used by e.g. instance HeytingAlgebra Boolean, since its type class function implementations call eachother (implies calls not)
@@ -1128,7 +1128,7 @@ findDepsImpl getKind getRole mn env d =
             )
       let instanceName =
             case eitherTextIdentInstanceName of
-              Left v -> error "ASSUMPTION[drathier]: we'll never get a Text value here; even generated instances have Idents"
+              Left v -> internalError "ASSUMPTION[drathier]: we'll never get a Text value here; even generated instances have Idents"
               Right v -> v
       dbPutTypeInstanceDeclaration instanceName (CSTypeInstanceDeclaration (chainId, chainIdIndex) ndependencySourceConstraintsDB className ninstanceSourceTypesDB (nderivedNewtypeExplicitNoDecls, nderivedNewtypeExplicit))
 
