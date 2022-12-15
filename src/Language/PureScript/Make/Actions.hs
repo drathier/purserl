@@ -23,7 +23,7 @@ import           Control.Monad.Writer.Class (MonadWriter(..))
 import           Data.Aeson (Value(String), (.=), object)
 import           Data.Bifunctor (bimap, first)
 import           Data.Either (partitionEithers)
-import           Data.Foldable (for_, traverse_)
+import           Data.Foldable (for_)
 import qualified Data.List.NonEmpty as NEL
 import qualified Data.Map as M
 import           Data.Maybe (fromMaybe, maybeToList)
