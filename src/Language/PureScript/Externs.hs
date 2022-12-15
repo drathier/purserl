@@ -216,47 +216,6 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
   qual = Qualified (ByModuleName efModuleName)
 
 
-
--- type ExternsA =
---   { imports :: Map ModuleName (Map CacheKey CacheShape)
---   , exportShapes :: Map CacheKey CacheShape
---   , exports :: Map CacheKey (WhatKindOfThingIsThisAndWhatAreItsParameters, Set (ModuleName, CacheKey))
---   }
---
--- type CacheShape = (WhatKindOfThingIsThisAndWhatAreItsParameters, Set (ModuleName, CacheKey))
---
--- -- ASSUMPTION[drathier]: this data type is opaque and only has an Eq and Ord instance. This is so that we can store it as an opaque bytestring or hash later on.
--- data WhatKindOfThingIsThisAndWhatAreItsParameters
---   = PrimType ModuleName (ProperName 'TypeName)
---   | TypeClassDictType ModuleName (ProperName 'TypeName)
---   | OwnModuleRef ModuleName (ProperName 'TypeName)
---   | CacheShapeTypeDecl
---     (ProperName 'TypeName)
---     [(Text, Maybe (Type ()))]
---     (Type ())
---   | CacheShapeForeignTypeDecl
---     (ProperName 'TypeName)
---     (Type ())
---   | CacheShapeDataDecl
---     DataDeclType
---     (ProperName 'TypeName)
---     [(Text, Maybe (Type ()))]
---     [(ProperName 'ConstructorName, [(Ident, Type ())])]
---   -- CacheShapeDataRecDecl
---   --   DataDeclType
---   --   (ProperName 'TypeName)
---   --   [(Text, Maybe (Type ()))]
---   --   [(ProperName 'ConstructorName, [(Ident, Type ())])]
---   deriving (Show, Eq, Ord, Generic)
---
--- instance Serialise CacheShape
---
--- data CacheTypeDetails = CacheTypeDetails (M.Map (ModuleName, ProperName 'TypeName) (CacheShape, CacheTypeDetails))
---   deriving (Show, Eq, Generic)
---
--- instance Serialise CacheTypeDetails
-
-
 -- Declarations suitable for caching, where things like SourcePos are removed, and each ctor is isolated
 data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration] (Maybe CSKindDeclaration) (Maybe CSRoleDeclaration)
   deriving (Show, Generic)
@@ -963,13 +922,6 @@ data CacheKey
 
 
 
--- data DataConstructorDeclaration = DataConstructorDeclaration
---   { dataCtorAnn :: !SourceAnn
---   , dataCtorName :: !(ProperName 'ConstructorName)
---   , dataCtorFields :: ![(Ident, SourceType)]
---   } deriving (Show, Eq)
-
--- type SourceType = Type SourceAnn
 
 findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]
 findDeps mn env ds =
@@ -1109,6 +1061,7 @@ findDepsImpl getKind getRole mn env d =
           TypeDeclaration (TypeDeclarationData _ ident tipe) -> do
             let (ntipe, ntipeDB) = mempty & runState (toCS tipe)
             pure $ CSTypeDeclaration ident (const () <$> tipe) ntipeDB
+          v -> error ("ASSUMPTION[drathier]: The inner declarations in the type class declaration are just TypeDeclarations." ++ show v)
         )
 
       -- TODO[drathier]: test the constraintKindArgs and constraintData fields of Constraint. I couldn't figure out a source input that would put anything in those fields.
@@ -1143,7 +1096,7 @@ findDepsImpl getKind getRole mn env d =
             )
       let instanceName =
             case eitherTextIdentInstanceName of
-              Left v -> internalError "ASSUMPTION[drathier]: we'll never get a Text value here; even generated instances have Idents"
+              Left _ -> internalError "ASSUMPTION[drathier]: we'll never get a Text value here; even generated instances have Idents"
               Right v -> v
       dbPutTypeInstanceDeclaration instanceName (CSTypeInstanceDeclaration (chainId, chainIdIndex) ndependencySourceConstraintsDB className ninstanceSourceTypesDB (nderivedNewtypeExplicitNoDecls, nderivedNewtypeExplicit))
 
@@ -1243,8 +1196,6 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                 typeClasses
                 values
                 valueOp) ->
-
-              -- DB mempty ctorShapes mempty valueShapes mempty mempty mempty mempty mempty typeClassShapes mempty
 
               -- TODO[drathier]: it would be nice to check that each of the names we tried to look up matched exactly one thing when building this DB
               DB
