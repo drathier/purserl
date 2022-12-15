@@ -414,10 +414,25 @@ data ToCSDBInner
     , _referencedTypes :: M.Map (ProperName 'TypeName) ()
     , _referencedTypeOp :: M.Map (OpName 'TypeOpName) ()
     , _referencedTypeClass :: M.Map (ProperName 'ClassName) ()
-    , _referencedValues :: M.Map Ident ()
+    , _referencedValues :: M.Map RunIdent ()
     , _referencedValueOp :: M.Map (OpName 'ValueOpName) ()
     }
   deriving (Show, Eq, Generic)
+
+-- NOTE[drathier]: some idents are run and re-packaged before we get here, so just matching a flat ident won't get you everything you need :( So we run the idents and wrap them up again
+newtype RunIdent = RunIdent T.Text
+  deriving (Show, Eq, Ord, Generic)
+
+instance Serialise RunIdent
+
+toRunIdent ident =
+  -- TODO[drathier]: this makes me sad, what's going on here? Somehow (Ident "a") and (GenIdent (Just "a") 42) result in the same variable name in source. Why isn't the second one "$a42", like when using runIdent?
+  RunIdent $
+    case ident of
+      GenIdent (Just name) _ -> name
+      _ -> runIdent ident
+
+-- TODO[drathier]: the type class instance decls have the same name; do they all overwrite each other in the cache? Do I need to qualify them, or skip them?
 
 instance Serialise ToCSDBInner
 
@@ -659,11 +674,11 @@ csdbPutTypeClass =
 csdbPutIdent :: Qualified Ident -> State ToCSDB ()
 csdbPutIdent =
   csdbPutHelper
-   (\v refValue ->
+   (\v ident ->
       v {
         _referencedValues =
          M.insert
-          refValue
+          (toRunIdent ident)
           ()
           (_referencedValues v)
        }
@@ -749,7 +764,7 @@ dbPutValueDeclaration ident csValueDeclaration =
       {
         _valueDecls =
            M.insertWith (<>)
-            ident
+            (toRunIdent ident)
             [csValueDeclaration]
             (_valueDecls db)
       }
@@ -764,7 +779,7 @@ dbPutExternDeclaration ident csExternDeclaration =
       {
         _externDecls =
            M.insertWith (<>)
-            ident
+            (toRunIdent ident)
             [csExternDeclaration]
             (_externDecls db)
       }
@@ -852,7 +867,7 @@ dbPutTypeInstanceDeclaration ident csTypeInstanceDeclaration =
       {
         _tyClassInstanceDecls =
            M.insertWith (<>)
-            ident
+            (toRunIdent ident)
             [csTypeInstanceDeclaration]
             (_tyClassInstanceDecls db)
       }
@@ -922,14 +937,14 @@ data DB
     { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
     , _ctorTypes :: M.Map (ProperName 'ConstructorName) (ProperName 'TypeName)
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
-    , _valueDecls :: M.Map Ident [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
-    , _externDecls :: M.Map Ident [CSExternDeclaration]
+    , _valueDecls :: M.Map RunIdent [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
+    , _externDecls :: M.Map RunIdent [CSExternDeclaration]
     , _externDataDecls :: M.Map (ProperName 'TypeName) [CSExternDataDeclaration]
     , _opFixity :: M.Map (OpName 'ValueOpName) [CSOpFixity]
     , _ctorFixity :: M.Map (OpName 'ValueOpName) [CSCtorFixity]
     , _tyOpFixity :: M.Map (OpName 'TypeOpName) [CSTyOpFixity]
     , _tyClassDecls :: M.Map (ProperName 'ClassName) [CSTypeClassDeclaration]
-    , _tyClassInstanceDecls :: M.Map Ident [CSTypeInstanceDeclaration]
+    , _tyClassInstanceDecls :: M.Map RunIdent [CSTypeInstanceDeclaration]
     }
   deriving (Show, Eq, Generic)
 
