@@ -13,11 +13,13 @@ module Language.PureScript.Externs
   , moduleToExternsFile
   , applyExternsFileToEnvironment
   , externsFileName
+  , DB
+  , dbDiffDiff
   ) where
 
 import Prelude
 
-import Codec.Serialise (Serialise)
+import Codec.Serialise (Serialise, serialise)
 import Control.Monad (join)
 import GHC.Generics (Generic)
 import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
@@ -82,6 +84,9 @@ data ExternsFile = ExternsFile
   } deriving (Show, Generic)
 
 instance Serialise ExternsFile
+
+instance Eq ExternsFile where
+  a == b = serialise a == serialise b
 
 -- | A module import in an externs file
 data ExternsImport = ExternsImport
@@ -916,11 +921,19 @@ instance Monoid DB where
   mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 
-
-data CacheKey
-  = CNDataNewtypeDecl (ProperName 'TypeName)
-
-
+dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11) =
+    DB
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11))
 
 
 findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]
@@ -1139,7 +1152,11 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
 
   in
-
+  let findDepsRes = findDeps mn env ds in
+  let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
+  let csdbDeps = flip execState mempty $ toCS $ dbDeps in
+  let efOurCacheShapes = dbDeps in
+{-
   let !_ = trace (show ("###moduleToExternsFile mn", mn)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.BoundValueDeclaration", M.lookup "BoundValueDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.BindingGroupDeclaration", M.lookup "BindingGroupDeclaration" sds)) () in
@@ -1147,26 +1164,30 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   let !_ = trace (show ("###moduleToExternsFile ds.ExternDataDeclaration", M.lookup "ExternDataDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.FixityDeclaration", M.lookup "FixityDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.ImportDeclaration", M.lookup "ImportDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
+-}
+  -- let !_ = trace (sShow ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
+{-
   let !_ = trace (show ("###moduleToExternsFile ds.DataDeclaration", M.lookup "DataDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.DataBindingGroupDeclaration", M.lookup "DataBindingGroupDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.TypeSynonymDeclaration", M.lookup "TypeSynonymDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.KindDeclaration", M.lookup "KindDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.RoleDeclaration", M.lookup "RoleDeclaration" sds)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.TypeDeclaration", M.lookup "TypeDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.ValueDeclaration", M.lookup "ValueDeclaration" sds)) () in
+-}
+  -- let !_ = trace (sShow ("###moduleToExternsFile ds.ValueDeclaration", M.lookup "ValueDeclaration" sds)) () in
+{-
   let !_ = trace (show ("###moduleToExternsFile exps", exps)) () in
   let !_ = trace (show ("###moduleToExternsFile renamedIdents", renamedIdents)) () in
   let !_ = trace (show ("-------")) () in
-  let findDepsRes = findDeps mn env ds in
   let !_ = trace (show ("###moduleToExternsFile findDeps", findDepsRes)) () in
-  let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
-  let csdbDeps = flip execState mempty $ toCS $ dbDeps in
   let !_ = trace (show ("###moduleToExternsFile findDepsDB", dbDeps)) () in -- NOTE[drathier]: this is the beginning of the CacheShape data; i.e. what's the shape of this data, according to anyone who wants to use it
   let !_ = trace (show ("###moduleToExternsFile findDepsCSDB", csdbDeps)) () in -- NOTE[drathier]: this will become the list of things we depend on from other modules, i.e. the things we need to look up, copy in, and diff against the old values to figure out if we should recompile or not
+-}
 
-  let efOurCacheShapes = dbDeps in
+  -- ("WARNING: old is empty",ModuleName "B")
+  -- TODO[drathier]: type aliases aren't tracked across deps yet; same bug as with the old attempt. Solved by re-exporting the relevant info. It seems like no expr has the type alias type anywhere; maybe type aliases are always lost? They're available in the ast at least, so we can get at them, even if we have to assume everyone depends on all type aliases always, and possibly same for type classes
+
 
   -- TODO[drathier]: handle imports? we only look at what's actually used, so what's the point?
   -- TODO[drathier]: handle exports?
@@ -1213,8 +1234,11 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
         ))
         upstreamDBs
         local
+        & M.filter (/= (mempty :: DB))
 
   in
+  -- let !_ = trace (sShow ("###moduleToExternsFile efUpstreamCacheShapes", efUpstreamCacheShapes)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile efOurCacheShapes", efOurCacheShapes)) () in
   ExternsFile{..}
   where
   efVersion       = T.pack (showVersion Paths.version)

@@ -50,7 +50,7 @@ import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
-
+import Debug.Trace
 -- | Rebuild a single module.
 --
 -- This function is used for fast-rebuild workflows (PSCi and psc-ide are examples).
@@ -254,8 +254,22 @@ make ma@MakeActions{..} ms = do
           env <- C.readMVar (bpEnv buildPlan)
           idx <- C.takeMVar (bpIndex buildPlan)
           C.putMVar (bpIndex buildPlan) (idx + 1)
-          (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
-          return $ BuildJobSucceeded (pwarnings' <> warnings) exts
+          let cfa = getCacheFilesAvailable buildPlan moduleName
+          nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
+          let doCompile badExts =
+                do
+                  (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
+                  let hindsightNeededRebuild = Just exts /= badExts
+                  let !_ = if hindsightNeededRebuild then () else trace (show moduleName <> ": pointless rebuild, should have been a cache hit. " <> show cfa) ()
+                  return $ BuildJobSucceeded (pwarnings' <> warnings) exts
+          case shouldRecompile moduleName cfa externs of
+            Right exts
+              -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
+              | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
+              ->
+              return $ BuildJobSucceeded pwarnings' exts
+            Right badExts -> doCompile (Just badExts)
+            Left badExts -> doCompile badExts
         Nothing -> return BuildJobSkipped
 
     BuildPlan.markComplete buildPlan moduleName result
