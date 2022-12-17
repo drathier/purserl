@@ -30,12 +30,13 @@ import Test.Hspec
 utcMidnightOnDate :: Integer -> Int -> Int -> UTCTime
 utcMidnightOnDate year month day = UTCTime (fromGregorian year month day) (secondsToDiffTime 0)
 
--- ASSUMPTION[drathier]: we're assuming A < B < C < D in the tests below
-timestampA, timestampB, timestampC, timestampD :: UTCTime
+-- ASSUMPTION[drathier]: we're assuming A < B < C < ... etc in the tests below
+timestampA, timestampB, timestampC, timestampD, timestampE :: UTCTime
 timestampA = utcMidnightOnDate 2019 1 1
 timestampB = utcMidnightOnDate 2019 1 2
 timestampC = utcMidnightOnDate 2019 1 3
 timestampD = utcMidnightOnDate 2019 1 4
+timestampE = utcMidnightOnDate 2019 1 5
 
 -- stack test --fast --ta '-m asdf'
 
@@ -315,6 +316,57 @@ spec = do
       compile modulePaths `shouldReturn` moduleNames ["B"]
       -- no changes when rebuilding
       compile modulePaths `shouldReturn` moduleNames []
+
+    it "asdf tracks type class super classes across module boundaries" $ do
+      -- first, type class without type arguments
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          moduleCPath = sourcesDir </> "C.purs"
+          moduleDPath = sourcesDir </> "D.purs"
+          modulePaths = [moduleAPath, moduleBPath, moduleCPath, moduleDPath]
+          -- diamond shape
+          moduleAContent1 = "module A where\nclass TCA a <= TC a where\n  tc :: a\nclass TCA a\nclass TCB a\nclass TCC a\n"
+          moduleAContent12 = "module A where\nclass (TCA a, TCB a) <= TC a where\n  tc :: a\nclass TCA a\nclass TCB a\nclass TCC a\n"
+          moduleAContent2 = "module A where\nclass TCB a <= TC a where\n  tc :: a\nclass TCA a\nclass TCB a\nclass TCC a\n"
+          moduleAContent3 = "module A where\nclass TCC a <= TC a where\n  tc :: a\nclass TCA a\nclass TCB a\nclass TCC a\n"
+          moduleBContent = "module B where\nimport A\ndata BT = BT Int\ninstance TC BT where\n  tc = BT (55)\ninstance TCA BT\ninstance TCB BT\n"
+          moduleCContent = "module C where\nimport A\nthingy = tc\n"
+          moduleDContent = "module D where\nimport B\nimport C\nasdf = thingy :: BT\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      writeFileWithTimestamp moduleCPath timestampC moduleCContent
+      writeFileWithTimestamp moduleDPath timestampD moduleDContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C", "D"]
+
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
+      -- change super class of type class
+      writeFileWithTimestamp moduleAPath timestampB moduleAContent2
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C", "D"]
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
+      -- add second super class of type class
+      writeFileWithTimestamp moduleAPath timestampC moduleAContent12
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C", "D"]
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
+      -- change super class of type class to one without instance for BT
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent3
+      -- should fail because of missing type class instance TCC BT
+      (Left _errors, recompiledModules) <- compileWithResult modulePaths
+      recompiledModules `shouldBe` moduleNames ["A", "B", "C"]
+
+      -- change back to something that should work
+      writeFileWithTimestamp moduleAPath timestampE moduleAContent1
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C", "D"]
+
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+
 
     it "asdf changing an unexported declaration doesn't trigger downstream recompiles" $ do
       -- first, type class without type arguments
