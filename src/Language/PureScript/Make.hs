@@ -50,7 +50,10 @@ import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
+import           System.Environment (lookupEnv)
 import Debug.Trace
+import System.IO.Unsafe (unsafePerformIO)
+
 -- | Rebuild a single module.
 --
 -- This function is used for fast-rebuild workflows (PSCi and psc-ide are examples).
@@ -262,7 +265,24 @@ make ma@MakeActions{..} ms = do
                   let hindsightNeededRebuild = Just exts /= badExts
                   let !_ = if hindsightNeededRebuild then () else trace (show moduleName <> ": pointless rebuild, should have been a cache hit. " <> show cfa) ()
                   return $ BuildJobSucceeded (pwarnings' <> warnings) exts
+
+          -- [drathier]: so that we can quickly go back and forth between caching and non-caching versions when testing this out
+          experimentalCachingDisabledViaEnvvar <- do
+            v <- pure $ unsafePerformIO $ lookupEnv "PURS_DISABLE_EXPERIMENTAL_CACHE"
+            pure $ case v of
+              Just "0" -> False
+              Just "no" -> False
+              Just "false" -> False
+              Just "False" -> False
+              Just "FALSE" -> False
+              Just "" -> False
+              Nothing -> False
+              _ -> True
+
           case shouldRecompile moduleName cfa externs of
+            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile (Just badExts)
+            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile badExts
+            --
             Right exts
               -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
               | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
