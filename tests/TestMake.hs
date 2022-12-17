@@ -385,7 +385,7 @@ spec = do
       -- no changes when rebuilding
       compile modulePaths `shouldReturn` moduleNames []
 
-    it "asdf adding a new declaration doesn't have to trigger downstream recompiles [future optimization]" $ do
+    it "asdf adding a new declaration doesn't have to trigger downstream recompiles" $ do
       -- first, type class without type arguments
       let moduleAPath = sourcesDir </> "A.purs"
           moduleBPath = sourcesDir </> "B.purs"
@@ -405,7 +405,7 @@ spec = do
       -- no changes when rebuilding
       compile modulePaths `shouldReturn` moduleNames []
 
-    it "asdf adding a new data declaration doesn't have to trigger downstream recompiles [future optimization]" $ do
+    it "asdf adding a new data declaration doesn't have to trigger downstream recompiles" $ do
       -- first, type class without type arguments
       let moduleAPath = sourcesDir </> "A.purs"
           moduleBPath = sourcesDir </> "B.purs"
