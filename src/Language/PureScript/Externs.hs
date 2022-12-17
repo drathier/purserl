@@ -222,10 +222,37 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 
 
 -- Declarations suitable for caching, where things like SourcePos are removed, and each ctor is isolated
-data CSDataDeclaration = CSDataDeclaration DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [CSDataConstructorDeclaration] (Maybe CSKindDeclaration) (Maybe CSRoleDeclaration)
+-- Only type-level details, for when ctors aren't used.
+data CSDataDeclarationTypeOnly =
+  CSDataDeclarationTypeOnly
+    { csDataDeclDataOrNewtype :: DataDeclType
+    , csDataDeclName :: ProperName 'TypeName
+    , csDataDeclTargs :: [(Text, Maybe SourceType)]
+    , csDataDeclKind :: Maybe CSKindDeclaration
+    , csDataDeclRole :: Maybe CSRoleDeclaration
+    }
   deriving (Show, Generic)
 
-instance Serialise CSDataDeclaration
+-- Only value-level details. Only needed when ctors are used. Not useful without its corresponding CSDataDeclarationTypeOnly.
+data CSDataConstructorDeclaration
+  = CSDataConstructorDeclaration
+    { csDataCtorName :: !(ProperName 'ConstructorName)
+    , csDataCtorFields :: ![(Ident, Type ())]
+    }
+  deriving (Show, Eq, Generic)
+
+-- Both type-level and value-level details together, for when ctors are in use.
+data CSDataDeclarationWithCtors =
+  CSDataDeclarationWithCtors
+    { csDataDeclTypeOnly ::  CSDataDeclarationTypeOnly
+    , csDataDeclCtorDecls :: [CSDataConstructorDeclaration]
+    }
+  deriving (Show, Generic)
+
+instance Serialise CSDataDeclarationTypeOnly
+instance Serialise CSDataConstructorDeclaration
+instance Serialise CSDataDeclarationWithCtors
+
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
@@ -318,7 +345,9 @@ instance Serialise CSTypeInstanceBody
 
 
   -- TODO[drathier]: fix this hack
-instance Eq CSDataDeclaration where
+instance Eq CSDataDeclarationTypeOnly where
+    a == b = show a == show b
+instance Eq CSDataDeclarationWithCtors where
     a == b = show a == show b
 instance Eq CSTypeSynonymDeclaration where
     a == b = show a == show b
@@ -345,15 +374,6 @@ instance Eq CSTyOpFixity where
     a == b = show a == show b
 
 
-
-data CSDataConstructorDeclaration
-  = CSDataConstructorDeclaration
-    { csdataCtorName :: !(ProperName 'ConstructorName)
-    , csdataCtorFields :: ![(Ident, Type ())]
-    }
-  deriving (Show, Eq, Generic)
-
-instance Serialise CSDataConstructorDeclaration
 
 data ToCSDB
   = ToCSDB (M.Map ModuleName ToCSDBInner)
@@ -552,8 +572,9 @@ instance ToCS [Declaration] () where
     & traverse_ toCS
 
 instance ToCS DB () where
-  toCS (DB dataOrNewtypeDecls ctorTypes typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
-    dataOrNewtypeDecls & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
+  toCS (DB dataOrNewtypeDeclsTypeOnly dataOrNewtypeDeclsWithCtors ctorTypes typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
+    dataOrNewtypeDeclsTypeOnly & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
+    dataOrNewtypeDeclsWithCtors & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
     valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ _ csdb) -> modify (<> csdb)))
     externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
     externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
@@ -584,7 +605,7 @@ storeConstraintTypes (Constraint _ refTypeClass kindArgs targs mdata) = do
 -- CSDB put helpers
 
 csdbPutCtor :: Qualified (ProperName 'ConstructorName) -> State ToCSDB ()
-csdbPutCtor=
+csdbPutCtor =
   csdbPutHelper
    (\v refCtor ->
       v {
@@ -597,7 +618,7 @@ csdbPutCtor=
    )
 
 csdbPutType :: Qualified (ProperName 'TypeName) -> State ToCSDB ()
-csdbPutType=
+csdbPutType =
   csdbPutHelper
    (\v refType ->
       v {
@@ -681,17 +702,22 @@ csdbPutHelper f (Qualified qBy ref) =
 
 -- DB put helpers
 
-dbPutDataDeclaration :: ProperName 'TypeName -> ToCSDB -> CSDataDeclaration -> State DB ()
-dbPutDataDeclaration tname nctorsDB csDataDeclaration@(CSDataDeclaration _ _ _ ctors _ _) =
+dbPutDataDeclaration :: ProperName 'TypeName -> ToCSDB -> CSDataDeclarationWithCtors -> State DB ()
+dbPutDataDeclaration tname nctorsDB csDataDeclaration@(CSDataDeclarationWithCtors typelevel ctors) =
   modify
    (\db ->
     db
       {
-        _dataOrNewtypeDecls =
+        _dataOrNewtypeDeclsTypeOnly =
+           M.insertWith (<>)
+            tname
+            [(nctorsDB, typelevel)]
+            (_dataOrNewtypeDeclsTypeOnly db)
+      , _dataOrNewtypeDeclsFull =
            M.insertWith (<>)
             tname
             [(nctorsDB, csDataDeclaration)]
-            (_dataOrNewtypeDecls db)
+            (_dataOrNewtypeDeclsFull db)
       , _ctorTypes =
          foldr
            (\(CSDataConstructorDeclaration ctorName _) m ->
@@ -898,7 +924,8 @@ data DB
     -- NOTE[drathier]: this gathers a list of direct dependencies, not transitive dependencies, and it doesn't fetch the shape of the dependencies. It's just the set of things we depend on, for us to fetch later.
     -- TODO[drathier]: make sure all these lists are singletons
     -- TODO[drathier]: all that have a ToCSDB should have it separately like in this first row below, and the e.g. CSDataDeclaration should only contain the things that, if they change, should cause a recompile of things depending on this thing
-    { _dataOrNewtypeDecls :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclaration)]
+    { _dataOrNewtypeDeclsTypeOnly :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclarationTypeOnly)]
+    , _dataOrNewtypeDeclsFull :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclarationWithCtors)]
     , _ctorTypes :: M.Map (ProperName 'ConstructorName) (ProperName 'TypeName)
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
     , _valueDecls :: M.Map RunIdent [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
@@ -915,13 +942,13 @@ data DB
 instance Serialise DB
 
 instance Semigroup DB where
-  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11)
+  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 
-dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11) =
+dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
     DB
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1))
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2))
@@ -934,6 +961,7 @@ dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11) (DB b1 b2 b3 b4 b5 b6 b7 b8 b
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9))
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10))
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11))
+      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12))
 
 
 findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]
@@ -990,7 +1018,11 @@ findDepsImpl getKind getRole mn env d =
               Data -> getKind DataSig tname
               Newtype -> getKind NewtypeSig tname
 
-      dbPutDataDeclaration tname nctorsDB (CSDataDeclaration dataOrNewtype tname targs nctorsValue mkind (getRole tname))
+      dbPutDataDeclaration tname nctorsDB
+        (CSDataDeclarationWithCtors
+          (CSDataDeclarationTypeOnly dataOrNewtype tname targs mkind (getRole tname))
+          nctorsValue
+        )
       -- pure $ f (show ("DataDeclaration", tname)) $
       --   show ("DataDeclaration", dataOrNewtype, tname, targs, ctors)
     -- DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
@@ -1218,9 +1250,26 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                 values
                 valueOp) ->
 
+                let
+                    dbCtorToType :: M.Map (ProperName 'TypeName) (ProperName 'ConstructorName)
+                    dbCtorToType =
+                      _ctorTypes up
+                      & M.toList
+                      <&> (\(a,b) -> (b,a))
+                      & M.fromList
+
+                    typesRefByCtors :: M.Map (ProperName 'TypeName) ()
+                    typesRefByCtors =
+                      ctors
+                        & M.intersectionWith (\a _ -> a) (_ctorTypes up)
+                        & M.elems
+                        <&> (,())
+                        & M.fromList
+                in
               -- TODO[drathier]: it would be nice to check that each of the names we tried to look up matched exactly one thing when building this DB
               DB
-                (M.intersectionWith (\_ b -> b) types (_dataOrNewtypeDecls up))
+                (M.intersectionWith (\_ b -> b) types (_dataOrNewtypeDeclsTypeOnly up))
+                (M.intersectionWith (\_ b -> b) typesRefByCtors (_dataOrNewtypeDeclsFull up))
                 (M.intersectionWith (\_ b -> b) ctors (_ctorTypes up))
                 (M.intersectionWith (\_ b -> b) types (_typeSynonymDecls up))
                 (M.intersectionWith (\_ b -> b) values (_valueDecls up))

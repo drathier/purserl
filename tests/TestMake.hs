@@ -138,7 +138,7 @@ spec = do
       writeFileWithTimestamp moduleAPath timestampD moduleAContent2
       compile modulePaths `shouldReturn` moduleNames ["A", "B"]
 
-    it "asdf only recompiles direct dependents even if they don't import the constructors [future optimization]" $ do
+    it "asdf only recompiles direct dependents even if they don't import the constructors" $ do
       -- NOTE[drathier]: while constructors can still be exported in spirit via a Generic instance, all type class instances live next to the data type or the type class definition, and we don't inline it, so it will have been updated already
       let moduleAPath = sourcesDir </> "A.purs"
           moduleBPath = sourcesDir </> "B.purs"
@@ -155,9 +155,7 @@ spec = do
       compile modulePaths `shouldReturn` moduleNames ["A", "B", "C"]
 
       writeFileWithTimestamp moduleAPath timestampD moduleAContent2
-      -- [drathier]: future optimization; look at what we're actually using
-      -- compile modulePaths `shouldReturn` moduleNames ["A", "B"]
-      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C"]
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
 
     it "asdf does not recompile anything when no source files changed" $ do
       let moduleAPath = sourcesDir </> "A.purs"
