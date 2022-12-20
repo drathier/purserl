@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FunctionalDependencies #-}
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
@@ -256,7 +257,7 @@ instance Serialise CSDataDeclarationWithCtors
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
-data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) (Maybe CSKindDeclaration)
+data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) ToCSDB (Maybe CSKindDeclaration)
   deriving (Show, Generic)
 
 instance Serialise CSTypeSynonymDeclaration
@@ -575,6 +576,7 @@ instance ToCS DB () where
   toCS (DB dataOrNewtypeDeclsTypeOnly dataOrNewtypeDeclsWithCtors ctorTypes typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
     dataOrNewtypeDeclsTypeOnly & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
     dataOrNewtypeDeclsWithCtors & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
+    typeSynonymDecls & traverse_ (traverse_ (\(CSTypeSynonymDeclaration _ _ _ csdb _) -> modify (<> csdb)))
     valueDecls & traverse_ (traverse_ (\(CSValueDeclaration _ _ _ csdb) -> modify (<> csdb)))
     externDecls & traverse_ (traverse_ (\(CSExternDeclaration csdb) -> modify (<> csdb)))
     externDataDecls & traverse_ (traverse_ (\(CSExternDataDeclaration csdb) -> modify (<> csdb)))
@@ -1040,8 +1042,9 @@ findDepsImpl getKind getRole mn env d =
                     (targName, Nothing) ->
                       (targName, Nothing)
                 )
-      let nstype = const () <$> stype
-      dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype (getKind TypeSynonymSig tname))
+      let nstype = stype <&> const ()
+      let nstypeDB = stype & replaceTypeSynonyms (typeSynonyms env <&> snd) & flip execState mempty
+      dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype nstypeDB (getKind TypeSynonymSig tname))
 
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
     KindDeclaration _ _ _ _ ->
@@ -1098,7 +1101,7 @@ findDepsImpl getKind getRole mn env d =
           dbPutTyOpFixity tyOpName (CSTyOpFixity fixity tname)
 
     -- ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
-    ImportDeclaration _ _ _ _ -> pure ()
+    ImportDeclaration _ modu importDeclType mAlias -> pure ()
     -- TypeClassDeclaration SourceAnn (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
     TypeClassDeclaration _ className targs constraints fnDeps decls -> do
       ndecls <- decls & traverse (\decl ->
@@ -1146,6 +1149,26 @@ findDepsImpl getKind getRole mn env d =
       dbPutTypeInstanceDeclaration instanceName (CSTypeInstanceDeclaration (chainId, chainIdIndex) ndependencySourceConstraintsDB className ninstanceSourceTypesDB (nderivedNewtypeExplicitNoDecls, nderivedNewtypeExplicit))
 
 
+replaceTypeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) (Type a) -> Type a -> State ToCSDB (Type a)
+replaceTypeSynonyms typeSynonymsMap =
+  -- NOTE[drathier]: replaceAllTypeSynonyms exists, but I couldn't get it to work in this context.
+  -- TODO[drathier]: this shouldn't have to look further than the module we imported the type alias from. Currently it fetches all the way down, because it looks at the Environment, rather than the Externs cache shape. On the other hand, it's unlikely to matter much in practice.
+  let f t =
+        case t of
+          TypeConstructor _ qt@(Qualified (ByModuleName modu) _) | moduIsPrim modu -> do
+            csdbPutType qt
+            pure t
+          TypeConstructor _ qt@(Qualified (ByModuleName modu) tipe) ->
+            case M.lookup qt typeSynonymsMap of
+              Nothing -> internalError (sShow ("[drathier]: couldn't find upstream type constructor in env", qt, modu, tipe))
+              Just v -> do
+                csdbPutType qt
+                replaceTypeSynonyms typeSynonymsMap v
+          _ -> pure t
+  in everywhereOnTypesM f
+
+
+
 -- | Generate an externs file for all declarations in a module.
 --
 -- The `Map Ident Ident` argument should contain any top-level `GenIdent`s that
@@ -1184,6 +1207,20 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
 
   in
+  let possiblyImportedTypeAliasesFrom :: M.Map ModuleName () -- [(ProperName 'TypeName)]
+      possiblyImportedTypeAliasesFrom =
+        ds
+        & concatMap (\case
+          -- TODO[drathier]: look at importDeclType
+          ImportDeclaration _ modu _importDeclType _mAlias ->
+            [modu]
+          _ -> []
+        )
+        <&> (,())
+        & M.fromList
+  in
+  let !exportedThings = findExportedThings exps in
+  -- let !importedThings = findImportedThings exps in
   let findDepsRes = findDeps mn env ds in
   let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
   let csdbDeps = flip execState mempty $ toCS $ dbDeps in
@@ -1227,19 +1264,26 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
   let efUpstreamCacheShapes :: M.Map ModuleName DB
       efUpstreamCacheShapes =
-          let local =
+          let currentDeps =
                 runToCSDB csdbDeps
+                -- TODO[drathier]: we always depend on all imported type aliases. We shouldn't have to do that.
+                & M.merge
+                  (M.mapMissing (\_ () -> mempty))
+                  (M.mapMissing (\_ b -> b))
+                  (M.zipWithMatched (\_ () b -> b))
+                  possiblyImportedTypeAliasesFrom
+
                 -- don't look for ourselves or built-in modules in the upstream cache
                 & M.delete mn
-                & M.filterWithKey (\(ModuleName n) _ -> "Prim" `T.isPrefixOf` n == False)
+                & M.filterWithKey (\m _ -> moduIsPrim m == False)
           in
           M.merge
             M.dropMissing
-            (M.mapMissing (\k a -> error ("[drathier]: cache key only in local: " <> show
+            (M.mapMissing (\k a -> error ("[drathier]: cache key only in currentDeps2, missing in build history: " <> show
               ( "key", k
               , "modu", mn
-              , "commonKeys", M.keys (M.intersection (const () <$> local) (const () <$> upstreamDBs))
-              , "localKeys", M.keys local
+              , "commonKeys", M.keys (M.intersection (const () <$> currentDeps) (const () <$> upstreamDBs))
+              , "currentDepsKeys", M.keys currentDeps
               , "v", a
               ))))
             (M.zipWithMatched (\_mnDep up (ToCSDBInner
@@ -1267,11 +1311,14 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                         & M.fromList
                 in
               -- TODO[drathier]: it would be nice to check that each of the names we tried to look up matched exactly one thing when building this DB
+
+              -- TODO[drathier]: the dry run envvar should still run the caching logic, to see if it would've skipped the recompile, and also compare the rebuilt exts to the cached ones, to see if the rebuild was needed. If there's a mismatch in either direction, print it to stdout so I can debug it later.
+
               DB
                 (M.intersectionWith (\_ b -> b) types (_dataOrNewtypeDeclsTypeOnly up))
                 (M.intersectionWith (\_ b -> b) typesRefByCtors (_dataOrNewtypeDeclsFull up))
                 (M.intersectionWith (\_ b -> b) ctors (_ctorTypes up))
-                (M.intersectionWith (\_ b -> b) types (_typeSynonymDecls up))
+                (_typeSynonymDecls up) -- (M.intersectionWith (\_ b -> b) types (_typeSynonymDecls up)) -- TODO[drathier]: We don't really know if a type alias was used or not, because type aliases get replaced with the thing they're aliasing before we get here. However, we could look at explicit exports and explicit imports to filter this a bit.
                 (M.intersectionWith (\_ b -> b) values (_valueDecls up))
                 (M.intersectionWith (\_ b -> b) values (_externDecls up))
                 (M.intersectionWith (\_ b -> b) types (_externDataDecls up))
@@ -1282,12 +1329,12 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                 (M.intersectionWith (\_ b -> b) values (_tyClassInstanceDecls up))
         ))
         upstreamDBs
-        local
+        currentDeps
         & M.filter (/= (mempty :: DB))
 
   in
-  -- let !_ = trace (sShow ("###moduleToExternsFile efUpstreamCacheShapes", efUpstreamCacheShapes)) () in
-  -- let !_ = trace (sShow ("###moduleToExternsFile efOurCacheShapes", efOurCacheShapes)) () in
+  let !_ = trace (sShow ("###moduleToExternsFile efUpstreamCacheShapes", mn, efUpstreamCacheShapes)) () in
+  let !_ = trace (sShow ("###moduleToExternsFile efOurCacheShapes", mn, efOurCacheShapes)) () in
   ExternsFile{..}
   where
   efVersion       = T.pack (showVersion Paths.version)
@@ -1360,3 +1407,6 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
 externsFileName :: FilePath
 externsFileName = "externs.cbor"
+
+moduIsPrim :: ModuleName -> Bool
+moduIsPrim (ModuleName n) = "Prim" `T.isPrefixOf` n

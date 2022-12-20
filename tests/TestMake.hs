@@ -224,7 +224,7 @@ spec = do
       compile modulePaths `shouldReturn` moduleNames []
 
     -- More complicated caching rules; transitive type aliases
-    it "asdf transitively tracks the underlying type of type aliases" $ do
+    it "asdf transitively tracks the underlying type of type aliases, with local type alias" $ do
       let moduleAPath = sourcesDir </> "A.purs"
           moduleBPath = sourcesDir </> "B.purs"
           moduleCPath = sourcesDir </> "C.purs"
@@ -233,6 +233,30 @@ spec = do
           moduleAContent2 = "module A where\ntype TA = String\n"
           moduleBContent = "module B where\nimport A\ntype TB = TA\n"
           moduleCContent = "module C where\nimport B\ntype TC = TB\nthingy :: TC\nthingy = 42\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      writeFileWithTimestamp moduleCPath timestampC moduleCContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B", "C"]
+
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+      -- type aliases need to be tracked transitively; otherwise the public api of B doesn't change after this compile, and the build succeeds, even though C.thingy = 42 now has a type annotation that says it's a String
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent2
+      -- TODO[drathier]: track type alias changes, so this next recompile here fails as expected with a type error
+      (Left _errors, recompiledModules) <- compileWithResult modulePaths
+      recompiledModules `shouldBe` moduleNames ["A", "B", "C"]
+      pure ()
+
+    it "asdf transitively tracks the underlying type of type aliases, without local type alias" $ do
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          moduleCPath = sourcesDir </> "C.purs"
+          modulePaths = [moduleAPath, moduleBPath, moduleCPath]
+          moduleAContent1 = "module A where\ntype TA = Int\n"
+          moduleAContent2 = "module A where\ntype TA = String\n"
+          moduleBContent = "module B where\nimport A\ntype TB = TA\n"
+          moduleCContent = "module C where\nimport B\nthingy :: TB\nthingy = 42\n"
 
       writeFileWithTimestamp moduleAPath timestampA moduleAContent1
       writeFileWithTimestamp moduleBPath timestampB moduleBContent
