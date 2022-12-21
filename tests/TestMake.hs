@@ -243,7 +243,7 @@ spec = do
       compile modulePaths `shouldReturn` moduleNames []
       -- type aliases need to be tracked transitively; otherwise the public api of B doesn't change after this compile, and the build succeeds, even though C.thingy = 42 now has a type annotation that says it's a String
       writeFileWithTimestamp moduleAPath timestampD moduleAContent2
-      -- TODO[drathier]: track type alias changes, so this next recompile here fails as expected with a type error
+
       (Left _errors, recompiledModules) <- compileWithResult modulePaths
       recompiledModules `shouldBe` moduleNames ["A", "B", "C"]
       pure ()
@@ -267,9 +267,28 @@ spec = do
       compile modulePaths `shouldReturn` moduleNames []
       -- type aliases need to be tracked transitively; otherwise the public api of B doesn't change after this compile, and the build succeeds, even though C.thingy = 42 now has a type annotation that says it's a String
       writeFileWithTimestamp moduleAPath timestampD moduleAContent2
-      -- TODO[drathier]: track type alias changes, so this next recompile here fails as expected with a type error
+
       (Left _errors, recompiledModules) <- compileWithResult modulePaths
       recompiledModules `shouldBe` moduleNames ["A", "B", "C"]
+      pure ()
+
+    it "asdf should not consider private type aliases to be part of the public api of a module" $ do
+      let moduleAPath = sourcesDir </> "A.purs"
+          moduleBPath = sourcesDir </> "B.purs"
+          modulePaths = [moduleAPath, moduleBPath]
+          moduleAContent1 = "module A (TAPublic) where\ntype TAPublic = Int\ntype TAPrivate = Int\n"
+          moduleAContent2 = "module A (TAPublic) where\ntype TAPublic = Int\ntype TAPrivate = String\n"
+          moduleBContent = "module B where\nimport A\nthingy :: TAPublic\nthingy = 42\n"
+
+      writeFileWithTimestamp moduleAPath timestampA moduleAContent1
+      writeFileWithTimestamp moduleBPath timestampB moduleBContent
+      compile modulePaths `shouldReturn` moduleNames ["A", "B"]
+
+      -- no changes when rebuilding
+      compile modulePaths `shouldReturn` moduleNames []
+      -- type aliases need to be tracked transitively; otherwise the public api of B doesn't change after this compile, and the build succeeds, even though C.thingy = 42 now has a type annotation that says it's a String
+      writeFileWithTimestamp moduleAPath timestampD moduleAContent2
+      compile modulePaths `shouldReturn` moduleNames ["A"]
       pure ()
 
     -- More complicated caching rules; transitive type classes

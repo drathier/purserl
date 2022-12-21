@@ -949,6 +949,22 @@ instance Semigroup DB where
 instance Monoid DB where
   mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
+dbIsctExports :: ExportSummary -> DB -> DB
+dbIsctExports (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+  DB
+    (M.intersectionWith (\_ b -> b) typeName a1)
+    a2
+    a3
+    (M.intersectionWith (\_ b -> b) typeName a4)
+    a5
+    a6
+    (M.intersectionWith (\_ b -> b) typeName a7)
+    (M.intersectionWith (\_ b -> b) valueOpName a8)
+    (M.intersectionWith (\_ b -> b) valueOpName a9)
+    (M.intersectionWith (\_ b -> b) typeOpName a10)
+    (M.intersectionWith (\_ b -> b) typeClass a11)
+    (M.intersectionWith (\_ b -> b) typeClassInstance a12)
+
 
 dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
     DB
@@ -1167,7 +1183,91 @@ replaceTypeSynonyms typeSynonymsMap =
           _ -> pure t
   in everywhereOnTypesM f
 
+-- TODO[drathier]: this is very similar to ToCSDBInner, but not quite. This tracks exported values, ToCSDBInner tracks used types.
+data ExportSummary =
+  ExportSummary
+    { _refValue :: M.Map Ident ()
+    , _refTypeName :: M.Map (ProperName 'TypeName) ()
+    , _refTypeOpName :: M.Map (OpName 'TypeOpName) ()
+    , _refTypeClass :: M.Map (ProperName 'ClassName) ()
+    , _refTypeClassInstance :: M.Map RunIdent ()
+    , _refOpName :: M.Map (OpName 'ValueOpName) ()
+    } deriving (Show, Eq, Semigroup)
 
+instance Monoid ExportSummary where
+  mempty = ExportSummary mempty mempty mempty mempty mempty mempty
+
+exsumPutTypeOpName ref v =
+  v {
+    _refTypeOpName =
+     M.insert
+      ref
+      ()
+      (_refTypeOpName v)
+   }
+
+exsumPutTypeName ref v =
+  v {
+    _refTypeName =
+     M.insert
+      ref
+      ()
+      (_refTypeName v)
+   }
+
+exsumPutValue ref v =
+  v {
+    _refValue =
+     M.insert
+      ref
+      ()
+      (_refValue v)
+   }
+
+exsumPutOpName ref v =
+  v {
+    _refOpName =
+     M.insert
+      ref
+      ()
+      (_refOpName v)
+   }
+
+exsumPutTypeClassRef ref v =
+  v {
+    _refTypeClass =
+     M.insert
+      ref
+      ()
+      (_refTypeClass v)
+   }
+
+exsumPutTypeClassInstance ref v =
+  v {
+    _refTypeClassInstance =
+     M.insert
+      ref
+      ()
+      (_refTypeClassInstance v)
+   }
+
+
+findExportedThings :: [DeclarationRef] -> ExportSummary
+findExportedThings declRefs =
+  foldl findExportedThingsImpl mempty declRefs
+
+findExportedThingsImpl :: ExportSummary -> DeclarationRef -> ExportSummary
+findExportedThingsImpl exsum declRef =
+  case declRef of
+    TypeClassRef _ className -> exsumPutTypeClassRef className exsum
+    TypeOpRef _ tyOpName -> exsumPutTypeOpName tyOpName exsum
+    TypeRef _ tyName mCtorNames -> exsumPutTypeName tyName exsum
+    ValueRef _ ident -> exsumPutValue ident exsum
+    ValueOpRef _ opName -> exsumPutOpName opName exsum
+    TypeInstanceRef _ ident _ -> exsumPutTypeClassInstance (toRunIdent ident) exsum
+    ModuleRef _ modu -> error "notimpl1213"
+    ReExportRef _ (ExportSource mImportedFromModu originallyDefinedInModu) ref -> error "notimpl1214"
+  -- TODO[drathier]: build something that looks like DB, so we can map isct them or similar
 
 -- | Generate an externs file for all declarations in a module.
 --
@@ -1224,7 +1324,8 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   let findDepsRes = findDeps mn env ds in
   let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
   let csdbDeps = flip execState mempty $ toCS $ dbDeps in
-  let efOurCacheShapes = dbDeps in
+  let efOurCacheShapes = dbDeps & dbIsctExports exportedThings in
+  -- let !_ = trace (sShow ("###moduleToExternsFile findExportedThings", mn, exportedThings)) () in
 {-
   let !_ = trace (show ("###moduleToExternsFile mn", mn)) () in
   let !_ = trace (show ("###moduleToExternsFile ds.BoundValueDeclaration", M.lookup "BoundValueDeclaration" sds)) () in
