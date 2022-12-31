@@ -151,15 +151,15 @@ cfaPrebuilt cfa =
 
 shouldRecompile :: ModuleName -> CacheFilesAvailable -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile
 shouldRecompile mn cfa externs = do
-  let cfatag =
-        case cfa of
-          UpToDate _ -> "UpToDate"
-          SourceChanged -> "SourceChanged"
-          DepChanged _ -> "DepChanged"
-  let !_ =
-        case cfa of
-          DepChanged _ -> ()
-          _ -> trace (T.unpack (runModuleName mn) <> " shouldRecompile? " <> show cfatag) ()
+  -- let cfatag =
+  --       case cfa of
+  --         UpToDate _ -> "UpToDate"
+  --         SourceChanged -> "SourceChanged"
+  --         DepChanged _ -> "DepChanged"
+  -- let !_ =
+  --       case cfa of
+  --         DepChanged _ -> ()
+  --         _ -> trace (T.unpack (runModuleName mn) <> " shouldRecompile? " <> show cfatag) ()
   case cfa of
     UpToDate pb -> Right (pbExternsFile pb)
     SourceChanged -> Left Nothing
@@ -167,7 +167,7 @@ shouldRecompile mn cfa externs = do
       let oldExts = pbExternsFile pb in
       let old = efUpstreamCacheShapes oldExts in
       let shapesMap = M.intersectionWith (\_ s -> s) old $ M.fromList $ (\ef -> (efModuleName ef, efOurCacheShapes ef)) <$> externs in
-      let !_ = if old == mempty then trace (show ("WARNING: old is empty", mn)) () else () in
+      let !_ = if old == mempty then trace (show ("WARNING: module doesn't export anything at all!" :: String, mn)) () else () in
 
       let
           interestingDiff5 =
@@ -182,10 +182,10 @@ shouldRecompile mn cfa externs = do
       in
       case interestingDiff5 == mempty of
         True ->
-          trace (T.unpack (runModuleName mn) <> ": cache hit") $
+          -- trace (T.unpack (runModuleName mn) <> ": cache hit") $
           Right oldExts
         False ->
-          trace (T.unpack (runModuleName mn) <> ": cache miss: " <> sShow interestingDiff5) $
+          -- trace (T.unpack (runModuleName mn) <> ": cache miss: " <> sShow interestingDiff5) $
           Left (Just oldExts)
 
 

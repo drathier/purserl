@@ -53,6 +53,7 @@ import           System.FilePath (replaceExtension)
 import           System.Environment (lookupEnv)
 import Debug.Trace
 import System.IO.Unsafe (unsafePerformIO)
+import PrettyPrint
 
 -- | Rebuild a single module.
 --
@@ -259,11 +260,17 @@ make ma@MakeActions{..} ms = do
           C.putMVar (bpIndex buildPlan) (idx + 1)
           let cfa = getCacheFilesAvailable buildPlan moduleName
           nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
-          let doCompile badExts =
+
+          let doCompile wasCacheHit badExts =
                 do
                   (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
-                  let hindsightNeededRebuild = Just exts /= badExts
-                  let !_ = if hindsightNeededRebuild then () else trace (show moduleName <> ": pointless rebuild, should have been a cache hit. " <> show cfa) ()
+                  let meta = (("cfa" :: String, cfa), ("badExts" :: String, badExts), ("exts" :: String, exts))
+                  case (badExts, wasCacheHit) of
+                    (Just e, WasCacheMiss) | e == exts ->
+                      trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues pointless rebuild, should have been a cache hit. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
+                    (Just e, WasCacheHit) | e /= exts ->
+                      trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues missing rebuild, caching system said it was a cache hit but rebuilding it changed some files. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
+                    _ -> pure ()
                   return $ BuildJobSucceeded (pwarnings' <> warnings) exts
 
           -- [drathier]: so that we can quickly go back and forth between caching and non-caching versions when testing this out
@@ -280,22 +287,24 @@ make ma@MakeActions{..} ms = do
               _ -> True
 
           case shouldRecompile moduleName cfa externs of
-            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile (Just badExts)
-            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile badExts
+            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
+            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
             --
             Right exts
               -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
               | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
               ->
               return $ BuildJobSucceeded pwarnings' exts
-            Right badExts -> doCompile (Just badExts)
-            Left badExts -> doCompile badExts
+            Right badExts -> doCompile WasCacheHit (Just badExts)
+            Left badExts -> doCompile WasCacheMiss badExts
         Nothing -> return BuildJobSkipped
 
     BuildPlan.markComplete buildPlan moduleName result
 
   onExceptionLifted :: m a -> m b -> m a
   onExceptionLifted l r = control $ \runInIO -> runInIO l `onException` runInIO r
+
+data WasCacheHit = WasCacheHit | WasCacheMiss
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.

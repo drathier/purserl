@@ -1434,8 +1434,8 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
         & M.filter (/= (mempty :: DB))
 
   in
-  let !_ = trace (sShow ("###moduleToExternsFile efUpstreamCacheShapes", mn, efUpstreamCacheShapes)) () in
-  let !_ = trace (sShow ("###moduleToExternsFile efOurCacheShapes", mn, efOurCacheShapes)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile efUpstreamCacheShapes", mn, efUpstreamCacheShapes)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile efOurCacheShapes", mn, efOurCacheShapes)) () in
   ExternsFile{..}
   where
   efVersion       = T.pack (showVersion Paths.version)
