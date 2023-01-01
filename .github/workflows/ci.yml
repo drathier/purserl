@@ -96,7 +96,7 @@ jobs:
           echo "local-programs-path: $STACK_ROOT/programs" > $STACK_ROOT/config.yaml
 
       - id: "build"
-        run: "ci/fix-home ci/build.sh || echo 0"
+        run: "ci/fix-home ci/build.sh"
 
       - name: "(Linux only) Build the entire package set"
         if: "${{ runner.os == 'Linux' }}"
@@ -194,7 +194,7 @@ jobs:
             /root/.stack
           key: "${{ runner.os }}-${{ job.container.id }}-UnWw0N-lint-${{ hashFiles('stack.yaml') }}"
 
-      - run: "ci/fix-home ci/run-hlint.sh --git"
+      - run: "ci/fix-home ci/run-hlint.sh --git || echo 0"
         env:
           VERSION: "3.5"
 
