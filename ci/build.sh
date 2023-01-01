@@ -30,7 +30,7 @@ STACK="stack --no-terminal --haddock --jobs=2"
 STACK_OPTS="--test"
 if [ "$CI_RELEASE" = "true" -o "$CI_PRERELEASE" = "true" ]
 then
-  STACK_OPTS="$STACK_OPTS --flag=purescript:RELEASE"
+  STACK_OPTS="$STACK_OPTS --flag=purescript:RELEASE --ghc-options='-Wwarn'"
 else
   STACK_OPTS="$STACK_OPTS --fast"
 fi
