@@ -1064,15 +1064,9 @@ findDepsImpl getKind getRole mn env d =
 
     -- TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
     TypeSynonymDeclaration _ tname targs stype -> do
-      -- TODO[drathier]: find some source code that leaves targs with a Just SourceType.
-      let ntargs =
-            targs <&>
-                ( \case
-                    (targName, Just _) -> internalError "unhandled case; TypeSynonymDeclaration targ is Just"
-                    (targName, Nothing) ->
-                      (targName, Nothing)
-                )
+      -- TODO[drathier]: KindedType.purs has a "Just SourceType" targ. I don't know how to handle it here. Right now I'm just storing it as-is.
       let nstype = stype <&> const ()
+      let ntargs = targs <&> fmap (fmap (fmap (const ())))
       let nstypeDB = stype & replaceTypeSynonyms (types env) (typeSynonyms env <&> snd) & flip execState mempty
       dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype nstypeDB (getKind TypeSynonymSig tname))
 
