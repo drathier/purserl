@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FunctionalDependencies #-}
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
@@ -949,21 +948,36 @@ instance Semigroup DB where
 instance Monoid DB where
   mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
-dbIsctExports :: ExportSummary -> DB -> DB
-dbIsctExports (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
-  DB
-    (M.intersectionWith (\_ b -> b) typeName a1)
-    a2
-    a3
-    (M.intersectionWith (\_ b -> b) typeName a4)
-    a5
-    a6
-    (M.intersectionWith (\_ b -> b) typeName a7)
-    (M.intersectionWith (\_ b -> b) valueOpName a8)
-    (M.intersectionWith (\_ b -> b) valueOpName a9)
-    (M.intersectionWith (\_ b -> b) typeOpName a10)
-    (M.intersectionWith (\_ b -> b) typeClass a11)
-    (M.intersectionWith (\_ b -> b) typeClassInstance a12)
+dbIsctExports :: M.Map ModuleName DB -> ExportSummary -> DB -> DB
+dbIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+  let
+    upstreamReExports =
+      M.intersectionWith
+        (\innerExportSummary innerDB -> dbIsctExports upstreamDBs innerExportSummary innerDB)
+        reExportedRefs
+        upstreamDBs
+    ourDB =
+      DB
+        (M.intersectionWith (\_ b -> b) typeName a1)
+        a2
+        a3
+        (M.intersectionWith (\_ b -> b) typeName a4)
+        a5
+        a6
+        (M.intersectionWith (\_ b -> b) typeName a7)
+        (M.intersectionWith (\_ b -> b) valueOpName a8)
+        (M.intersectionWith (\_ b -> b) valueOpName a9)
+        (M.intersectionWith (\_ b -> b) typeOpName a10)
+        (M.intersectionWith (\_ b -> b) typeClass a11)
+        (M.intersectionWith (\_ b -> b) typeClassInstance a12)
+  in
+  foldl'
+    (\dbSoFar upstreamDB ->
+      -- [drathier]: <> is Map union; it keeps left arg on conflict
+      dbSoFar <> upstreamDB
+    )
+    ourDB
+    upstreamReExports
 
 
 dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
@@ -1059,7 +1073,7 @@ findDepsImpl getKind getRole mn env d =
                       (targName, Nothing)
                 )
       let nstype = stype <&> const ()
-      let nstypeDB = stype & replaceTypeSynonyms (typeSynonyms env <&> snd) & flip execState mempty
+      let nstypeDB = stype & replaceTypeSynonyms (types env) (typeSynonyms env <&> snd) & flip execState mempty
       dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype nstypeDB (getKind TypeSynonymSig tname))
 
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
@@ -1165,21 +1179,23 @@ findDepsImpl getKind getRole mn env d =
       dbPutTypeInstanceDeclaration instanceName (CSTypeInstanceDeclaration (chainId, chainIdIndex) ndependencySourceConstraintsDB className ninstanceSourceTypesDB (nderivedNewtypeExplicitNoDecls, nderivedNewtypeExplicit))
 
 
-replaceTypeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) (Type a) -> Type a -> State ToCSDB (Type a)
-replaceTypeSynonyms typeSynonymsMap =
+replaceTypeSynonyms
+  :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  -> M.Map (Qualified (ProperName 'TypeName)) (Type a) -> Type a -> State ToCSDB (Type a)
+replaceTypeSynonyms typesMap typeSynonymsMap =
   -- NOTE[drathier]: replaceAllTypeSynonyms exists, but I couldn't get it to work in this context.
   -- TODO[drathier]: this shouldn't have to look further than the module we imported the type alias from. Currently it fetches all the way down, because it looks at the Environment, rather than the Externs cache shape. On the other hand, it's unlikely to matter much in practice.
   let f t =
         case t of
-          TypeConstructor _ qt@(Qualified (ByModuleName modu) _) | moduIsPrim modu -> do
-            csdbPutType qt
-            pure t
           TypeConstructor _ qt@(Qualified (ByModuleName modu) tipe) ->
+            -- type aliases (type synonyms)
             case M.lookup qt typeSynonymsMap of
-              Nothing -> internalError (sShow ("[drathier]: couldn't find upstream type constructor in env", qt, modu, tipe))
               Just v -> do
                 csdbPutType qt
-                replaceTypeSynonyms typeSynonymsMap v
+                replaceTypeSynonyms typesMap typeSynonymsMap v
+              Nothing | moduIsPrim modu -> csdbPutType qt >> pure t
+              Nothing | M.member qt typesMap -> csdbPutType qt >> pure t
+              Nothing -> internalError (sShow ("[drathier]: couldn't find upstream type constructor in env", qt, modu, tipe))
           _ -> pure t
   in everywhereOnTypesM f
 
@@ -1192,10 +1208,15 @@ data ExportSummary =
     , _refTypeClass :: M.Map (ProperName 'ClassName) ()
     , _refTypeClassInstance :: M.Map RunIdent ()
     , _refOpName :: M.Map (OpName 'ValueOpName) ()
-    } deriving (Show, Eq, Semigroup)
+    -- [drathier]: re-exports of whole modules are desugared to one-by-one export refs, so we don't have to handle them here
+    , _reExportRef :: M.Map ModuleName ExportSummary
+    } deriving (Show, Eq)
 
 instance Monoid ExportSummary where
-  mempty = ExportSummary mempty mempty mempty mempty mempty mempty
+  mempty = ExportSummary mempty mempty mempty mempty mempty mempty mempty
+
+instance Semigroup ExportSummary where
+  ExportSummary a1 a2 a3 a4 a5 a6 a7 <> ExportSummary b1 b2 b3 b4 b5 b6 b7 = ExportSummary (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7)
 
 exsumPutTypeOpName ref v =
   v {
@@ -1233,6 +1254,16 @@ exsumPutOpName ref v =
       (_refOpName v)
    }
 
+exsumPutExportRef (ExportSource _ origSrc) ref v =
+  v {
+    _reExportRef =
+     M.insertWith
+      (<>)
+      origSrc
+      ref
+      (_reExportRef v)
+   }
+
 exsumPutTypeClassRef ref v =
   v {
     _refTypeClass =
@@ -1265,9 +1296,10 @@ findExportedThingsImpl exsum declRef =
     ValueRef _ ident -> exsumPutValue ident exsum
     ValueOpRef _ opName -> exsumPutOpName opName exsum
     TypeInstanceRef _ ident _ -> exsumPutTypeClassInstance (toRunIdent ident) exsum
-    ModuleRef _ modu -> error "notimpl1213"
-    ReExportRef _ (ExportSource mImportedFromModu originallyDefinedInModu) ref -> error "notimpl1214"
-  -- TODO[drathier]: build something that looks like DB, so we can map isct them or similar
+    ReExportRef _ src ref -> exsumPutExportRef src (findExportedThings [ref]) exsum
+    ModuleRef _ modu ->
+      -- [drathier]: re-exports of whole modules are desugared to one-by-one export refs, so we don't have to handle them here. However, they're still left in, so we have to ignore them here, rather than assert that we never see any value like this here
+      exsum
 
 -- | Generate an externs file for all declarations in a module.
 --
@@ -1324,7 +1356,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   let findDepsRes = findDeps mn env ds in
   let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
   let csdbDeps = flip execState mempty $ toCS $ dbDeps in
-  let efOurCacheShapes = dbDeps & dbIsctExports exportedThings in
+  let efOurCacheShapes = dbDeps & dbIsctExports upstreamDBs exportedThings in
   -- let !_ = trace (sShow ("###moduleToExternsFile findExportedThings", mn, exportedThings)) () in
 {-
   let !_ = trace (show ("###moduleToExternsFile mn", mn)) () in

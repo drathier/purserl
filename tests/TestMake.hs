@@ -408,6 +408,28 @@ spec = do
       -- no changes when rebuilding
       compile modulePaths `shouldReturn` moduleNames []
 
+    -- it "asdf re-exporting one more value should trigger downstream recompilations" $ do
+    --   TODO[drathier]: I wasn't able to construct a failing test case for re-exports. I'm not sure if this is a real problem. The export shadowing doesn't seem to be an issue, as it would be in Haskell for example.
+    --   let moduleAPath = sourcesDir </> "A.purs"
+    --       moduleBPath = sourcesDir </> "B.purs"
+    --       moduleCPath = sourcesDir </> "C.purs"
+    --       modulePaths = [moduleAPath, moduleBPath, moduleCPath]
+    --       moduleAContent = "module A where\nasdf = 42\nqwe = 17\n"
+    --       moduleBContent1 = "module B (module A) where\nimport A (asdf)\n"
+    --       moduleBContent2 = "module B (module A) where\nimport A (asdf, qwe)\n"
+    --       moduleCContent = "module C (qwe) where\nimport B\nqwe = 123\n"
+    --
+    --   writeFileWithTimestamp moduleAPath timestampA moduleAContent
+    --   writeFileWithTimestamp moduleBPath timestampB moduleBContent1
+    --   writeFileWithTimestamp moduleCPath timestampC moduleCContent
+    --   compile modulePaths `shouldReturn` moduleNames ["A", "B", "C"]
+    --
+    --   -- no changes when rebuilding
+    --   compile modulePaths `shouldReturn` moduleNames []
+    --
+    --   writeFileWithTimestamp moduleBPath timestampD moduleBContent2
+    --   writeFileWithTimestamp moduleCPath timestampD (moduleCContent <> "\n")
+    --   compile modulePaths `shouldReturn` moduleNames ["B", "C"]
 
     it "asdf changing an unexported declaration doesn't trigger downstream recompiles" $ do
       -- first, type class without type arguments
