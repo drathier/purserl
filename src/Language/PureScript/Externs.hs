@@ -56,6 +56,18 @@ import Data.Foldable
 import Language.PureScript.Roles (Role)
 
 
+newtype SerializationFormat a = SerializationFormat a
+  deriving (Show, Eq, Generic)
+
+instance Serialise a => Serialise (SerializationFormat a)
+instance Monoid a => Monoid (SerializationFormat a) where
+  mempty = SerializationFormat mempty
+instance Semigroup a => Semigroup (SerializationFormat a) where
+  SerializationFormat a <> SerializationFormat b = SerializationFormat (a <> b)
+
+toSerialized :: a -> SerializationFormat a
+toSerialized a = SerializationFormat a
+
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
   -- NOTE: Make sure to keep `efVersion` as the first field in this
@@ -231,7 +243,7 @@ data CSDataDeclarationTypeOnly =
     , csDataDeclKind :: Maybe CSKindDeclaration
     , csDataDeclRole :: Maybe CSRoleDeclaration
     }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 -- Only value-level details. Only needed when ctors are used. Not useful without its corresponding CSDataDeclarationTypeOnly.
 data CSDataConstructorDeclaration
@@ -247,7 +259,7 @@ data CSDataDeclarationWithCtors =
     { csDataDeclTypeOnly ::  CSDataDeclarationTypeOnly
     , csDataDeclCtorDecls :: [CSDataConstructorDeclaration]
     }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSDataDeclarationTypeOnly
 instance Serialise CSDataConstructorDeclaration
@@ -257,28 +269,28 @@ instance Serialise CSDataDeclarationWithCtors
   -- A type synonym declaration (name, arguments, type)
   --
 data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) ToCSDB (Maybe CSKindDeclaration)
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSTypeSynonymDeclaration
   -- |
   -- A kind signature declaration
   --
 data CSKindDeclaration = CSKindDeclaration (Type ())
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSKindDeclaration
   -- |
   -- A role declaration (name, roles)
   --
 data CSRoleDeclaration = CSRoleDeclaration [Role]
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSRoleDeclaration
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
 data CSValueDeclaration = CSValueDeclaration NameKind Int (Type ()) ToCSDB
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSValueDeclaration
 
@@ -286,41 +298,41 @@ instance Serialise CSValueDeclaration
   -- A foreign import declaration (name, type)
   --
 data CSExternDeclaration = CSExternDeclaration ToCSDB
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSExternDeclaration
   -- |
   -- A data type foreign import (name, kind)
   --
 data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSExternDataDeclaration
   -- |
   -- A fixity declaration
   --
 data CSOpFixity = CSOpFixity Fixity (Qualified Ident)
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSOpFixity
 data CSCtorFixity = CSCtorFixity Fixity (Qualified (ProperName 'ConstructorName))
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSCtorFixity
 data CSTyOpFixity = CSTyOpFixity Fixity (Qualified (ProperName 'TypeName))
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSTyOpFixity
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
 data CSTypeClassDeclaration = CSTypeClassDeclaration [(Text, Maybe (Type ()))] ([Constraint ()], ToCSDB) [FunctionalDependency] [CSTypeDeclaration]
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSTypeClassDeclaration
 
 data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSTypeDeclaration
   -- |
@@ -331,7 +343,7 @@ instance Serialise CSTypeDeclaration
   -- declaration, while the second @SourceAnn@ serves as the
   -- annotation for the type class and its arguments.
 data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration (ChainId, Integer) ToCSDB (Qualified (ProperName 'ClassName)) ToCSDB (CSTypeInstanceBody, ToCSDB)
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance Serialise CSTypeInstanceDeclaration
 
@@ -342,38 +354,6 @@ data CSTypeInstanceBody
   deriving (Show, Eq, Generic)
 
 instance Serialise CSTypeInstanceBody
-
-
-  -- TODO[drathier]: fix this hack
-instance Eq CSDataDeclarationTypeOnly where
-    a == b = show a == show b
-instance Eq CSDataDeclarationWithCtors where
-    a == b = show a == show b
-instance Eq CSTypeSynonymDeclaration where
-    a == b = show a == show b
-instance Eq CSKindDeclaration where
-    a == b = show a == show b
-instance Eq CSRoleDeclaration where
-    a == b = show a == show b
-instance Eq CSValueDeclaration where
-    a == b = show a == show b
-instance Eq CSExternDeclaration where
-    a == b = show a == show b
-instance Eq CSExternDataDeclaration where
-    a == b = show a == show b
-instance Eq CSTypeClassDeclaration where
-    a == b = show a == show b
-instance Eq CSTypeInstanceDeclaration where
-    a == b = show a == show b
-
-instance Eq CSOpFixity where
-    a == b = show a == show b
-instance Eq CSCtorFixity where
-    a == b = show a == show b
-instance Eq CSTyOpFixity where
-    a == b = show a == show b
-
-
 
 data ToCSDB
   = ToCSDB (M.Map ModuleName ToCSDBInner)
