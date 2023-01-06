@@ -274,7 +274,7 @@ replaceLocals m = if M.null m then identity else map f' where
   f e = e
 
 -- |
--- Store in the monad a new binding for the given expression, returning a Var
+-- Binary in the monad a new binding for the given expression, returning a Var
 -- referencing it. The provided CSESummary will be transformed to reflect the
 -- replacement.
 --

@@ -6,7 +6,7 @@ module Language.PureScript.AST.SourcePos where
 
 import Prelude
 
-import Data.Store (Store)
+import Data.Binary (Binary)
 import Control.DeepSeq (NFData)
 import Data.Aeson ((.=), (.:))
 import Data.Text (Text)
@@ -25,7 +25,7 @@ data SourcePos = SourcePos
     -- ^ Line number
   , sourcePosColumn :: Int
     -- ^ Column number
-  } deriving (Show, Eq, Ord, Generic, NFData, Store)
+  } deriving (Show, Eq, Ord, Generic, NFData, Binary)
 
 displaySourcePos :: SourcePos -> Text
 displaySourcePos sp =
@@ -54,7 +54,7 @@ data SourceSpan = SourceSpan
   , spanEnd :: SourcePos
     -- ^ End of the span
   -- } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
-  } deriving (Eq, Ord, Generic, NFData, Store)
+  } deriving (Eq, Ord, Generic, NFData, Binary)
 
 instance Show SourceSpan where
   show _ = "ss"

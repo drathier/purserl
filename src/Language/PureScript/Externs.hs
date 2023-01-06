@@ -20,7 +20,7 @@ module Language.PureScript.Externs
 
 import Prelude
 
-import Data.Store (Store, encode)
+import Data.Binary (Binary, encode)
 import Control.Monad (join)
 import GHC.Generics (Generic)
 import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
@@ -65,7 +65,7 @@ import qualified Data.ByteArray.Encoding as BAE
 newtype SerializationFormat a = SerializationFormat a
   deriving (Show, Eq, Generic)
 
-instance Store a => Store (SerializationFormat a)
+instance Binary a => Binary (SerializationFormat a)
 instance Monoid a => Monoid (SerializationFormat a) where
   mempty = SerializationFormat mempty
 instance Semigroup a => Semigroup (SerializationFormat a) where
@@ -101,7 +101,7 @@ data ExternsFile = ExternsFile
   -- ^ Shapes of things in this module
   } deriving (Show, Generic)
 
-instance Store ExternsFile
+instance Binary ExternsFile
 
 instance Eq ExternsFile where
   a == b = encode a == encode b
@@ -117,7 +117,7 @@ data ExternsImport = ExternsImport
   , eiImportedAs :: Maybe ModuleName
   } deriving (Show, Generic)
 
-instance Store ExternsImport
+instance Binary ExternsImport
 
 -- | A fixity declaration in an externs file
 data ExternsFixity = ExternsFixity
@@ -132,7 +132,7 @@ data ExternsFixity = ExternsFixity
   , efAlias :: Qualified (Either Ident (ProperName 'ConstructorName))
   } deriving (Show, Generic)
 
-instance Store ExternsFixity
+instance Binary ExternsFixity
 
 -- | A type fixity declaration in an externs file
 data ExternsTypeFixity = ExternsTypeFixity
@@ -147,7 +147,7 @@ data ExternsTypeFixity = ExternsTypeFixity
   , efTypeAlias :: Qualified (ProperName 'TypeName)
   } deriving (Show, Generic)
 
-instance Store ExternsTypeFixity
+instance Binary ExternsTypeFixity
 
 -- | A type or value declaration appearing in an externs file
 data ExternsDeclaration =
@@ -200,7 +200,7 @@ data ExternsDeclaration =
       }
   deriving (Show, Generic)
 
-instance Store ExternsDeclaration
+instance Binary ExternsDeclaration
 
 -- | Check whether the version in an externs file matches the currently running
 -- version.
@@ -267,9 +267,9 @@ data CSDataDeclarationWithCtors =
     }
   deriving (Show, Generic, Eq)
 
-instance Store CSDataDeclarationTypeOnly
-instance Store CSDataConstructorDeclaration
-instance Store CSDataDeclarationWithCtors
+instance Binary CSDataDeclarationTypeOnly
+instance Binary CSDataConstructorDeclaration
+instance Binary CSDataDeclarationWithCtors
 
   -- |
   -- A type synonym declaration (name, arguments, type)
@@ -277,28 +277,28 @@ instance Store CSDataDeclarationWithCtors
 data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) ToCSDB (Maybe CSKindDeclaration)
   deriving (Show, Generic, Eq)
 
-instance Store CSTypeSynonymDeclaration
+instance Binary CSTypeSynonymDeclaration
   -- |
   -- A kind signature declaration
   --
 data CSKindDeclaration = CSKindDeclaration (Type ())
   deriving (Show, Generic, Eq)
 
-instance Store CSKindDeclaration
+instance Binary CSKindDeclaration
   -- |
   -- A role declaration (name, roles)
   --
 data CSRoleDeclaration = CSRoleDeclaration [Role]
   deriving (Show, Generic, Eq)
 
-instance Store CSRoleDeclaration
+instance Binary CSRoleDeclaration
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
 data CSValueDeclaration = CSValueDeclaration NameKind Int (Type ()) ToCSDB
   deriving (Show, Generic, Eq)
 
-instance Store CSValueDeclaration
+instance Binary CSValueDeclaration
 
   -- |
   -- A foreign import declaration (name, type)
@@ -306,41 +306,41 @@ instance Store CSValueDeclaration
 data CSExternDeclaration = CSExternDeclaration ToCSDB
   deriving (Show, Generic, Eq)
 
-instance Store CSExternDeclaration
+instance Binary CSExternDeclaration
   -- |
   -- A data type foreign import (name, kind)
   --
 data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
   deriving (Show, Generic, Eq)
 
-instance Store CSExternDataDeclaration
+instance Binary CSExternDataDeclaration
   -- |
   -- A fixity declaration
   --
 data CSOpFixity = CSOpFixity Fixity (Qualified Ident)
   deriving (Show, Generic, Eq)
 
-instance Store CSOpFixity
+instance Binary CSOpFixity
 data CSCtorFixity = CSCtorFixity Fixity (Qualified (ProperName 'ConstructorName))
   deriving (Show, Generic, Eq)
 
-instance Store CSCtorFixity
+instance Binary CSCtorFixity
 data CSTyOpFixity = CSTyOpFixity Fixity (Qualified (ProperName 'TypeName))
   deriving (Show, Generic, Eq)
 
-instance Store CSTyOpFixity
+instance Binary CSTyOpFixity
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
 data CSTypeClassDeclaration = CSTypeClassDeclaration [(Text, Maybe (Type ()))] ([Constraint ()], ToCSDB) [FunctionalDependency] [CSTypeDeclaration]
   deriving (Show, Generic, Eq)
 
-instance Store CSTypeClassDeclaration
+instance Binary CSTypeClassDeclaration
 
 data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
   deriving (Show, Generic, Eq)
 
-instance Store CSTypeDeclaration
+instance Binary CSTypeDeclaration
   -- |
   -- A type instance declaration (instance chain, chain index, name,
   -- dependencies, class name, instance types, member declarations)
@@ -351,7 +351,7 @@ instance Store CSTypeDeclaration
 data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration (ChainId, Integer) ToCSDB (Qualified (ProperName 'ClassName)) ToCSDB (CSTypeInstanceBody, ToCSDB)
   deriving (Show, Generic, Eq)
 
-instance Store CSTypeInstanceDeclaration
+instance Binary CSTypeInstanceDeclaration
 
 data CSTypeInstanceBody
   = CSDerivedInstance
@@ -359,7 +359,7 @@ data CSTypeInstanceBody
   | CSExplicitInstance
   deriving (Show, Eq, Generic)
 
-instance Store CSTypeInstanceBody
+instance Binary CSTypeInstanceBody
 
 data ToCSDB
   = ToCSDB (M.Map ModuleName ToCSDBInner)
@@ -368,7 +368,7 @@ data ToCSDB
 runToCSDB :: ToCSDB -> M.Map ModuleName ToCSDBInner
 runToCSDB (ToCSDB a) = a
 
-instance Store ToCSDB
+instance Binary ToCSDB
 
 instance Semigroup ToCSDB where
   ToCSDB a <> ToCSDB b = ToCSDB (M.unionWith (<>) a b)
@@ -393,7 +393,7 @@ data ToCSDBInner
 newtype RunIdent = RunIdent T.Text
   deriving (Show, Eq, Ord, Generic)
 
-instance Store RunIdent
+instance Binary RunIdent
 
 toRunIdent ident =
   -- TODO[drathier]: this makes me sad, what's going on here? Somehow (Ident "a") and (GenIdent (Just "a") 42) result in the same variable name in source. Why isn't the second one "$a42", like when using runIdent?
@@ -404,7 +404,7 @@ toRunIdent ident =
 
 -- TODO[drathier]: the type class instance decls have the same name; do they all overwrite each other in the cache? Do I need to qualify them, or skip them?
 
-instance Store ToCSDBInner
+instance Binary ToCSDBInner
 
 instance Semigroup ToCSDBInner where
   ToCSDBInner a1 a2 a3 a4 a5 a6 <> ToCSDBInner b1 b2 b3 b4 b5 b6 = ToCSDBInner (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6)
@@ -970,7 +970,7 @@ data DBOpaque
     }
   deriving (Show, Eq, Generic)
 
-instance Store DBOpaque
+instance Binary DBOpaque
 
 instance Semigroup DBOpaque where
   DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DBOpaque (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
@@ -978,18 +978,18 @@ instance Semigroup DBOpaque where
 instance Monoid DBOpaque where
   mempty = DBOpaque mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
-cacheShapeHashFromByteString :: BS.ByteString -> CacheShapeHash
+cacheShapeHashFromByteString :: ByteString -> CacheShapeHash
 cacheShapeHashFromByteString b =
   let
       digest :: Hash.Digest Hash.SHA256
-      digest = b & Hash.hash
+      digest = b & Hash.hashlazy
   in
     digest & show & BS8.fromString & CacheShapeHash
 
 newtype CacheShapeHash = CacheShapeHash BS8.ByteString
   deriving (Show, Eq, Generic)
 
-instance Store CacheShapeHash
+instance Binary CacheShapeHash
 
 dbIsctExports :: M.Map ModuleName DB -> ExportSummary -> DB -> DB
 dbIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =

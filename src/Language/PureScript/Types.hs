@@ -6,7 +6,7 @@ module Language.PureScript.Types where
 import Prelude
 import Protolude (ordNub)
 
-import Data.Store (Store)
+import Data.Binary (Binary)
 import Control.Applicative ((<|>))
 import Control.Arrow (first, second)
 import Control.DeepSeq (NFData)
@@ -39,7 +39,7 @@ newtype SkolemScope = SkolemScope { runSkolemScope :: Int }
   deriving (Show, Eq, Ord, A.ToJSON, A.FromJSON, Generic)
 
 instance NFData SkolemScope
-instance Store SkolemScope
+instance Binary SkolemScope
 
 -- |
 -- Describes how a TypeWildcard should be presented to the user during
@@ -51,7 +51,7 @@ data WildcardData = HoleWildcard Text | UnnamedWildcard | IgnoredWildcard
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData WildcardData
-instance Store WildcardData
+instance Binary WildcardData
 
 -- |
 -- The type of types
@@ -100,7 +100,7 @@ data Type a
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Type a)
-instance Store a => Store (Type a)
+instance Binary a => Binary (Type a)
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -163,7 +163,7 @@ data ConstraintData
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData ConstraintData
-instance Store ConstraintData
+instance Binary ConstraintData
 
 -- | A typeclass constraint
 data Constraint a = Constraint
@@ -180,7 +180,7 @@ data Constraint a = Constraint
   } deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Constraint a)
-instance Store a => Store (Constraint a)
+instance Binary a => Binary (Constraint a)
 
 srcConstraint :: Qualified (ProperName 'ClassName) -> [SourceType] -> [SourceType] -> Maybe ConstraintData -> SourceConstraint
 srcConstraint = Constraint NullSourceAnn
