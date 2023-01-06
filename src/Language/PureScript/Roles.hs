@@ -10,7 +10,7 @@ module Language.PureScript.Roles
 
 import Prelude
 
-import Codec.Serialise (Serialise)
+import Data.Store (Store)
 import Control.DeepSeq (NFData)
 import qualified Data.Aeson as A
 import qualified Data.Aeson.TH as A
@@ -32,7 +32,7 @@ data Role
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Role
-instance Serialise Role
+instance Store Role
 
 $(A.deriveJSON A.defaultOptions ''Role)
 

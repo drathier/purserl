@@ -11,7 +11,7 @@ module Language.PureScript.PSString
 
 import Prelude
 import GHC.Generics (Generic)
-import Codec.Serialise (Serialise)
+import Data.Store (Store)
 import Control.DeepSeq (NFData)
 import Control.Exception (try, evaluate)
 import Control.Applicative ((<|>))
@@ -52,7 +52,7 @@ newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
   deriving (Eq, Ord, Semigroup, Monoid, Generic)
 
 instance NFData PSString
-instance Serialise PSString
+instance Store PSString
 
 instance Show PSString where
   show = show . codePoints

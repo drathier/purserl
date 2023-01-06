@@ -23,24 +23,25 @@ readExternFile
   => FilePath
   -> m P.ExternsFile
 readExternFile fp = do
-  externsFile <- liftIO (Make.readCborFileIO fp)
-  case externsFile of
-    Just externs | version == P.efVersion externs ->
-      pure externs
-    _ ->
-      liftIO (Make.readCborFileIO fp) >>= \case
-        Just (Term.TList (_tag : Term.TString efVersion : _rest)) -> do
-          let errMsg =
-                "Version mismatch for the externs at: "
-                <> toS fp
-                <> " Expected: " <> version
-                <> " Found: " <> efVersion
-          logErrorN errMsg
-          throwError (GeneralError errMsg)
-        _ ->
-          throwError (GeneralError ("Parsing the extern at: " <> toS fp <> " failed"))
-    where
-      version = toS (showVersion P.version)
+  P.internalError "purs IDE not impl: store/serialise for cbor terms"
+  -- externsFile <- liftIO (Make.readCborFileIO fp)
+  -- case externsFile of
+  --   Just externs | version == P.efVersion externs ->
+  --     pure externs
+  --   _ ->
+  --     liftIO (Make.readCborFileIO fp) >>= \case
+  --       Just (Term.TList (_tag : Term.TString efVersion : _rest)) -> do
+  --         let errMsg =
+  --               "Version mismatch for the externs at: "
+  --               <> toS fp
+  --               <> " Expected: " <> version
+  --               <> " Found: " <> efVersion
+  --         logErrorN errMsg
+  --         throwError (GeneralError errMsg)
+  --       _ ->
+  --         throwError (GeneralError ("Parsing the extern at: " <> toS fp <> " failed"))
+  --   where
+  --     version = toS (showVersion P.version)
 
 convertExterns :: P.ExternsFile -> ([IdeDeclarationAnn], [(P.ModuleName, P.DeclarationRef)])
 convertExterns ef =

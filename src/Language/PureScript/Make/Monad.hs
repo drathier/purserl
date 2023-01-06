@@ -22,8 +22,10 @@ module Language.PureScript.Make.Monad
 
 import           Prelude
 
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as Serialise
+import           Data.Store (Store)
+import qualified Data.Store as Store
+-- import           Codec.Serialise (Serialise)
+-- import qualified Codec.Serialise as Serialise
 import           Control.Exception (fromException, tryJust)
 import           Control.Monad (join, guard)
 import           Control.Monad.Base (MonadBase(..))
@@ -114,13 +116,13 @@ readJSONFileIO path = do
 -- | Read a Cbor encoded file in the 'Make' monad, returning
 -- 'Nothing' if the file does not exist or could not be parsed. Errors
 -- are captured using the 'MonadError' instance.
-readCborFile :: (MonadIO m, MonadError MultipleErrors m) => Serialise a => FilePath -> m (Maybe a)
+readCborFile :: (MonadIO m, MonadError MultipleErrors m) => Store a => FilePath -> m (Maybe a)
 readCborFile path =
   makeIO ("read Binary file: " <> Text.pack path) (readCborFileIO path)
 
-readCborFileIO :: Serialise a => FilePath -> IO (Maybe a)
+readCborFileIO :: Store a => FilePath -> IO (Maybe a)
 readCborFileIO path = do
-  r <- catchDoesNotExist $ catchDeserialiseFailure $ Serialise.readFileDeserialise path
+  r <- catchDoesNotExist $ fmap (either (const Nothing) Just) $ fmap Store.decode $ B.readFile path
   return (join r)
 
 -- | Read an externs file, returning 'Nothing' if the file does not exist,
@@ -150,14 +152,14 @@ catchDoesNotExist inner = do
     Right x ->
       return (Just x)
 
-catchDeserialiseFailure :: IO a -> IO (Maybe a)
-catchDeserialiseFailure inner = do
-  r <- tryJust fromException inner
-  case r of
-    Left (_ :: Serialise.DeserialiseFailure) ->
-      return Nothing
-    Right x ->
-      return (Just x)
+-- catchDeserialiseFailure :: IO a -> IO (Maybe a)
+-- catchDeserialiseFailure inner = do
+--   r <- tryJust fromException inner
+--   case r of
+--     Left (_ :: Serialise.DeserialiseFailure) ->
+--       return Nothing
+--     Right x ->
+--       return (Just x)
 
 -- | Write a text file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.
@@ -173,14 +175,14 @@ writeJSONFile path value = makeIO ("write JSON file: " <> Text.pack path) $ do
   createParentDirectory path
   Aeson.encodeFile path value
 
-writeCborFile :: (MonadIO m, MonadError MultipleErrors m) => Serialise a => FilePath -> a -> m ()
+writeCborFile :: (MonadIO m, MonadError MultipleErrors m) => Store a => FilePath -> a -> m ()
 writeCborFile path value =
   makeIO ("write Cbor file: " <> Text.pack path) (writeCborFileIO path value)
 
-writeCborFileIO :: Serialise a => FilePath -> a -> IO ()
+writeCborFileIO :: Store a => FilePath -> a -> IO ()
 writeCborFileIO path value = do
   createParentDirectory path
-  Serialise.writeFileSerialise path value
+  B.writeFile path $ Store.encode value
 
 -- | Copy a file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.

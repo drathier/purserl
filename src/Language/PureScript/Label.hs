@@ -2,7 +2,7 @@ module Language.PureScript.Label (Label(..)) where
 
 import Prelude
 import GHC.Generics (Generic)
-import Codec.Serialise (Serialise)
+import Data.Store (Store)
 import Control.DeepSeq (NFData)
 import Data.Monoid ()
 import Data.String (IsString(..))
@@ -18,4 +18,4 @@ newtype Label = Label { runLabel :: PSString }
   deriving (Show, Eq, Ord, IsString, Semigroup, Monoid, A.ToJSON, A.FromJSON, Generic)
 
 instance NFData Label
-instance Serialise Label
+instance Store Label
