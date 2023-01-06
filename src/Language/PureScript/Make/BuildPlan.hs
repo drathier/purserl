@@ -173,7 +173,7 @@ shouldRecompile mn cfa externs = do
           interestingDiff5 =
             M.differenceWith
               (\a b ->
-                case dbDiffDiff a b of
+                case dbOpaqueDiffDiff a b of
                   v | v == mempty -> Nothing
                   v -> Just v
               )
