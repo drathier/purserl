@@ -27,6 +27,7 @@ extra-deps:
 - hspec-2.9.2
 - hspec-core-2.9.2
 - hspec-discover-2.9.2
+- flat-0.6@sha256:fbb17e2ae8ec5a7e02d74b505178b92ceb19ef991054c625ea570d33a595dfa3,7464
 nix:
   packages:
   - zlib

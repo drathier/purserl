@@ -5,7 +5,7 @@ module Language.PureScript.AST.Operators where
 
 import Prelude
 
-import Data.Store (Store)
+import Flat (Flat)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Data.Aeson ((.=))
@@ -25,7 +25,7 @@ data Associativity = Infixl | Infixr | Infix
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Associativity
-instance Store Associativity
+instance Flat Associativity
 
 showAssoc :: Associativity -> String
 showAssoc Infixl = "infixl"
@@ -51,7 +51,7 @@ data Fixity = Fixity Associativity Precedence
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Fixity
-instance Store Fixity
+instance Flat Fixity
 
 instance A.ToJSON Fixity where
   toJSON (Fixity associativity precedence) =

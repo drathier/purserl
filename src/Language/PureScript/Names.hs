@@ -7,7 +7,7 @@ module Language.PureScript.Names where
 
 import Prelude
 
-import Data.Store (Store)
+import Flat (Flat)
 import Control.Applicative ((<|>))
 import Control.Monad.Supply.Class
 import Control.DeepSeq (NFData)
@@ -34,7 +34,7 @@ data Name
   deriving (Eq, Ord, Show, Generic)
 
 instance NFData Name
-instance Store Name
+instance Flat Name
 
 getIdentName :: Name -> Maybe Ident
 getIdentName (IdentName name) = Just name
@@ -73,7 +73,7 @@ data InternalIdentData
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData InternalIdentData
-instance Store InternalIdentData
+instance Flat InternalIdentData
 
 -- |
 -- Names for value identifiers
@@ -98,7 +98,7 @@ data Ident
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Ident
-instance Store Ident
+instance Flat Ident
 
 unusedIdent :: Text
 unusedIdent = "$__unused"
@@ -130,7 +130,7 @@ newtype OpName (a :: OpNameType) = OpName { runOpName :: Text }
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData (OpName a)
-instance Store (OpName a)
+instance Flat (OpName a)
 
 instance ToJSON (OpName a) where
   toJSON = toJSON . runOpName
@@ -159,7 +159,7 @@ newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData (ProperName a)
-instance Store (ProperName a)
+instance Flat (ProperName a)
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
@@ -189,7 +189,7 @@ coerceProperName = ProperName . runProperName
 --
 newtype ModuleName = ModuleName Text
   deriving (Show, Eq, Ord, Generic)
-  deriving newtype Store
+  deriving newtype Flat
 
 instance NFData ModuleName
 
@@ -211,7 +211,7 @@ pattern ByNullSourcePos :: QualifiedBy
 pattern ByNullSourcePos = BySourcePos (SourcePos 0 0)
 
 instance NFData QualifiedBy
-instance Store QualifiedBy
+instance Flat QualifiedBy
 
 isBySourcePos :: QualifiedBy -> Bool
 isBySourcePos (BySourcePos _) = True
@@ -232,7 +232,7 @@ data Qualified a = Qualified QualifiedBy a
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
 instance NFData a => NFData (Qualified a)
-instance Store a => Store (Qualified a)
+instance Flat a => Flat (Qualified a)
 
 showQualified :: (a -> Text) -> Qualified a -> Text
 showQualified f (Qualified (BySourcePos  _) a) = f a

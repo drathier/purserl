@@ -166,7 +166,7 @@ common defaults
     Cabal >=3.6.3.0 && <3.7,
     cborg >=0.2.7.0 && <0.3,
     -- serialise >=0.2.5.0 && <0.3,
-    store >=0.7.16,
+    flat >=0.6,
     cheapskate >=0.1.1.2 && <0.2,
     clock >=0.8.3 && <0.9,
     containers >=0.6.5.1 && <0.7,
