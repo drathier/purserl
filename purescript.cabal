@@ -208,11 +208,20 @@ common defaults
     transformers-base >=0.4.6 && <0.5,
     utf8-string >=1.0.2 && <1.1,
     vector >=0.12.3.1 && <0.13,
-    witherable >=0.4.2 && <0.5
+    witherable >=0.4.2 && <0.5,
+    -- purerl
+    base-compat-batteries,
+    optparse-applicative
 
 library
   import: defaults
   hs-source-dirs: src
+-- when releasing:
+  hs-source-dirs: purerl/src
+  hs-source-dirs: purerl/app
+-- when developing:
+--  hs-source-dirs: ../purerl/src
+--  hs-source-dirs: ../purerl/app
   exposed-modules:
     Control.Monad.Logger
     Control.Monad.Supply
@@ -389,12 +398,45 @@ library
     Language.PureScript.TypeClassDictionaries
     Language.PureScript.Types
     System.IO.UTF8
+
+    -- purerl
+    Build
+    Language.PureScript.Erl.CodeGen
+    Language.PureScript.Erl.CodeGen.AST
+    Language.PureScript.Erl.CodeGen.CheckedWrapper
+    Language.PureScript.Erl.CodeGen.Common
+    Language.PureScript.Erl.CodeGen.Constants
+    Language.PureScript.Erl.CodeGen.Constants.PureScriptModules
+    Language.PureScript.Erl.CodeGen.Optimizer
+    Language.PureScript.Erl.CodeGen.Optimizer.Blocks
+    Language.PureScript.Erl.CodeGen.Optimizer.Common
+    Language.PureScript.Erl.CodeGen.Optimizer.Guards
+    Language.PureScript.Erl.CodeGen.Optimizer.Inliner
+    Language.PureScript.Erl.CodeGen.Optimizer.MagicDo
+    Language.PureScript.Erl.CodeGen.Optimizer.Memoize
+    Language.PureScript.Erl.CodeGen.Optimizer.Unused
+    Language.PureScript.Erl.CodeGen.Types
+    Language.PureScript.Erl.Errors
+    Language.PureScript.Erl.Errors.JSON
+    Language.PureScript.Erl.Errors.Types
+    Language.PureScript.Erl.Interactive
+    Language.PureScript.Erl.Make
+    Language.PureScript.Erl.Make.Monad
+    Language.PureScript.Erl.Parser
+    Language.PureScript.Erl.Pretty
+    Language.PureScript.Erl.Run
+    Language.PureScript.Erl.Synonyms
+
   other-modules:
     Data.Text.PureScript
     Language.PureScript.Constants.TH
     Paths_purescript
+    -- purerl
+    -- Paths_purerl
   autogen-modules:
     Paths_purescript
+    -- purerl
+    -- Paths_purerl
 
 executable purs
   import: defaults

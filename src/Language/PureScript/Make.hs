@@ -51,6 +51,14 @@ import qualified Language.PureScript.CoreFn as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
 
+
+-- purserl
+import Control.Applicative ((<|>))
+import qualified Build as Erl.Build
+import System.IO.Unsafe (unsafePerformIO)
+--
+
+
 -- | Rebuild a single module.
 --
 -- This function is used for fast-rebuild workflows (PSCi and psc-ide are examples).
@@ -129,7 +137,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
                Right d -> d
 
-  evalSupplyT nextVar'' $ codegen renamed docs exts
+  evalSupplyT nextVar'' $ codegen env renamed docs exts
   return exts
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
@@ -143,6 +151,8 @@ make :: forall m. (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWrit
 make ma@MakeActions{..} ms = do
   checkModuleNames
   cacheDb <- readCacheDb
+
+  let !_ = unsafePerformIO $ putStrLn (show ("cacheDb", cacheDb))
 
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
 
@@ -274,8 +284,12 @@ inferForeignModules =
     inferForeignModule :: Either RebuildPolicy FilePath -> m (Maybe FilePath)
     inferForeignModule (Left _) = return Nothing
     inferForeignModule (Right path) = do
-      let jsFile = replaceExtension path "js"
-      exists <- liftIO $ doesFileExist jsFile
-      if exists
-        then return (Just jsFile)
-        else return Nothing
+       jsForeign <- do
+            let jsFile = replaceExtension path "js"
+            exists <- liftIO $ doesFileExist jsFile
+            if exists
+              then return (Just jsFile)
+              else return Nothing
+       erlForeign <- Erl.Build.inferForeignModule' path
+       pure (erlForeign <|> jsForeign)
+

@@ -54,6 +54,11 @@ import           System.FilePath (makeRelative)
 import qualified Text.PrettyPrint.Boxes as Box
 import           Witherable (wither)
 
+-- purserl
+import qualified Language.PureScript.Erl.Errors.Types
+
+--
+
 -- | A type of error messages
 data SimpleErrorMessage
   = InternalCompilerError Text Text
@@ -196,6 +201,8 @@ data SimpleErrorMessage
   | RoleDeclarationArityMismatch (ProperName 'TypeName) Int Int
   | DuplicateRoleDeclaration (ProperName 'TypeName)
   | CannotDeriveInvalidConstructorArg (Qualified (ProperName 'ClassName)) [Qualified (ProperName 'ClassName)] Bool
+  -- pureserl
+  | PurerlError Language.PureScript.Erl.Errors.Types.SimpleErrorMessage
   deriving (Show)
 
 data ErrorMessage = ErrorMessage
@@ -364,6 +371,7 @@ errorCode em = case unwrapErrorMessage em of
   RoleDeclarationArityMismatch {} -> "RoleDeclarationArityMismatch"
   DuplicateRoleDeclaration {} -> "DuplicateRoleDeclaration"
   CannotDeriveInvalidConstructorArg{} -> "CannotDeriveInvalidConstructorArg"
+  PurerlError{} -> "PurerlError"
 
 -- | A stack trace for an error
 newtype MultipleErrors = MultipleErrors
@@ -1393,6 +1401,13 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
           <> (if checkVariance then "that their variance matches the variance of " <> markCode (runProperName $ disqualify className) <> ", " else "")
           <> "and that those type constructors themselves have instances of " <> commasAndConjunction "or" (markCode . showQualified runProperName <$> relatedClasses) <> "."
         ]
+
+    renderSimpleErrorMessage (PurerlError err) =
+      paras
+        [  line $ "Purerl error:"
+        , line $ T.pack $ show err
+        ]
+
 
     renderHint :: ErrorMessageHint -> Box.Box -> Box.Box
     renderHint (ErrorUnifyingTypes t1@RCons{} t2@RCons{}) detail =
