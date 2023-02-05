@@ -149,6 +149,9 @@ data MakeActions m = MakeActions
   -- externs file, or if any of the requested codegen targets were not produced
   -- the last time this module was compiled, this function must return Nothing;
   -- this indicates that the module will have to be recompiled.
+  , touchOutputTimestamp :: ModuleName -> m (Maybe ())
+  -- ^ Set the time this module was last compiled to the current time. Similar
+  -- to and used with getOutputTimestamp.
   , readExterns :: ModuleName -> m (FilePath, Maybe ExternsFile)
   -- ^ Read the externs file for a module as a string and also return the actual
   -- path for the file.
@@ -214,7 +217,7 @@ buildMakeActions
   -- ^ Generate a prefix comment?
   -> MakeActions Make
 buildMakeActions outputDir filePathMap foreigns usePrefix =
-    MakeActions getInputTimestampsAndHashes getOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
+    MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
   getInputTimestampsAndHashes
@@ -274,6 +277,25 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
                 if externsTimestamp <= minimum modTimes
                   then Just externsTimestamp
                   else Nothing
+
+  touchOutputTimestamp :: ModuleName -> Make (Maybe ())
+  touchOutputTimestamp mn = do
+    -- first check that all relevant files exist, by fetching the timestamp of the existing cache files
+    externsTimestamp <- getOutputTimestamp mn
+    -- then touch them all, to mark them as up-to-date. If this fails partway through, the next getOutputTimestamp will consider it incomplete.
+    codegenTargets <- asks optionsCodegenTargets
+    case externsTimestamp of
+      Nothing -> pure Nothing
+      Just _ -> do
+        -- then, after reading all relevant files succeeded, we update their mtimes
+        touchTimestampMaybe (outputFilename mn externsFileName)
+        case NEL.nonEmpty (fmap (targetFilename mn) (S.toList codegenTargets)) of
+          Nothing ->
+            pure (Just ())
+          Just outputPaths -> do
+            mmodTimes <- traverse touchTimestampMaybe outputPaths
+            pure $ sequence_ mmodTimes
+
 
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
@@ -509,7 +531,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S16 "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S17 "
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir
