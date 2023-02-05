@@ -190,7 +190,10 @@ replaceTypeWildcards = everywhereOnTypesM replace
     ctx <- getLocalContext
     let err = case wdata of
           HoleWildcard n -> Just $ HoleInferredType n t ctx Nothing
-          UnnamedWildcard -> Just $ WildcardInferredType t ctx
+          UnnamedWildcard ->
+            -- NOTE[drathier]: this is just console spam. If I want to know the type of something, I'll use a typed hole.
+            -- Just $ WildcardInferredType t ctx
+            Nothing
           IgnoredWildcard -> Nothing
     forM_ err $ warnWithPosition (fst ann) . tell . errorMessage
     return t
