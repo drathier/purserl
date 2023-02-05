@@ -59,6 +59,8 @@ import           System.FilePath ((</>), makeRelative, splitPath, normalise, spl
 import qualified System.FilePath.Posix as Posix
 import           System.IO (stderr)
 
+import Data.IORef as IORef
+
 -- | Determines when to rebuild a module
 data RebuildPolicy
   -- | Never rebuild this module
@@ -175,8 +177,10 @@ buildMakeActions
   -- ^ a map between module name and the file containing the foreign javascript for the module
   -> Bool
   -- ^ Generate a prefix comment?
+  -> Maybe ExternsMemCache
+  -- ^ Optional memcache of already parsed externs files, for repeated builds
   -> MakeActions Make
-buildMakeActions outputDir filePathMap foreigns usePrefix =
+buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
     MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
@@ -259,7 +263,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
     let path = outputDir </> T.unpack (runModuleName mn) </> externsFileName
-    (path, ) <$> readExternsFile path
+    (path, ) <$> readExternsFile mExternsMemCache path
 
   outputPrimDocs :: Make ()
   outputPrimDocs = do
@@ -270,7 +274,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   codegen :: CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
   codegen m docs exts = do
     let mn = CF.moduleName m
-    lift $ writeCborFile (outputFilename mn externsFileName) exts
+    lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
     when (S.member CoreFn codegenTargets) $ do
       let coreFnFile = targetFilename mn CoreFn
