@@ -84,6 +84,7 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
         -- NOTE[drathier]: I simply don't agree that this should be a warning :)
         -- unless (null usedRefs) .
         --   tell . errorMessage' ss $ ImplicitQualifiedImport mni mnq $ map (simplifyTypeRef $ const True) usedRefs
+        pure ()
 
   for_ imports $ \(mnq, imps) -> do
 
