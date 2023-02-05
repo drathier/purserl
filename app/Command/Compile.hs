@@ -60,9 +60,25 @@ printWarningsAndErrors verbose True files warnings errors = do
 compile :: PSCMakeOptions -> IO ()
 compile opts = do
   externsMemCache <- newIORef M.empty
+  shouldRunAgain <- do
+    v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
+    pure $ case v of
+      Just "0" -> False
+      Just "no" -> False
+      Just "false" -> False
+      Just "False" -> False
+      Just "FALSE" -> False
+      Just "" -> False
+      Nothing -> False
+      _ -> True
   let
       run = do
-        putStrLn "launching compiler"
+        if shouldRunAgain then do
+          putStrLn "### read externs"
+          _ <- getLine
+          putStrLn "### launching compiler"
+          else
+            pure ()
         res <-
           compileImpl opts externsMemCache
             `catch`
@@ -71,22 +87,9 @@ compile opts = do
                 ExitSuccess -> pure 0
               )
 
-        putStrLn ("done compiler: " <> show res)
-        threadDelay 1000000 -- sleep 5s
-        shouldRunAgain <- do
-          v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
-          pure $ case v of
-            Just "0" -> False
-            Just "no" -> False
-            Just "false" -> False
-            Just "False" -> False
-            Just "FALSE" -> False
-            Just "" -> False
-            Nothing -> False
-            _ -> True
-
         case shouldRunAgain of
-          True ->
+          True -> do
+            putStrLn ("### done compiler: " <> show res)
             run
           False ->
             case res of
