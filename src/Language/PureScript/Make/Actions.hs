@@ -347,7 +347,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
 
       let  getForeigns :: String -> Make [(T.Text, Int)]
            getForeigns path = do
-             liftIO $ putStrLn (show ("getForeigns", path))
+             -- liftIO $ putStrLn (show ("getForeigns", path))
              text <- readTextFile path
              let (exports, ignoreExports) = fromRight ([],[]) $ parseFile path text
              pure $ exports \\ ignoreExports

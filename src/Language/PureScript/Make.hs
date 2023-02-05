@@ -55,7 +55,7 @@ import           System.FilePath (replaceExtension)
 -- purserl
 import Control.Applicative ((<|>))
 import qualified Build as Erl.Build
-import System.IO.Unsafe (unsafePerformIO)
+-- import System.IO.Unsafe (unsafePerformIO)
 --
 
 
@@ -152,7 +152,7 @@ make ma@MakeActions{..} ms = do
   checkModuleNames
   cacheDb <- readCacheDb
 
-  let !_ = unsafePerformIO $ putStrLn (show ("cacheDb", cacheDb))
+  -- let !_ = unsafePerformIO $ putStrLn (show ("cacheDb", cacheDb))
 
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
 
