@@ -99,6 +99,8 @@ import qualified Language.PureScript.Erl.Make.Monad
 
 --
 
+import Data.IORef as IORef
+
 -- | Determines when to rebuild a module
 data RebuildPolicy
   -- | Never rebuild this module
@@ -215,8 +217,10 @@ buildMakeActions
   -- ^ a map between module name and the file containing the foreign javascript for the module
   -> Bool
   -- ^ Generate a prefix comment?
+  -> Maybe ExternsMemCache
+  -- ^ Optional memcache of already parsed externs files, for repeated builds
   -> MakeActions Make
-buildMakeActions outputDir filePathMap foreigns usePrefix =
+buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
     MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
@@ -300,7 +304,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
     let path = outputDir </> T.unpack (runModuleName mn) </> externsFileName
-    (path, ) <$> readExternsFile path
+    (path, ) <$> readExternsFile mExternsMemCache path
 
   outputPrimDocs :: Make ()
   outputPrimDocs = do
@@ -321,7 +325,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
   codegen environment m docs exts = do
     let mn = CF.moduleName m
-    lift $ writeCborFile (outputFilename mn externsFileName) exts
+    lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
     when (S.member CoreFn codegenTargets) $ do
       let coreFnFile = targetFilename mn CoreFn
@@ -531,7 +535,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S17 "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S18 "
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir
