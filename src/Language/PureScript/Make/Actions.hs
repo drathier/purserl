@@ -381,7 +381,8 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
 
       -- purerl env
       -- let env = buildCodegenEnvironment $ foldr P.applyExternsFileToEnvironment P.initEnvironment (catMaybes externsFiles)
-      let env = buildCodegenEnvironment environment
+      -- make sure our own externs are included in the environment
+      let env = buildCodegenEnvironment (P.applyExternsFileToEnvironment exts environment)
 
       -- and generate the erlang code
         -- codegen :: CodegenEnvironment -> CF.Module CF.Ann -> SupplyT Make ()
@@ -535,7 +536,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S20 "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S21 "
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir
