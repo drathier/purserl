@@ -29,7 +29,7 @@ import Control.Concurrent (threadDelay)
 import Control.Exception (catch)
 import System.Exit (ExitCode(..))
 import           System.Environment (lookupEnv)
-import qualified Data.Map.Strict as MS
+import qualified Data.HashMap.Strict as MS
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]

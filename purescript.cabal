@@ -212,7 +212,8 @@ common defaults
     witherable >=0.4.2 && <0.5,
     -- purerl
     base-compat-batteries,
-    optparse-applicative
+    optparse-applicative,
+    unordered-containers >=0.2.19.1
 
 library
   import: defaults

@@ -52,7 +52,7 @@ import           System.IO.Error (tryIOError, isDoesNotExistError)
 import           System.IO.UTF8 (readUTF8FileT)
 
 import Data.IORef as IORef
-import qualified Data.Map.Strict as MS
+import qualified Data.HashMap.Strict as MS
 import qualified Data.ByteString as BS
 
 -- | A monad for running make actions
@@ -156,7 +156,7 @@ readExternsFile mmemCacheRef path = do
       maybeWriteExternsToMemCache mmemCacheRef path mNewHash mexterns
       pure mexterns
 
-type ExternsMemCache = IORef (MS.Map FilePath (ContentHash, ExternsFile))
+type ExternsMemCache = IORef (MS.HashMap FilePath (ContentHash, ExternsFile))
 
 maybeWriteExternsToMemCache mmemCacheRef path mexternsHash mexterns = do
   case mmemCacheRef of
