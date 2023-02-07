@@ -216,10 +216,7 @@ catchDeserialiseFailure inner = do
 writeTextFile :: FilePath -> B.ByteString -> Make ()
 writeTextFile path text = makeIO ("write file: " <> Text.pack path) $ do
   createParentDirectory path
-  currentText <- catchDoesNotExist $ B.readFile path
-  case currentText of
-    Just currentText | currentText == text -> pure ()
-    _ -> B.writeFile path text
+  B.writeFile path text
 
 -- | Write a JSON file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.
