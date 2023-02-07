@@ -29,6 +29,7 @@ import Control.Concurrent (threadDelay)
 import Control.Exception (catch)
 import System.Exit (ExitCode(..))
 import           System.Environment (lookupEnv)
+import qualified Data.Map.Strict as MS
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
@@ -59,7 +60,7 @@ printWarningsAndErrors verbose True files warnings errors = do
 
 compile :: PSCMakeOptions -> IO ()
 compile opts = do
-  externsMemCache <- newIORef M.empty
+  externsMemCache <- newIORef MS.empty
   shouldRunAgain <- do
     v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
     pure $ case v of

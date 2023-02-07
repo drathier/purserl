@@ -52,7 +52,7 @@ import           System.IO.Error (tryIOError, isDoesNotExistError)
 import           System.IO.UTF8 (readUTF8FileT)
 
 import Data.IORef as IORef
-import qualified Data.Map as M
+import qualified Data.Map.Strict as MS
 import qualified Data.ByteString as BS
 
 -- | A monad for running make actions
@@ -142,7 +142,7 @@ readExternsFile mmemCacheRef path = do
       Just memCacheRef -> do
         liftIO $ IORef.atomicModifyIORef' memCacheRef (\x ->
             ( x
-            , case M.lookup path x of
+            , case MS.lookup path x of
                 Just (oldHash, externs) | Just oldHash == mNewHash -> pure externs
                 _ -> Nothing
             )
@@ -156,7 +156,7 @@ readExternsFile mmemCacheRef path = do
       maybeWriteExternsToMemCache mmemCacheRef path mNewHash mexterns
       pure mexterns
 
-type ExternsMemCache = IORef (M.Map FilePath (ContentHash, ExternsFile))
+type ExternsMemCache = IORef (MS.Map FilePath (ContentHash, ExternsFile))
 
 maybeWriteExternsToMemCache mmemCacheRef path mexternsHash mexterns = do
   case mmemCacheRef of
@@ -170,7 +170,7 @@ maybeWriteExternsToMemCache mmemCacheRef path mexternsHash mexterns = do
             case mexterns of
               Nothing -> pure ()
               Just externs ->
-                IORef.atomicModifyIORef' memCacheRef (\x -> (M.insert path (externsHash, externs) x, ()))
+                IORef.atomicModifyIORef' memCacheRef (\x -> (MS.insert path (externsHash, externs) x, ()))
       pure ()
 
 readExternsFileImpl :: (MonadIO m, MonadError MultipleErrors m) => FilePath -> m (Maybe ExternsFile)
@@ -216,7 +216,10 @@ catchDeserialiseFailure inner = do
 writeTextFile :: FilePath -> B.ByteString -> Make ()
 writeTextFile path text = makeIO ("write file: " <> Text.pack path) $ do
   createParentDirectory path
-  B.writeFile path text
+  currentText <- catchDoesNotExist $ B.readFile path
+  case currentText of
+    Just currentText | currentText == text -> pure ()
+    _ -> B.writeFile path text
 
 -- | Write a JSON file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.
