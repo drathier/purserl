@@ -54,6 +54,7 @@ import           System.IO.UTF8 (readUTF8FileT)
 import Data.IORef as IORef
 import qualified Data.HashMap.Strict as MS
 import qualified Data.ByteString as BS
+import System.Environment (lookupEnv)
 
 -- | A monad for running make actions
 newtype Make a = Make
@@ -216,6 +217,26 @@ catchDeserialiseFailure inner = do
 writeTextFile :: FilePath -> B.ByteString -> Make ()
 writeTextFile path text = makeIO ("write file: " <> Text.pack path) $ do
   createParentDirectory path
+  currentText <- catchDoesNotExist $ B.readFile path
+  shouldRunAgain <- do
+    v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
+    pure $ case v of
+      Just "0" -> False
+      Just "no" -> False
+      Just "false" -> False
+      Just "False" -> False
+      Just "FALSE" -> False
+      Just "" -> False
+      Nothing -> False
+      _ -> True
+  if shouldRunAgain then
+    case currentText of
+      Just currentText | currentText == text ->
+        liftIO (putStrLn ("### erl-same:" <> path))
+      _ ->
+        liftIO (putStrLn ("### erl-diff:" <> path))
+    else pure ()
+  -- always write the file, so timestamps are updated for next rebuild
   B.writeFile path text
 
 -- | Write a JSON file in the 'Make' monad, capturing any errors using the
