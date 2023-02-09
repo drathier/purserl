@@ -59,12 +59,6 @@ data SourceSpan = SourceSpan
 instance Show SourceSpan where
   show _ = "ss"
 
-displayStartEndPos :: SourceSpan -> Text
-displayStartEndPos sp =
-  "(" <>
-  displaySourcePos (spanStart sp) <> " - " <>
-  displaySourcePos (spanEnd sp) <> ")"
-
 displayStartEndPosShort :: SourceSpan -> Text
 displayStartEndPosShort sp =
   displaySourcePosShort (spanStart sp) <> " - " <>
@@ -73,8 +67,7 @@ displayStartEndPosShort sp =
 displaySourceSpan :: FilePath -> SourceSpan -> Text
 displaySourceSpan relPath sp =
   T.pack (makeRelative relPath (spanName sp)) <> ":" <>
-    displayStartEndPosShort sp <> " " <>
-    displayStartEndPos sp
+    displayStartEndPosShort sp
 
 instance A.ToJSON SourceSpan where
   toJSON SourceSpan{..} =
