@@ -178,8 +178,8 @@ unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
     rest' <- freshTypeWithKind =<< elaborateKind (TUnknown a u1)
     solveType u1 (rowFromList (sd2, rest'))
     solveType u2 (rowFromList (sd1, rest'))
-  unifyTails _ _ =
-    throwError . errorMessage $ TypesDoNotUnify r1 r2
+  unifyTails r1' r2' =
+    throwError . errorMessage $ TypesDoNotUnify (rowFromList r1') (rowFromList r2')
 
 -- |
 -- Replace type wildcards with unknowns
@@ -192,7 +192,10 @@ replaceTypeWildcards = everywhereOnTypesM replace
     ctx <- getLocalContext
     let err = case wdata of
           HoleWildcard n -> Just $ HoleInferredType n t ctx Nothing
-          UnnamedWildcard -> Just $ WildcardInferredType t ctx
+          UnnamedWildcard ->
+            -- NOTE[drathier]: this is just console spam. If I want to know the type of something, I'll use a typed hole.
+            -- Just $ WildcardInferredType t ctx
+            Nothing
           IgnoredWildcard -> Nothing
     forM_ err $ warnWithPosition (fst ann) . tell . errorMessage
     return t

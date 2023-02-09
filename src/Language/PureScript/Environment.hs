@@ -81,7 +81,7 @@ data FunctionalDependency = FunctionalDependency
   -- ^ the type arguments which determine the determined type arguments
   , fdDetermined  :: [Int]
   -- ^ the determined type arguments
-  } deriving (Show, Generic)
+  } deriving (Show, Generic, Eq)
 
 instance NFData FunctionalDependency
 instance Serialise FunctionalDependency

@@ -74,7 +74,7 @@ rebuildFile file actualFile codegenTargets runOpenBuild = do
   let pureRebuild = fp == ""
   let modulePath = if pureRebuild then fp' else file
   foreigns <- P.inferForeignModules (M.singleton moduleName (Right modulePath))
-  let makeEnv = P.buildMakeActions outputDirectory filePathMap foreigns False
+  let makeEnv = P.buildMakeActions outputDirectory filePathMap foreigns False Nothing
         & (if pureRebuild then enableForeignCheck foreigns codegenTargets . shushCodegen else identity)
         & shushProgress
   -- Rebuild the single module using the cached externs
