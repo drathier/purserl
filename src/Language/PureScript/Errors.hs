@@ -656,17 +656,13 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
                     | otherwise = Nothing
       where
       types :: [Box.Box]
-      types = map skolemInfo  (M.elems (umSkolemMap typeMap)) ++
-              map unknownInfo (M.elems (umUnknownMap typeMap))
+      types = map skolemInfo  (M.elems (umSkolemMap typeMap))
 
       skolemInfo :: (String, Int, Maybe SourceSpan) -> Box.Box
       skolemInfo (name, s, ss) =
         paras $
           line (markCode (T.pack (name <> show s)) <> " is a rigid type variable")
           : foldMap (return . line . ("  bound at " <>) . displayStartEndPos) ss
-
-      unknownInfo :: Int -> Box.Box
-      unknownInfo u = line $ markCode ("t" <> T.pack (show u)) <> " is an unknown type"
 
     renderSimpleErrorMessage :: SimpleErrorMessage -> Box.Box
     renderSimpleErrorMessage (InternalCompilerError ctx err) =
