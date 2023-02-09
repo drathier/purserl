@@ -16,6 +16,8 @@ import           System.Exit (exitFailure)
 import           System.Directory (getCurrentDirectory)
 import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr)
+import qualified Data.Maybe as Data.Maybe
+import qualified System.Environment as System.Environment
 
 data GraphOptions = GraphOptions
   { graphInput      :: [FilePath]
@@ -67,7 +69,13 @@ command = graph <$> (Opts.helper <*> graphOptions)
 printWarningsAndErrors :: Bool -> P.MultipleErrors -> Either P.MultipleErrors a -> IO a
 printWarningsAndErrors False warnings errors = do
   pwd <- getCurrentDirectory
-  cc <- bool Nothing (Just P.defaultCodeColor) <$> ANSI.hSupportsANSI stderr
+
+  probablySupportsANSI <- ANSI.hSupportsANSI stderr
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride || probablySupportsANSI
+           then Just P.defaultCodeColor
+           else Nothing
+
   let ppeOpts = P.defaultPPEOptions { P.ppeCodeColor = cc, P.ppeFull = True, P.ppeRelativeDirectory = pwd }
   when (P.nonEmpty warnings) $
     hPutStrLn stderr (P.prettyPrintMultipleWarnings ppeOpts warnings)

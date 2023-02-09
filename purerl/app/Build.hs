@@ -74,6 +74,9 @@ import qualified Language.PureScript.Environment as P
 import qualified Language.PureScript.Errors as P
 import qualified Language.PureScript.Options as P
 --
+import qualified System.Environment as System.Environment
+import qualified Data.Maybe as Data.Maybe
+--
 
 data BuildOptions = BuildOptions
   { buildOutputDir :: FilePath,
@@ -254,7 +257,13 @@ compile' BuildOptions {..} = do
     printWarningsAndErrors :: forall a. Bool -> Bool -> MultipleErrors -> Either MultipleErrors a -> IO ()
     printWarningsAndErrors verbose False warnings errors = do
       pwd <- getCurrentDirectory
-      cc <- bool Nothing (Just P.defaultCodeColor) <$> ANSI.hSupportsANSI stderr
+
+      probablySupportsANSI <- ANSI.hSupportsANSI stderr
+      colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+      let cc = if colorOverride || probablySupportsANSI
+               then Just P.defaultCodeColor
+               else Nothing
+
       let ppeOpts = E.defaultPPEOptions {E.ppeCodeColor = cc, E.ppeFull = verbose, E.ppeRelativeDirectory = pwd}
       when (E.nonEmpty warnings) $
         hPutStrLn stderr (E.prettyPrintMultipleWarnings ppeOpts warnings)
