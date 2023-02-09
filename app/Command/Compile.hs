@@ -24,6 +24,10 @@ import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr, stdout)
 import           System.IO.UTF8 (readUTF8FilesT)
 
+import qualified System.Environment as System.Environment
+
+import qualified Data.Maybe as Data.Maybe
+
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
   , pscmOutputDir    :: FilePath
@@ -36,7 +40,13 @@ data PSCMakeOptions = PSCMakeOptions
 printWarningsAndErrors :: Bool -> Bool -> [(FilePath, T.Text)] -> P.MultipleErrors -> Either P.MultipleErrors a -> IO ()
 printWarningsAndErrors verbose False files warnings errors = do
   pwd <- getCurrentDirectory
-  cc <- bool Nothing (Just P.defaultCodeColor) <$> ANSI.hSupportsANSI stdout
+
+  probablySupportsANSI <- ANSI.hSupportsANSI stderr
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride || probablySupportsANSI
+           then Just P.defaultCodeColor
+           else Nothing
+
   let ppeOpts = P.defaultPPEOptions { P.ppeCodeColor = cc, P.ppeFull = verbose, P.ppeRelativeDirectory = pwd, P.ppeFileContents = files }
   when (P.nonEmpty warnings) $
     putStrLn (P.prettyPrintMultipleWarnings ppeOpts warnings)
