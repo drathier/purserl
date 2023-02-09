@@ -23,6 +23,13 @@ import           System.Directory (getCurrentDirectory)
 import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr, stdout)
 import           System.IO.UTF8 (readUTF8FilesT)
+-- caching fork
+import Data.IORef
+import Control.Concurrent (threadDelay)
+import Control.Exception (catch)
+import System.Exit (ExitCode(..))
+import           System.Environment (lookupEnv)
+import qualified Data.HashMap.Strict as MS
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
@@ -52,7 +59,47 @@ printWarningsAndErrors verbose True files warnings errors = do
   either (const exitFailure) (const (return ())) errors
 
 compile :: PSCMakeOptions -> IO ()
-compile PSCMakeOptions{..} = do
+compile opts = do
+  externsMemCache <- newIORef MS.empty
+  shouldRunAgain <- do
+    v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
+    pure $ case v of
+      Just "0" -> False
+      Just "no" -> False
+      Just "false" -> False
+      Just "False" -> False
+      Just "FALSE" -> False
+      Just "" -> False
+      Nothing -> False
+      _ -> True
+  let
+      run = do
+        if shouldRunAgain then do
+          putStrLn "### read externs"
+          _ <- getLine
+          putStrLn "### launching compiler"
+          else
+            pure ()
+        res <-
+          compileImpl opts externsMemCache
+            `catch`
+              (\case
+                ExitFailure code -> pure code
+                ExitSuccess -> pure 0
+              )
+
+        case shouldRunAgain of
+          True -> do
+            putStrLn ("### done compiler: " <> show res)
+            run
+          False ->
+            case res of
+              0 -> exitSuccess
+              _ -> exitFailure
+  run
+
+compileImpl :: PSCMakeOptions -> P.ExternsMemCache -> IO Int
+compileImpl PSCMakeOptions{..} externsMemCache = do
   input <- globWarningOnMisses warnFileTypeNotFound pscmInput
   when (null input) $ do
     hPutStr stderr $ unlines [ "purs compile: No input files."
@@ -64,7 +111,7 @@ compile PSCMakeOptions{..} = do
     ms <- CST.parseModulesFromFiles id moduleFiles
     let filePathMap = M.fromList $ map (\(fp, pm) -> (P.getModuleName $ CST.resPartial pm, Right fp)) ms
     foreigns <- inferForeignModules filePathMap
-    let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
+    let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix (Just externsMemCache)
     P.make makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
   exitSuccess

@@ -573,9 +573,10 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           lazyArity (InternalIdent RuntimeLazyFactory) = Just (Arity (0, 3))
           lazyArity _ = Nothing
 
-          usedArity a = checkUsed (Set.member a)
-          usedAnyArity = checkUsed (not . Set.null)
-          usedExceptArity a = checkUsed (not . Set.null . Set.delete a)
+          -- NOTE[drathier]: this part of the optimization pipeline assumes we know all the function call site arities. When running this as a single binary, we're doing erl code gen as we go instead of as a separate second pass, so we have to play it safe here and assume all fn arities are used.
+          usedArity a = True -- checkUsed (Set.member a)
+          usedAnyArity = True -- checkUsed (not . Set.null)
+          usedExceptArity a = True -- checkUsed (not . Set.null . Set.delete a)
 
       -- Apply in CoreFn then translate to take advantage of translation of full/partial application
       (res1, res2) <- case effFnArity qident <|> fnArity qident <|> M.lookup qident arities <|> lazyArity ident of

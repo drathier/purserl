@@ -574,6 +574,10 @@ ansiColor :: (ANSI.ColorIntensity, ANSI.Color) -> String
 ansiColor (intensity, color) =
    ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground intensity color]
 
+ansiColorBackground :: (ANSI.ColorIntensity, ANSI.Color) -> String
+ansiColorBackground (intensity, color) =
+   ANSI.setSGRCode [ANSI.SetColor ANSI.Background intensity color]
+
 ansiColorReset :: String
 ansiColorReset =
    ANSI.setSGRCode [ANSI.Reset]
@@ -592,6 +596,19 @@ colorCodeBox codeColor b = case codeColor of
 
     | otherwise -> Box.hcat Box.left -- making two boxes, one for each side of the box so that it will set each row it's own color and will reset it afterwards
         [ Box.vcat Box.top $ replicate (Box.rows b) $ Box.text $ ansiColor cc
+        , b
+        , Box.vcat Box.top $ replicate (Box.rows b) $ Box.text ansiColorReset
+        ]
+
+colorBackgroundBox :: Maybe (ANSI.ColorIntensity, ANSI.Color) -> Box.Box -> Box.Box
+colorBackgroundBox  codeColor b = case codeColor of
+  Nothing -> b
+  Just cc
+    | Box.rows b == 1 ->
+        Box.text (ansiColorBackground cc) Box.<> b `endWith` Box.text ansiColorReset
+
+    | otherwise -> Box.hcat Box.left -- making two boxes, one for each side of the box so that it will set each row it's own color and will reset it afterwards
+        [ Box.vcat Box.top $ replicate (Box.rows b) $ Box.text $ ansiColorBackground  cc
         , b
         , Box.vcat Box.top $ replicate (Box.rows b) $ Box.text ansiColorReset
         ]
@@ -630,7 +647,7 @@ defaultPPEOptions = PPEOptions
 
 -- | Pretty print a single error, simplifying if necessary
 prettyPrintSingleError :: PPEOptions -> ErrorMessage -> Box.Box
-prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileContents) e = flip evalState defaultUnknownMap $ do
+prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileContents) e = flip evalState defaultUnknownMap $ do
   em <- onTypesInErrorMessageM replaceUnknowns (if full then e else simplifyErrorMessage e)
   um <- get
   return (prettyPrintErrorMessage um em)
@@ -643,30 +660,20 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
     paras $
       [ foldr renderHint (indent (renderSimpleErrorMessage simple)) hints
       ] ++
-      maybe [] (return . Box.moveDown 1) typeInformation ++
-      [ Box.moveDown 1 $ paras
-          [ line $ "See " <> errorDocUri e <> " for more information, "
-          , line $ "or to contribute content related to this " <> levelText <> "."
-          ]
-      | showDocs
-      ]
+      maybe [] (return . Box.moveDown 1) typeInformation
     where
     typeInformation :: Maybe Box.Box
     typeInformation | not (null types) = Just $ Box.hsep 1 Box.left [ line "where", paras types ]
                     | otherwise = Nothing
       where
       types :: [Box.Box]
-      types = map skolemInfo  (M.elems (umSkolemMap typeMap)) ++
-              map unknownInfo (M.elems (umUnknownMap typeMap))
+      types = map skolemInfo  (M.elems (umSkolemMap typeMap))
 
       skolemInfo :: (String, Int, Maybe SourceSpan) -> Box.Box
       skolemInfo (name, s, ss) =
         paras $
           line (markCode (T.pack (name <> show s)) <> " is a rigid type variable")
-          : foldMap (return . line . ("  bound at " <>) . displayStartEndPos) ss
-
-      unknownInfo :: Int -> Box.Box
-      unknownInfo u = line $ markCode ("t" <> T.pack (show u)) <> " is an unknown type"
+          : foldMap (return . line . ("  bound at " <>) . displayStartEndPosShort) ss
 
     renderSimpleErrorMessage :: SimpleErrorMessage -> Box.Box
     renderSimpleErrorMessage (InternalCompilerError ctx err) =
@@ -1448,6 +1455,12 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
                                                    , markCodeBox $ typeAsBox prettyDepth t2
                                                    ]
             ]
+    renderHint (ErrorInRowLabel lb) detail =
+      paras [ detail
+            , Box.hsep 1 Box.top [ line "while matching label"
+                                 , markCodeBox $ line $ prettyPrintObjectKey (runLabel lb)
+                                 ]
+            ]
     renderHint (ErrorInInstance nm ts) detail =
       paras [ detail
             , line "in type class instance"
@@ -1763,14 +1776,14 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
     Qualified qb (Left ty) ->
       "instance "
         Box.<> (case qb of
-                  ByModuleName mn -> "in module "
+                  ByModuleName mn -> "module "
                     Box.<> line (markCode $ runModuleName mn)
                     Box.<> " "
                   _ -> Box.nullBox)
         Box.<> "with type "
         Box.<> markCodeBox (prettyType ty)
         Box.<> " "
-        Box.<> (line . displayStartEndPos . fst $ getAnnForType ty)
+        Box.<> (line . displayStartEndPosShort . fst $ getAnnForType ty)
     Qualified mn (Right inst) -> line . markCode . showQualified showIdent $ Qualified mn inst
 
   -- | As of this writing, this function assumes that all provided SourceSpans
@@ -1929,7 +1942,9 @@ prettyPrintMultipleErrorsBox ppeOptions = prettyPrintMultipleErrorsWith (ppeOpti
 prettyPrintMultipleErrorsWith :: PPEOptions -> String -> String -> MultipleErrors -> [Box.Box]
 prettyPrintMultipleErrorsWith ppeOptions intro _ (MultipleErrors [e]) =
   let result = prettyPrintSingleError ppeOptions e
-  in [ Box.vcat Box.left [ Box.text intro
+  in [ Box.vcat Box.left [ colorBackgroundBox (Just (ANSI.Dull, ANSI.Red)) (Box.text " ")
+                              Box.<> Box.text " "
+                              Box.<> colorCodeBox (Just (ANSI.Dull, ANSI.Red)) (Box.text intro)
                          , result
                          ]
      ]

@@ -292,7 +292,7 @@ prettyPrintSingleError (PPEOptions codeColor full _level _showDocs relPath fileC
       skolemInfo (name, s, ss) =
         paras $
           line (markCode (T.pack (name <> show s)) <> " is a rigid type variable")
-          : foldMap (return . line . ("  bound at " <>) . displayStartEndPos) ss
+          : foldMap (return . line . ("  bound at " <>) . displayStartEndPosShort) ss
 
       unknownInfo :: Int -> Box.Box
       unknownInfo u = line $ markCode ("t" <> T.pack (show u)) <> " is an unknown type"

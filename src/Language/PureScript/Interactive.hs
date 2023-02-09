@@ -68,7 +68,8 @@ rebuild loadedExterns m = do
       (P.buildMakeActions modulesDir
                           filePathMap
                           M.empty
-                          False) { P.progress = const (return ()) }
+                          False
+                          Nothing) { P.progress = const (return ()) }
 
     filePathMap :: M.Map P.ModuleName (Either P.RebuildPolicy FilePath)
     filePathMap = M.singleton (P.getModuleName m) (Left P.RebuildAlways)
@@ -88,6 +89,7 @@ make ms = do
                          filePathMap
                          foreignFiles
                          False
+                         Nothing
 
     filePathMap :: M.Map P.ModuleName (Either P.RebuildPolicy FilePath)
     filePathMap = M.fromList $ map (\(fp, m) -> (P.getModuleName $ CST.resPartial m, Right fp)) ms

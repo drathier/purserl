@@ -76,6 +76,10 @@ ef = P.ExternsFile
     ]
   --, efSourceSpan =
     (P.internalModuleSourceSpan "<tests>")
+    -- efUpstreamCacheShapes =
+    mempty
+    -- efOurCacheShapes =
+    mempty
  -- }
 
 moduleMap :: ModuleMap [IdeDeclarationAnn]

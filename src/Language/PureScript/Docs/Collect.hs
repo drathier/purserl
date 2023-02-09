@@ -95,7 +95,7 @@ compileForDocs outputDir inputFiles = do
       let filePathMap = Map.fromList $ map (\(fp, pm) -> (P.getModuleName $ P.resPartial pm, Right fp)) ms
       foreigns <- P.inferForeignModules filePathMap
       let makeActions =
-            (P.buildMakeActions outputDir filePathMap foreigns False)
+            (P.buildMakeActions outputDir filePathMap foreigns False Nothing)
               { P.progress = liftIO . TIO.hPutStr stdout . (<> "\n") . P.renderProgressMessage "Compiling documentation for "
               }
       P.make makeActions (map snd ms)
