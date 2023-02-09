@@ -574,6 +574,10 @@ ansiColor :: (ANSI.ColorIntensity, ANSI.Color) -> String
 ansiColor (intensity, color) =
    ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground intensity color]
 
+ansiColorBackground :: (ANSI.ColorIntensity, ANSI.Color) -> String
+ansiColorBackground (intensity, color) =
+   ANSI.setSGRCode [ANSI.SetColor ANSI.Background intensity color]
+
 ansiColorReset :: String
 ansiColorReset =
    ANSI.setSGRCode [ANSI.Reset]
@@ -592,6 +596,19 @@ colorCodeBox codeColor b = case codeColor of
 
     | otherwise -> Box.hcat Box.left -- making two boxes, one for each side of the box so that it will set each row it's own color and will reset it afterwards
         [ Box.vcat Box.top $ replicate (Box.rows b) $ Box.text $ ansiColor cc
+        , b
+        , Box.vcat Box.top $ replicate (Box.rows b) $ Box.text ansiColorReset
+        ]
+
+colorBackgroundBox :: Maybe (ANSI.ColorIntensity, ANSI.Color) -> Box.Box -> Box.Box
+colorBackgroundBox  codeColor b = case codeColor of
+  Nothing -> b
+  Just cc
+    | Box.rows b == 1 ->
+        Box.text (ansiColorBackground cc) Box.<> b `endWith` Box.text ansiColorReset
+
+    | otherwise -> Box.hcat Box.left -- making two boxes, one for each side of the box so that it will set each row it's own color and will reset it afterwards
+        [ Box.vcat Box.top $ replicate (Box.rows b) $ Box.text $ ansiColorBackground  cc
         , b
         , Box.vcat Box.top $ replicate (Box.rows b) $ Box.text ansiColorReset
         ]
@@ -1925,7 +1942,9 @@ prettyPrintMultipleErrorsBox ppeOptions = prettyPrintMultipleErrorsWith (ppeOpti
 prettyPrintMultipleErrorsWith :: PPEOptions -> String -> String -> MultipleErrors -> [Box.Box]
 prettyPrintMultipleErrorsWith ppeOptions intro _ (MultipleErrors [e]) =
   let result = prettyPrintSingleError ppeOptions e
-  in [ Box.vcat Box.left [ Box.text intro
+  in [ Box.vcat Box.left [ colorBackgroundBox (Just (ANSI.Dull, ANSI.Red)) (Box.text " ")
+                              Box.<> Box.text " "
+                              Box.<> colorCodeBox (Just (ANSI.Dull, ANSI.Red)) (Box.text intro)
                          , result
                          ]
      ]
