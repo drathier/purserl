@@ -630,7 +630,7 @@ defaultPPEOptions = PPEOptions
 
 -- | Pretty print a single error, simplifying if necessary
 prettyPrintSingleError :: PPEOptions -> ErrorMessage -> Box.Box
-prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileContents) e = flip evalState defaultUnknownMap $ do
+prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileContents) e = flip evalState defaultUnknownMap $ do
   em <- onTypesInErrorMessageM replaceUnknowns (if full then e else simplifyErrorMessage e)
   um <- get
   return (prettyPrintErrorMessage um em)
@@ -643,13 +643,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
     paras $
       [ foldr renderHint (indent (renderSimpleErrorMessage simple)) hints
       ] ++
-      maybe [] (return . Box.moveDown 1) typeInformation ++
-      [ Box.moveDown 1 $ paras
-          [ line $ "See " <> errorDocUri e <> " for more information, "
-          , line $ "or to contribute content related to this " <> levelText <> "."
-          ]
-      | showDocs
-      ]
+      maybe [] (return . Box.moveDown 1) typeInformation
     where
     typeInformation :: Maybe Box.Box
     typeInformation | not (null types) = Just $ Box.hsep 1 Box.left [ line "where", paras types ]
