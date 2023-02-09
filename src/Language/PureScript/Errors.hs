@@ -662,7 +662,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
       skolemInfo (name, s, ss) =
         paras $
           line (markCode (T.pack (name <> show s)) <> " is a rigid type variable")
-          : foldMap (return . line . ("  bound at " <>) . displayStartEndPos) ss
+          : foldMap (return . line . ("  bound at " <>) . displayStartEndPosShort) ss
 
     renderSimpleErrorMessage :: SimpleErrorMessage -> Box.Box
     renderSimpleErrorMessage (InternalCompilerError ctx err) =
@@ -1765,14 +1765,14 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
     Qualified qb (Left ty) ->
       "instance "
         Box.<> (case qb of
-                  ByModuleName mn -> "in module "
+                  ByModuleName mn -> "module "
                     Box.<> line (markCode $ runModuleName mn)
                     Box.<> " "
                   _ -> Box.nullBox)
         Box.<> "with type "
         Box.<> markCodeBox (prettyType ty)
         Box.<> " "
-        Box.<> (line . displayStartEndPos . fst $ getAnnForType ty)
+        Box.<> (line . displayStartEndPosShort . fst $ getAnnForType ty)
     Qualified mn (Right inst) -> line . markCode . showQualified showIdent $ Qualified mn inst
 
   -- | As of this writing, this function assumes that all provided SourceSpans

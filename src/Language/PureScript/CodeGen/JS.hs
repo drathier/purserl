@@ -423,7 +423,7 @@ moduleBindToJs mn = bindToJs
       failedPatternError names = AST.Unary Nothing AST.New $ AST.App Nothing (AST.Var Nothing "Error") [AST.Binary Nothing AST.Add (AST.StringLiteral Nothing $ mkString failedPatternMessage) (AST.ArrayLiteral Nothing $ zipWith valueError names vals)]
 
       failedPatternMessage :: Text
-      failedPatternMessage = "Failed pattern match at " <> runModuleName mn <> " " <> displayStartEndPos ss <> ": "
+      failedPatternMessage = "Failed pattern match at " <> runModuleName mn <> " " <> displayStartEndPosShort ss <> ": "
 
       valueError :: Text -> AST -> AST
       valueError _ l@(AST.NumericLiteral _ _) = l
