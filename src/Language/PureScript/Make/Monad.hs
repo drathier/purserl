@@ -229,6 +229,9 @@ writeTextFile path text = makeIO ("write file: " <> Text.pack path) $ do
       Just "" -> False
       Nothing -> False
       _ -> True
+  -- always write the file, so timestamps are updated for next rebuild
+  B.writeFile path text
+  -- fully write the file before printing to stdout
   if shouldRunAgain then
     case currentText of
       Just currentText | currentText == text ->
@@ -236,8 +239,6 @@ writeTextFile path text = makeIO ("write file: " <> Text.pack path) $ do
       _ ->
         liftIO (putStrLn ("### erl-diff:" <> path))
     else pure ()
-  -- always write the file, so timestamps are updated for next rebuild
-  B.writeFile path text
 
 -- | Write a JSON file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.
