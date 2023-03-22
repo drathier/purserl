@@ -63,9 +63,14 @@ printWarningsAndErrors verbose False files warnings errors = do
       exitFailure
     Right _ -> return ()
 printWarningsAndErrors verbose True files warnings errors = do
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride
+           then Just P.defaultCodeColor
+           else Nothing
+
   putStrLn . LBU8.toString . A.encode $
-    JSONResult (toJSONErrors verbose P.Warning files warnings)
-               (either (toJSONErrors verbose P.Error files) (const []) errors)
+    JSONResult (toJSONErrors cc verbose P.Warning files warnings)
+               (either (toJSONErrors cc verbose P.Error files) (const []) errors)
   either (const exitFailure) (const (return ())) errors
 
 compile :: PSCMakeOptions -> IO ()
