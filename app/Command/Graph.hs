@@ -86,9 +86,15 @@ printWarningsAndErrors False warnings errors = do
     Right res -> pure res
 printWarningsAndErrors True warnings errors = do
   let verbose = True
+
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride
+           then Just P.defaultCodeColor
+           else Nothing
+
   hPutStrLn stderr . LBU8.toString . Json.encode $
-    JSONResult (toJSONErrors verbose P.Warning [] warnings)
-               (either (toJSONErrors verbose P.Error []) (const []) errors)
+    JSONResult (toJSONErrors cc verbose P.Warning [] warnings)
+               (either (toJSONErrors cc verbose P.Error []) (const []) errors)
   case errors of
     Left _errs -> exitFailure
     Right res -> pure res
