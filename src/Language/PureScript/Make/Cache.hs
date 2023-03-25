@@ -32,6 +32,11 @@ import qualified System.FilePath as FilePath
 
 import Language.PureScript.Names (ModuleName)
 
+-- purserl
+-- import System.IO.Unsafe (unsafePerformIO)
+-- import Control.Monad (when)
+--
+
 digestToHex :: Digest a -> Text
 digestToHex = decodeUtf8 . convertToBase Base16
 
@@ -107,21 +112,26 @@ checkChanged cacheDb mn basePath currentInfo = do
             -- One of the input files listed in the cache no longer exists;
             -- remove that file from the cache and note that the module needs
             -- rebuilding
+            -- let !_ = unsafePerformIO $ putStrLn (show ("checkChanged.This: removed a file", fp))
             pure (Map.empty, All False)
           That (timestamp, getHash) -> do
             -- The module has a new input file; add it to the cache and
             -- note that the module needs rebuilding.
             newHash <- getHash
+            -- let !_ = unsafePerformIO $ putStrLn (show ("checkChanged.That: new file", fp))
             pure (Map.singleton fp (timestamp, newHash), All False)
           These db@(dbTimestamp, _) (newTimestamp, _) | dbTimestamp == newTimestamp -> do
             -- This file exists both currently and in the cache database,
             -- and the timestamp is unchanged, so we skip checking the
             -- hash.
+            -- let !_ = unsafePerformIO $ putStrLn (show ("checkChanged.These: hit mtime", fp))
             pure (Map.singleton fp db, mempty)
           These (_, dbHash) (newTimestamp, getHash) -> do
             -- This file exists both currently and in the cache database,
             -- but the timestamp has changed, so we need to check the hash.
             newHash <- getHash
+            -- let !_ = unsafePerformIO $ when (dbHash /= newHash) $ putStrLn (show ("checkChanged.These: hash mismatch", fp))
+            -- let !_ = unsafePerformIO $ when (dbHash == newHash) $ putStrLn (show ("checkChanged.These: hit hash", fp))
             pure (Map.singleton fp (newTimestamp, newHash), All (dbHash == newHash))
 
   pure (CacheInfo newInfo, getAll isUpToDate)

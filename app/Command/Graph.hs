@@ -16,6 +16,8 @@ import           System.Exit (exitFailure)
 import           System.Directory (getCurrentDirectory)
 import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr)
+import qualified Data.Maybe as Data.Maybe
+import qualified System.Environment as System.Environment
 
 data GraphOptions = GraphOptions
   { graphInput      :: [FilePath]
@@ -67,7 +69,13 @@ command = graph <$> (Opts.helper <*> graphOptions)
 printWarningsAndErrors :: Bool -> P.MultipleErrors -> Either P.MultipleErrors a -> IO a
 printWarningsAndErrors False warnings errors = do
   pwd <- getCurrentDirectory
-  cc <- bool Nothing (Just P.defaultCodeColor) <$> ANSI.hSupportsANSI stderr
+
+  probablySupportsANSI <- ANSI.hSupportsANSI stderr
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride || probablySupportsANSI
+           then Just P.defaultCodeColor
+           else Nothing
+
   let ppeOpts = P.defaultPPEOptions { P.ppeCodeColor = cc, P.ppeFull = True, P.ppeRelativeDirectory = pwd }
   when (P.nonEmpty warnings) $
     hPutStrLn stderr (P.prettyPrintMultipleWarnings ppeOpts warnings)
@@ -78,9 +86,15 @@ printWarningsAndErrors False warnings errors = do
     Right res -> pure res
 printWarningsAndErrors True warnings errors = do
   let verbose = True
+
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride
+           then Just P.defaultCodeColor
+           else Nothing
+
   hPutStrLn stderr . LBU8.toString . Json.encode $
-    JSONResult (toJSONErrors verbose P.Warning [] warnings)
-               (either (toJSONErrors verbose P.Error []) (const []) errors)
+    JSONResult (toJSONErrors cc verbose P.Warning [] warnings)
+               (either (toJSONErrors cc verbose P.Error []) (const []) errors)
   case errors of
     Left _errs -> exitFailure
     Right res -> pure res

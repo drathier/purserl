@@ -50,6 +50,18 @@ import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
+import           System.Environment (lookupEnv)
+import Debug.Trace
+import System.IO.Unsafe (unsafePerformIO)
+import PrettyPrint
+
+
+-- purserl
+import Control.Applicative ((<|>))
+import qualified Build as Erl.Build
+-- import System.IO.Unsafe (unsafePerformIO)
+--
+
 
 -- | Rebuild a single module.
 --
@@ -108,12 +120,14 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   (deguarded, nextVar') <- runSupplyT nextVar $ do
     desugarCaseGuards elaborated
 
+  let upstreamDBs = M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
+
   regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
   let mod' = Module ss coms moduleName regrouped exps
       corefn = CF.moduleToCoreFn env' mod'
       (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
       (renamedIdents, renamed) = renameInModule optimized
-      exts = moduleToExternsFile mod' env' renamedIdents
+      exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
   ffiCodegen renamed
 
   -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
@@ -129,7 +143,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
                Right d -> d
 
-  evalSupplyT nextVar'' $ codegen renamed docs exts
+  evalSupplyT nextVar'' $ codegen env renamed docs exts
   return exts
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
@@ -143,6 +157,8 @@ make :: forall m. (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWrit
 make ma@MakeActions{..} ms = do
   checkModuleNames
   cacheDb <- readCacheDb
+
+  -- let !_ = unsafePerformIO $ putStrLn (show ("cacheDb", cacheDb))
 
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
 
@@ -252,14 +268,53 @@ make ma@MakeActions{..} ms = do
           env <- C.readMVar (bpEnv buildPlan)
           idx <- C.takeMVar (bpIndex buildPlan)
           C.putMVar (bpIndex buildPlan) (idx + 1)
-          (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
-          return $ BuildJobSucceeded (pwarnings' <> warnings) exts
+          let cfa = getCacheFilesAvailable buildPlan moduleName
+          nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
+
+          let doCompile wasCacheHit badExts =
+                do
+                  (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
+                  let meta = (("cfa" :: String, cfa), ("badExts" :: String, badExts), ("exts" :: String, exts))
+                  case (badExts, wasCacheHit) of
+                    (Just e, WasCacheMiss) | e == exts ->
+                      trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues pointless rebuild, should have been a cache hit. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
+                    (Just e, WasCacheHit) | e /= exts ->
+                      trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues missing rebuild, caching system said it was a cache hit but rebuilding it changed some files. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
+                    _ -> pure ()
+                  return $ BuildJobSucceeded (pwarnings' <> warnings) exts
+
+          -- [drathier]: so that we can quickly go back and forth between caching and non-caching versions when testing this out
+          experimentalCachingDisabledViaEnvvar <- do
+            v <- pure $ unsafePerformIO $ lookupEnv "PURS_DISABLE_EXPERIMENTAL_CACHE"
+            pure $ case v of
+              Just "0" -> False
+              Just "no" -> False
+              Just "false" -> False
+              Just "False" -> False
+              Just "FALSE" -> False
+              Just "" -> False
+              Nothing -> False
+              _ -> True
+
+          case shouldRecompile moduleName cfa externs of
+            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
+            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
+            --
+            Right exts
+              -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
+              | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
+              ->
+              return $ BuildJobSucceeded pwarnings' exts
+            Right badExts -> doCompile WasCacheHit (Just badExts)
+            Left badExts -> doCompile WasCacheMiss badExts
         Nothing -> return BuildJobSkipped
 
     BuildPlan.markComplete buildPlan moduleName result
 
   onExceptionLifted :: m a -> m b -> m a
   onExceptionLifted l r = control $ \runInIO -> runInIO l `onException` runInIO r
+
+data WasCacheHit = WasCacheHit | WasCacheMiss
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.
@@ -274,8 +329,12 @@ inferForeignModules =
     inferForeignModule :: Either RebuildPolicy FilePath -> m (Maybe FilePath)
     inferForeignModule (Left _) = return Nothing
     inferForeignModule (Right path) = do
-      let jsFile = replaceExtension path "js"
-      exists <- liftIO $ doesFileExist jsFile
-      if exists
-        then return (Just jsFile)
-        else return Nothing
+       jsForeign <- do
+            let jsFile = replaceExtension path "js"
+            exists <- liftIO $ doesFileExist jsFile
+            if exists
+              then return (Just jsFile)
+              else return Nothing
+       erlForeign <- Erl.Build.inferForeignModule' path
+       pure (erlForeign <|> jsForeign)
+

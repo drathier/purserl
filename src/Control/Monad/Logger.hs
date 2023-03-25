@@ -24,6 +24,14 @@ runLogger' l = do
   w <- readIORef r
   return (a, w)
 
+contraMapLoggerErrors :: (w' -> w) -> Logger w a -> Logger w' a
+contraMapLoggerErrors f l =
+  Logger (\ioref -> do
+    w <- readIORef ioref
+    w' <- newIORef (f w)
+    (runLogger l) w'
+    )
+
 instance Functor (Logger w) where
   fmap f (Logger l) = Logger $ \r -> fmap f (l r)
 

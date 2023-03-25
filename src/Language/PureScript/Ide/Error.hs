@@ -51,9 +51,9 @@ encodeRebuildErrors files = toJSON . map encodeRebuildError . P.runMultipleError
       (P.ErrorMessage _
        ((P.HoleInferredType name _ _
          (Just P.TSAfter{tsAfterIdentifiers=idents, tsAfterRecordFields=fields})))) ->
-        insertTSCompletions name idents (fromMaybe [] fields) (toJSON (toJSONError False P.Error files err))
+        insertTSCompletions name idents (fromMaybe [] fields) (toJSON (toJSONError Nothing False P.Error files err))
       _ ->
-        (toJSON . toJSONError False P.Error files) err
+        (toJSON . toJSONError Nothing False P.Error files) err
 
     insertTSCompletions name idents fields (Aeson.Object value) =
       Aeson.Object

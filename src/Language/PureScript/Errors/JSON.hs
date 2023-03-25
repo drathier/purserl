@@ -6,6 +6,7 @@ import Prelude
 
 import qualified Data.Aeson.TH as A
 import qualified Data.List.NonEmpty as NEL
+import qualified System.Console.ANSI as ANSI
 import Data.Text (Text)
 
 import qualified Language.PureScript as P
@@ -43,13 +44,14 @@ $(A.deriveJSON A.defaultOptions ''ErrorSuggestion)
 $(A.deriveJSON A.defaultOptions ''JSONError)
 $(A.deriveJSON A.defaultOptions ''JSONResult)
 
-toJSONErrors :: Bool -> P.Level -> [(FilePath, Text)] -> P.MultipleErrors -> [JSONError]
-toJSONErrors verbose level files = map (toJSONError verbose level files) . P.runMultipleErrors
 
-toJSONError :: Bool -> P.Level -> [(FilePath, Text)] -> P.ErrorMessage -> JSONError
-toJSONError verbose level files e =
+toJSONErrors :: Maybe (ANSI.ColorIntensity, ANSI.Color) -> Bool -> P.Level -> [(FilePath, Text)] -> P.MultipleErrors -> [JSONError]
+toJSONErrors maybeCodeColor verbose level files = map (toJSONError maybeCodeColor verbose level files) . P.runMultipleErrors
+
+toJSONError :: Maybe (ANSI.ColorIntensity, ANSI.Color) -> Bool -> P.Level -> [(FilePath, Text)] -> P.ErrorMessage -> JSONError
+toJSONError maybeCodeColor verbose level files e =
   JSONError (toErrorPosition <$> fmap NEL.head spans)
-            (P.renderBox (P.prettyPrintSingleError (P.PPEOptions Nothing verbose level False mempty files) (P.stripModuleAndSpan e)))
+            (P.renderBox (P.prettyPrintSingleError (P.PPEOptions maybeCodeColor verbose level False mempty files) (P.stripModuleAndSpan e)))
             (P.errorCode e)
             (P.errorDocUri e)
             (P.spanName <$> fmap NEL.head spans)

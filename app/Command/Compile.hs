@@ -23,6 +23,17 @@ import           System.Directory (getCurrentDirectory)
 import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr, stdout)
 import           System.IO.UTF8 (readUTF8FilesT)
+-- caching fork
+import Data.IORef
+import Control.Concurrent (threadDelay)
+import Control.Exception (catch)
+import System.Exit (ExitCode(..))
+import           System.Environment (lookupEnv)
+import qualified Data.HashMap.Strict as MS
+
+import qualified System.Environment as System.Environment
+
+import qualified Data.Maybe as Data.Maybe
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
@@ -36,7 +47,13 @@ data PSCMakeOptions = PSCMakeOptions
 printWarningsAndErrors :: Bool -> Bool -> [(FilePath, T.Text)] -> P.MultipleErrors -> Either P.MultipleErrors a -> IO ()
 printWarningsAndErrors verbose False files warnings errors = do
   pwd <- getCurrentDirectory
-  cc <- bool Nothing (Just P.defaultCodeColor) <$> ANSI.hSupportsANSI stdout
+
+  probablySupportsANSI <- ANSI.hSupportsANSI stderr
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride || probablySupportsANSI
+           then Just P.defaultCodeColor
+           else Nothing
+
   let ppeOpts = P.defaultPPEOptions { P.ppeCodeColor = cc, P.ppeFull = verbose, P.ppeRelativeDirectory = pwd, P.ppeFileContents = files }
   when (P.nonEmpty warnings) $
     putStrLn (P.prettyPrintMultipleWarnings ppeOpts warnings)
@@ -46,13 +63,58 @@ printWarningsAndErrors verbose False files warnings errors = do
       exitFailure
     Right _ -> return ()
 printWarningsAndErrors verbose True files warnings errors = do
+  colorOverride <- (/=) "" <$> Data.Maybe.fromMaybe "" <$> System.Environment.lookupEnv "PURS_FORCE_COLOR"
+  let cc = if colorOverride
+           then Just P.defaultCodeColor
+           else Nothing
+
   putStrLn . LBU8.toString . A.encode $
-    JSONResult (toJSONErrors verbose P.Warning files warnings)
-               (either (toJSONErrors verbose P.Error files) (const []) errors)
+    JSONResult (toJSONErrors cc verbose P.Warning files warnings)
+               (either (toJSONErrors cc verbose P.Error files) (const []) errors)
   either (const exitFailure) (const (return ())) errors
 
 compile :: PSCMakeOptions -> IO ()
-compile PSCMakeOptions{..} = do
+compile opts = do
+  externsMemCache <- newIORef MS.empty
+  shouldRunAgain <- do
+    v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
+    pure $ case v of
+      Just "0" -> False
+      Just "no" -> False
+      Just "false" -> False
+      Just "False" -> False
+      Just "FALSE" -> False
+      Just "" -> False
+      Nothing -> False
+      _ -> True
+  let
+      run = do
+        if shouldRunAgain then do
+          putStrLn "### read externs"
+          _ <- getLine
+          putStrLn "### launching compiler"
+          else
+            pure ()
+        res <-
+          compileImpl opts externsMemCache
+            `catch`
+              (\case
+                ExitFailure code -> pure code
+                ExitSuccess -> pure 0
+              )
+
+        case shouldRunAgain of
+          True -> do
+            putStrLn ("### done compiler: " <> show res)
+            run
+          False ->
+            case res of
+              0 -> exitSuccess
+              _ -> exitFailure
+  run
+
+compileImpl :: PSCMakeOptions -> P.ExternsMemCache -> IO Int
+compileImpl PSCMakeOptions{..} externsMemCache = do
   input <- globWarningOnMisses warnFileTypeNotFound pscmInput
   when (null input) $ do
     hPutStr stderr $ unlines [ "purs compile: No input files."
@@ -64,7 +126,7 @@ compile PSCMakeOptions{..} = do
     ms <- CST.parseModulesFromFiles id moduleFiles
     let filePathMap = M.fromList $ map (\(fp, pm) -> (P.getModuleName $ CST.resPartial pm, Right fp)) ms
     foreigns <- inferForeignModules filePathMap
-    let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
+    let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix (Just externsMemCache)
     P.make makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
   exitSuccess

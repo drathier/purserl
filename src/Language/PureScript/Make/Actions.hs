@@ -58,6 +58,48 @@ import           System.Directory (getCurrentDirectory)
 import           System.FilePath ((</>), makeRelative, splitPath, normalise, splitDirectories)
 import qualified System.FilePath.Posix as Posix
 import           System.IO (stderr)
+-- purerl
+import Language.PureScript.Erl.CodeGen (buildCodegenEnvironment)
+import Language.PureScript.AST as P
+import Language.PureScript.Comments as P
+import Language.PureScript.Crash as P
+import Language.PureScript.Environment as P
+import Language.PureScript.Errors as P hiding (indent)
+import Language.PureScript.Externs as P
+import Language.PureScript.Linter as P
+import Language.PureScript.ModuleDependencies as P
+import Language.PureScript.Names as P
+import Language.PureScript.Options as P
+import Language.PureScript.Pretty as P
+import Language.PureScript.Renamer as P
+import Language.PureScript.Roles as P
+import Language.PureScript.Sugar as P
+import Language.PureScript.TypeChecker as P
+import Language.PureScript.Types as P
+
+import Data.Maybe (catMaybes)
+
+import qualified Build as Erl.Build
+
+import Data.Either (fromRight)
+import           Language.PureScript.Erl.Parser (parseFile)
+import           Data.List ((\\))
+import           Language.PureScript.Erl.CodeGen (moduleToErl, CodegenEnvironment)
+import           Language.PureScript.Erl.CodeGen.Optimizer (optimize)
+import           Language.PureScript.Erl.Pretty (prettyPrintErl)
+import           Language.PureScript.Erl.CodeGen.Common (erlModuleName, erlModuleNameBase, atomModuleName, atom, ModuleType(..), runAtom)
+
+import qualified Control.Monad.Trans.Except as ExceptT
+import qualified Control.Monad.Trans.Reader as ReaderT
+import qualified Control.Monad.Supply as SupplyT
+import qualified Control.Monad.Logger as Logger
+import qualified Language.PureScript.Erl.Errors
+import qualified Language.PureScript.Erl.Make.Monad
+
+
+--
+
+import Data.IORef as IORef
 
 -- | Determines when to rebuild a module
 data RebuildPolicy
@@ -109,10 +151,13 @@ data MakeActions m = MakeActions
   -- externs file, or if any of the requested codegen targets were not produced
   -- the last time this module was compiled, this function must return Nothing;
   -- this indicates that the module will have to be recompiled.
+  , touchOutputTimestamp :: ModuleName -> m (Maybe ())
+  -- ^ Set the time this module was last compiled to the current time. Similar
+  -- to and used with getOutputTimestamp.
   , readExterns :: ModuleName -> m (FilePath, Maybe ExternsFile)
   -- ^ Read the externs file for a module as a string and also return the actual
   -- path for the file.
-  , codegen :: CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT m ()
+  , codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT m ()
   -- ^ Run the code generator for the module and write any required output files.
   , ffiCodegen :: CF.Module CF.Ann -> m ()
   -- ^ Check ffi and print it in the output directory.
@@ -172,9 +217,11 @@ buildMakeActions
   -- ^ a map between module name and the file containing the foreign javascript for the module
   -> Bool
   -- ^ Generate a prefix comment?
+  -> Maybe ExternsMemCache
+  -- ^ Optional memcache of already parsed externs files, for repeated builds
   -> MakeActions Make
-buildMakeActions outputDir filePathMap foreigns usePrefix =
-    MakeActions getInputTimestampsAndHashes getOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
+buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
+    MakeActions getInputTimestampsAndHashes getOutputTimestamp touchOutputTimestamp readExterns codegen ffiCodegen progress readCacheDb writeCacheDb writePackageJson outputPrimDocs
   where
 
   getInputTimestampsAndHashes
@@ -205,6 +252,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
     JSSourceMap -> outputFilename mn "index.js.map"
     CoreFn -> outputFilename mn "corefn.json"
     Docs -> outputFilename mn "docs.json"
+    Erl -> outFile mn
 
   getOutputTimestamp :: ModuleName -> Make (Maybe UTCTime)
   getOutputTimestamp mn = do
@@ -234,10 +282,29 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
                   then Just externsTimestamp
                   else Nothing
 
+  touchOutputTimestamp :: ModuleName -> Make (Maybe ())
+  touchOutputTimestamp mn = do
+    -- first check that all relevant files exist, by fetching the timestamp of the existing cache files
+    externsTimestamp <- getOutputTimestamp mn
+    -- then touch them all, to mark them as up-to-date. If this fails partway through, the next getOutputTimestamp will consider it incomplete.
+    codegenTargets <- asks optionsCodegenTargets
+    case externsTimestamp of
+      Nothing -> pure Nothing
+      Just _ -> do
+        -- then, after reading all relevant files succeeded, we update their mtimes
+        touchTimestampMaybe (outputFilename mn externsFileName)
+        case NEL.nonEmpty (fmap (targetFilename mn) (S.toList codegenTargets)) of
+          Nothing ->
+            pure (Just ())
+          Just outputPaths -> do
+            mmodTimes <- traverse touchTimestampMaybe outputPaths
+            pure $ sequence_ mmodTimes
+
+
   readExterns :: ModuleName -> Make (FilePath, Maybe ExternsFile)
   readExterns mn = do
     let path = outputDir </> T.unpack (runModuleName mn) </> externsFileName
-    (path, ) <$> readExternsFile path
+    (path, ) <$> readExternsFile mExternsMemCache path
 
   outputPrimDocs :: Make ()
   outputPrimDocs = do
@@ -245,10 +312,20 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
     when (S.member Docs codegenTargets) $ for_ Docs.Prim.primModules $ \docsMod@Docs.Module{..} ->
       writeJSONFile (outputFilename modName "docs.json") docsMod
 
-  codegen :: CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
-  codegen m docs exts = do
+-- ########################
+
+  moduleDir mn = outputDir </> T.unpack (P.runModuleName mn)
+  outFile mn = moduleDir mn </> T.unpack (erlModuleName mn PureScriptModule) ++ ".erl"
+  outFileChecked mn = moduleDir mn </> T.unpack (erlModuleName mn PureScriptCheckedModule) ++ ".erl"
+  hrlFile mn = moduleDir mn </> T.unpack (erlModuleNameBase mn) ++ ".hrl"
+  foreignHrlFile mn = moduleDir mn </> T.unpack (erlModuleName mn ForeignModule) ++ ".hrl"
+
+
+
+  codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
+  codegen environment m docs exts = do
     let mn = CF.moduleName m
-    lift $ writeCborFile (outputFilename mn externsFileName) exts
+    lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
     when (S.member CoreFn codegenTargets) $ do
       let coreFnFile = targetFilename mn CoreFn
@@ -278,10 +355,155 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
     when (S.member Docs codegenTargets) $ do
       lift $ writeJSONFile (outputFilename mn "docs.json") docs
 
+    -- ### Purerl
+
+    when (S.member Erl codegenTargets) $ do
+      erlForeigns <- do
+        (merls :: M.Map ModuleName (Maybe FilePath)) <- traverse Erl.Build.inferForeignModule' foreigns
+        case sequence merls of
+          Nothing -> internalError (show ("couldn't find some erl foreign", merls))
+          Just v -> pure v
+
+      -- generate the corefn
+      let coreFnFile = targetFilename mn CoreFn
+          json = CFJ.moduleToJSON Paths.version m
+      lift $ writeJSONFile coreFnFile json
+
+      let externsFiles = exts
+
+      let  getForeigns :: String -> Make [(T.Text, Int)]
+           getForeigns path = do
+             -- liftIO $ putStrLn (show ("getForeigns", path))
+             text <- readTextFile path
+             let (exports, ignoreExports) = fromRight ([],[]) $ parseFile path text
+             pure $ exports \\ ignoreExports
+
+
+      -- purerl env
+      -- let env = buildCodegenEnvironment $ foldr P.applyExternsFileToEnvironment P.initEnvironment (catMaybes externsFiles)
+      -- make sure our own externs are included in the environment
+      let env = buildCodegenEnvironment (P.applyExternsFileToEnvironment exts environment)
+
+      -- and generate the erlang code
+        -- codegen :: CodegenEnvironment -> CF.Module CF.Ann -> SupplyT Make ()
+        -- codegen env m = do
+      let mn = CF.moduleName m
+      foreignExports <- lift $ case mn `M.lookup` erlForeigns of
+        Just path
+          | not $ requiresForeign m ->
+              return []
+          | otherwise ->
+              getForeigns path
+        Nothing ->
+          return []
+
+      (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl, memoizable) <- do
+        -- SupplyT.mapSupplyT
+        --   (\(Language.PureScript.Erl.Make.Monad.Make m, i) ->
+        --     (Make
+        --       -- ExceptT
+        --       $ ReaderT.mapReaderT
+        --          (ExceptT.withExceptT
+        --            (\(Language.PureScript.Erl.Errors.MultipleErrors errors) -> MultipleErrors [])
+        --          )
+        --       -- Logger
+        --       $ ReaderT.mapReaderT
+        --          (ExceptT.mapExceptT
+        --            (Logger.contraMapLoggerErrors
+        --               (\(MultipleErrors _) -> Language.PureScript.Erl.Errors.MultipleErrors [])
+        --            )
+        --          )
+        --        m
+        --     , i)
+        --   )
+
+        let f m =
+              liftIO $ do
+                (l, r) <-
+                  Language.PureScript.Erl.Make.Monad.runMake
+                    (Options False False codegenTargets)
+                    m
+
+                case (l, r) of
+                  -- TODO[drathier]: don't throw away purerl errors and warnings
+                  (Right a, _) -> pure a
+                  (Left lerrs, rerrs) -> internalError (show (Language.PureScript.Erl.Errors.runMultipleErrors lerrs, rerrs))
+
+        SupplyT.mapSupplyT
+          f
+          (moduleToErl env m foreignExports) -- :: SupplyT Language.PureScript.Erl.Make.Monad.Make
+
+
+      optimized <- optimize exports memoizable rawErl
+      checked <- optimize checkedExports memoizable checkedRawErl
+
+      dir <- lift $ makeIO "get file info: ." getCurrentDirectory
+      let makeAbsFile file = dir </> file
+      let pretty = prettyPrintErl makeAbsFile optimized
+          prettyChecked = prettyPrintErl makeAbsFile checked
+          prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
+          prettyDecls = prettyPrintErl makeAbsFile typeDecls
+
+      let
+          prefix :: [T.Text]
+          prefix = ["Generated by purerl version " <> T.pack (showVersion Paths.version) | usePrefix]
+          -- directives :: [(T.Text, Int)] -> ModuleType -> [T.Text]
+          directives exports' moduleType = [
+            "-module(" <> atom (atomModuleName mn moduleType) <> ").",
+            "-export([" <> T.intercalate ", " (map (\(f, a) -> runAtom f <> "/" <> T.pack (show a)) exports') <> "]).",
+            "-compile(nowarn_shadow_vars).",
+            "-compile(nowarn_unused_vars).",
+            "-compile(nowarn_unused_function).",
+            "-compile(no_auto_import).",
+            includeHrl,
+            "-ifndef(PURERL_MEMOIZE).",
+            "-define(MEMOIZE(X), X).",
+            "-else.",
+            "-define(MEMOIZE, memoize).",
+            "memoize(X) -> X.",
+            "-endif."
+            ]
+          includeHrl :: T.Text
+          includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
+      let erl :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives exports PureScriptModule ++  [ pretty ]
+      lift $ writeTextFile (outFile mn) $ TE.encodeUtf8 erl
+
+      -- when generateChecked $ do
+      --   let erlchecked :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives checkedExports PureScriptCheckedModule ++  [ prettyChecked ]
+      --   lift $ writeTextFile (outFileChecked mn) $ TE.encodeUtf8 erlchecked
+
+      let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
+      lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
+
+      let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
+      lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
+
   ffiCodegen :: CF.Module CF.Ann -> Make ()
   ffiCodegen m = do
     codegenTargets <- asks optionsCodegenTargets
     ffiCodegen' foreigns codegenTargets (Just outputFilename) m
+
+    -- purserl, inlined because we need values from closure
+    when (S.member Erl codegenTargets) $ do
+          erlForeigns <- do
+            (merls :: M.Map ModuleName (Maybe FilePath)) <- traverse Erl.Build.inferForeignModule' foreigns
+            case sequence merls of
+              Nothing -> internalError (show ("couldn't find some erl foreign", merls))
+              Just v -> pure v
+
+          let mn = CF.moduleName m
+              foreignFile = moduleDir mn </> T.unpack (erlModuleName mn ForeignModule) ++ ".erl"
+          case mn `M.lookup` erlForeigns of
+            Just path
+              | not $ requiresForeign m ->
+                  tell $ errorMessage $ UnnecessaryFFIModule mn path
+              | otherwise -> pure ()
+            Nothing -> do
+              when (requiresForeign m) $ liftIO $ putStrLn (show ("PossiblyMissingFFIModule", "required", requiresForeign m, "mn", mn, "foreignFile", foreignFile, "modules", M.keys erlForeigns))
+              when (requiresForeign m) $ throwError . errorMessage $ MissingFFIModule mn
+          for_ (mn `M.lookup` erlForeigns) $ \path ->
+            copyFile path foreignFile
+
 
   genSourceMap :: String -> String -> Int -> [SMap] -> Make ()
   genSourceMap dir mapFile extraLines mappings = do
@@ -314,7 +536,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S27 "
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir

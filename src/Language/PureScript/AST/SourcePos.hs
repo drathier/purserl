@@ -53,13 +53,11 @@ data SourceSpan = SourceSpan
     -- ^ Start of the span
   , spanEnd :: SourcePos
     -- ^ End of the span
-  } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  -- } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Eq, Ord, Generic, NFData, Serialise)
 
-displayStartEndPos :: SourceSpan -> Text
-displayStartEndPos sp =
-  "(" <>
-  displaySourcePos (spanStart sp) <> " - " <>
-  displaySourcePos (spanEnd sp) <> ")"
+instance Show SourceSpan where
+  show _ = "ss"
 
 displayStartEndPosShort :: SourceSpan -> Text
 displayStartEndPosShort sp =
@@ -69,8 +67,7 @@ displayStartEndPosShort sp =
 displaySourceSpan :: FilePath -> SourceSpan -> Text
 displaySourceSpan relPath sp =
   T.pack (makeRelative relPath (spanName sp)) <> ":" <>
-    displayStartEndPosShort sp <> " " <>
-    displayStartEndPos sp
+    displayStartEndPosShort sp
 
 instance A.ToJSON SourceSpan where
   toJSON SourceSpan{..} =
