@@ -536,7 +536,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S27 "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S31 "
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir
