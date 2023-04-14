@@ -399,6 +399,7 @@ library
     Language.PureScript.TypeChecker.Unify
     Language.PureScript.TypeClassDictionaries
     Language.PureScript.Types
+    Language.PureScript.Version
     System.IO.UTF8
     PrettyPrint
 
@@ -429,6 +430,7 @@ library
     Language.PureScript.Erl.Pretty
     Language.PureScript.Erl.Run
     Language.PureScript.Erl.Synonyms
+    Language.PureScript.Erl
 
   other-modules:
     Data.Text.PureScript
