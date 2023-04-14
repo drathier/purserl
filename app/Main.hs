@@ -18,7 +18,7 @@ import           System.Environment (getArgs)
 import qualified System.IO as IO
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 import           Version (versionString)
-import qualified Language.PureScript.Version as PurserlVersion
+import qualified Language.PureScript.Erl as Purserl
 
 
 main :: IO ()
@@ -58,7 +58,7 @@ main = do
       Opts.long "version" <> Opts.help "Show the version number" <> Opts.hidden
 
     purserlVersionInfo :: Opts.Parser (a -> a)
-    purserlVersionInfo = Opts.abortOption (Opts.InfoMsg (Text.unpack PurserlVersion.purserlVersionString)) $
+    purserlVersionInfo = Opts.abortOption (Opts.InfoMsg (Text.unpack Purserl.versionString)) $
       Opts.long "purserl-version" <> Opts.help "Show the purserl version number" <> Opts.hidden
 
     commands :: Opts.Parser (IO ())

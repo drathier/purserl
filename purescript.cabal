@@ -430,6 +430,7 @@ library
     Language.PureScript.Erl.Pretty
     Language.PureScript.Erl.Run
     Language.PureScript.Erl.Synonyms
+    Language.PureScript.Erl
 
   other-modules:
     Data.Text.PureScript
