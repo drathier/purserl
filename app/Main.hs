@@ -12,11 +12,13 @@ import qualified Command.Publish as Publish
 import qualified Command.REPL as REPL
 import           Control.Monad (join)
 import           Data.Foldable (fold)
+import qualified Data.Text as Text
 import qualified Options.Applicative as Opts
 import           System.Environment (getArgs)
 import qualified System.IO as IO
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 import           Version (versionString)
+import qualified Language.PureScript.Version as PurserlVersion
 
 
 main :: IO ()
@@ -27,7 +29,7 @@ main = do
     IO.hSetBuffering IO.stderr IO.LineBuffering
     join $ Opts.handleParseResult . execParserPure opts =<< getArgs
   where
-    opts        = Opts.info (versionInfo <*> Opts.helper <*> commands) infoModList
+    opts        = Opts.info (versionInfo <*> purserlVersionInfo <*> Opts.helper <*> commands) infoModList
     infoModList = Opts.fullDesc <> headerInfo <> footerInfo
     headerInfo  = Opts.progDesc "The PureScript compiler and tools"
     footerInfo  = Opts.footerDoc (Just footer)
@@ -54,6 +56,10 @@ main = do
     versionInfo :: Opts.Parser (a -> a)
     versionInfo = Opts.abortOption (Opts.InfoMsg versionString) $
       Opts.long "version" <> Opts.help "Show the version number" <> Opts.hidden
+
+    purserlVersionInfo :: Opts.Parser (a -> a)
+    purserlVersionInfo = Opts.abortOption (Opts.InfoMsg (Text.unpack PurserlVersion.purserlVersionString)) $
+      Opts.long "purserl-version" <> Opts.help "Show the purserl version number" <> Opts.hidden
 
     commands :: Opts.Parser (IO ())
     commands =

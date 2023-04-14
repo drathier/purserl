@@ -76,6 +76,7 @@ import Language.PureScript.Roles as P
 import Language.PureScript.Sugar as P
 import Language.PureScript.TypeChecker as P
 import Language.PureScript.Types as P
+import Language.PureScript.Version as PurserlVersion
 
 import Data.Maybe (catMaybes)
 
@@ -536,7 +537,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
   requiresForeign = not . null . CF.moduleForeign
 
   progress :: ProgressMessage -> Make ()
-  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage "Compiling S31 "
+  progress = liftIO . TIO.hPutStr stderr . (<> "\n") . renderProgressMessage ("Compiling " <> PurserlVersion.purserlVersionString <> " ")
 
   readCacheDb :: Make CacheDb
   readCacheDb = readCacheDb' outputDir
