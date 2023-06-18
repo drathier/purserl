@@ -399,7 +399,6 @@ library
     Language.PureScript.TypeChecker.Unify
     Language.PureScript.TypeClassDictionaries
     Language.PureScript.Types
-    Language.PureScript.Version
     System.IO.UTF8
     PrettyPrint
 
