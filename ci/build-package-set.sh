@@ -3,6 +3,8 @@
 set -eu -o pipefail
 shopt -s nullglob
 
+PURS_CODEGEN_JS=1
+
 psroot=$(dirname "$(dirname "$(realpath "$0")")")
 
 if [[ "${CI:-}" && "$(echo $psroot/CHANGELOG.d/breaking_*)" ]]; then

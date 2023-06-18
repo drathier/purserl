@@ -34,6 +34,7 @@ import qualified Data.HashMap.Strict as MS
 import qualified System.Environment as System.Environment
 
 import qualified Data.Maybe as Data.Maybe
+import System.IO.Unsafe (unsafePerformIO)
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
@@ -183,7 +184,11 @@ codegenTargets :: Opts.Parser [P.CodegenTarget]
 codegenTargets = Opts.option targetParser $
      Opts.short 'g'
   <> Opts.long "codegen"
-  <> Opts.value [P.Erl]
+  <> Opts.value
+      [ case unsafePerformIO (System.Environment.lookupEnv "PURS_CODEGEN_JS") of
+         Nothing -> P.Erl
+         Just _ -> P.JS
+      ]
   <> Opts.help
       ( "Specifies comma-separated codegen targets to include. "
       <> targetsMessage
