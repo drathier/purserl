@@ -183,7 +183,7 @@ codegenTargets :: Opts.Parser [P.CodegenTarget]
 codegenTargets = Opts.option targetParser $
      Opts.short 'g'
   <> Opts.long "codegen"
-  <> Opts.value [P.Erlang]
+  <> Opts.value [P.Erl]
   <> Opts.help
       ( "Specifies comma-separated codegen targets to include. "
       <> targetsMessage
