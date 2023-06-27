@@ -71,7 +71,7 @@ rebuildFile file actualFile codegenTargets runOpenBuild = do
   -- For rebuilding, we want to 'RebuildAlways', but for inferring foreign
   -- modules using their file paths, we need to specify the path in the 'Map'.
   let filePathMap = M.singleton moduleName (Left P.RebuildAlways)
-  let pureRebuild = fp == ""
+  let pureRebuild = fp == "" || not ("/Ctx.purs" `isInfixOf` fp) -- [drathier]: intellij-idea appears to use temp files instead of raw source inputs, if I guessed the file format correctly?
   let modulePath = if pureRebuild then fp' else file
   foreigns <- P.inferForeignModules (M.singleton moduleName (Right modulePath))
   let makeEnv = P.buildMakeActions outputDirectory filePathMap foreigns False Nothing
