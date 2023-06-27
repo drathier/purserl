@@ -18,7 +18,7 @@ data Options = Options
 
 -- Default make options
 defaultOptions :: Options
-defaultOptions = Options False False (S.singleton JS)
+defaultOptions = Options False False (S.singleton Erl)
 
 data CodegenTarget = JS | JSSourceMap | CoreFn | Docs | Erl
   deriving (Eq, Ord, Show)
