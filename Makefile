@@ -37,6 +37,9 @@ run: ## Run the compiler.
 install: ## Install the executables to stack's path
 	$(stack) install
 
+install-opt: ## Install the executables to stack's path
+	$(stack) install --flag=purescript:RELEASE
+
 ghci: ## Open GHCi with the PureScript library
 	$(stack) ghci $(package):lib
 
