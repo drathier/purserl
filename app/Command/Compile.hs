@@ -127,7 +127,21 @@ compileImpl PSCMakeOptions{..} externsMemCache = do
     ms <- CST.parseModulesFromFiles id moduleFiles
     let filePathMap = M.fromList $ map (\(fp, pm) -> (P.getModuleName $ CST.resPartial pm, Right fp)) ms
     foreigns <- inferForeignModules filePathMap
-    let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix (Just externsMemCache)
+
+    -- for devs refusing to run with swap enabled
+    shouldMemCache <- not $ do
+      v <- lookupEnv "PURS_DISABLE_MEMCACHE"
+      pure $ case v of
+        Just "0" -> False
+        Just "no" -> False
+        Just "false" -> False
+        Just "False" -> False
+        Just "FALSE" -> False
+        Just "" -> False
+        Nothing -> False
+        _ -> True
+
+    let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix (if shouldMemCache then Just externsMemCache else Nothing)
     P.make makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
   exitSuccess
