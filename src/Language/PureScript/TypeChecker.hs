@@ -806,8 +806,9 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
       where
       isDictOfTypeRef :: TypeClassDictionaryInScope a -> Bool
       isDictOfTypeRef dict
-        | (TypeConstructor _ qualTyName, _, _) : _ <- unapplyTypes <$> tcdInstanceTypes dict
-        , qualTyName == Qualified (ByModuleName mn) name
+        -- [drathier]: disable check for Generic instances effectively exposing ctors, because it's a super annoying warning.
+        -- | (TypeConstructor _ qualTyName, _, _) : _ <- unapplyTypes <$> tcdInstanceTypes dict
+        -- , qualTyName == Qualified (ByModuleName mn) name
         = True
       isDictOfTypeRef _ = False
       getDataConstructorNames :: TypeKind -> Maybe [ProperName 'ConstructorName]
