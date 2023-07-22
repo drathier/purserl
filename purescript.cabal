@@ -213,7 +213,9 @@ common defaults
     -- purerl
     base-compat-batteries,
     optparse-applicative,
-    unordered-containers >=0.2.19.1
+    unordered-containers >=0.2.19.1,
+    -- type solver
+    ghc-prim >=0.8.0
 
 library
   import: defaults
@@ -430,6 +432,19 @@ library
     Language.PureScript.Erl.Run
     Language.PureScript.Erl.Synonyms
     Language.PureScript.Erl
+
+    -- Erlm type checker
+    Data.Bag
+    -- Type.Constrain.Expression
+    -- Type.Constrain.Module
+    -- Type.Constrain.Pattern
+    Type.Error
+    -- Type.Instantiate
+    -- Type.Occours
+    Type.Solve
+    Type.Type
+    Type.Unify
+    Type.UnionFind
 
   other-modules:
     Data.Text.PureScript
