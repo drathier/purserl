@@ -51,6 +51,8 @@ import Language.PureScript.PSString (PSString, mkString, decodeString)
 import qualified Language.PureScript.Constants.Libs as C
 import qualified Language.PureScript.Constants.Prim as C
 
+import PrettyPrint
+
 -- | Describes what sort of dictionary to generate for type class instances
 data Evidence
   -- | An existing named instance
@@ -114,7 +116,7 @@ replaceTypeClassDictionaries
   => Bool
   -> Expr
   -> m (Expr, [(Ident, InstanceContext, SourceConstraint)])
-replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT M.empty $ do
+replaceTypeClassDictionaries shouldGeneralize expr = spy "replaceTypeClassDictionaries" $ flip evalStateT M.empty $ do
     -- Loop, deferring any unsolved constraints, until there are no more
     -- constraints which can be solved, then make a generalization pass.
     let loop e = do

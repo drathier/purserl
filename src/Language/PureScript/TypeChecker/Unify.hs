@@ -34,6 +34,9 @@ import Language.PureScript.TypeChecker.Monad
 import Language.PureScript.TypeChecker.Skolems
 import Language.PureScript.Types
 
+import PrettyPrint
+
+
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: (MonadState CheckState m) => m SourceType
 freshType = state $ \st -> do
@@ -80,7 +83,7 @@ solveType u t = rethrow (onErrorMessages withoutPosition) $ do
 
 -- | Apply a substitution to a type
 substituteType :: Substitution -> SourceType -> SourceType
-substituteType sub = everywhereOnTypes go
+substituteType sub = spy "substituteType" $ everywhereOnTypes go
   where
   go (TUnknown ann u) =
     case M.lookup u (substType sub) of
@@ -92,7 +95,7 @@ substituteType sub = everywhereOnTypes go
 -- | Make sure that an unknown does not occur in a type
 occursCheck :: (MonadError MultipleErrors m) => Int -> SourceType -> m ()
 occursCheck _ TUnknown{} = return ()
-occursCheck u t = void $ everywhereOnTypesM go t
+occursCheck u t = spy "occoursCheck" $ void $ everywhereOnTypesM go t
   where
   go (TUnknown _ u') | u == u' = throwError . errorMessage . InfiniteType $ t
   go other = return other
@@ -108,8 +111,19 @@ unknownsInType t = everythingOnTypes (.) go t []
 -- | Unify two types, updating the current substitution
 unifyTypes :: (MonadError MultipleErrors m, MonadState CheckState m) => SourceType -> SourceType -> m ()
 unifyTypes t1 t2 = do
-  sub <- gets checkSubstitution
-  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' (substituteType sub t1) (substituteType sub t2)
+  case (t1, t2) of
+    (TUnknown _ u1, TUnknown _ u2) | u1 == u2 -> return ()
+    (TUnknown _ _, t) -> do
+      sub <- gets checkSubstitution
+      unifyTypesImplNoSub (substituteType sub t1) t2
+    (t, TUnknown _ _) -> do
+      sub <- gets checkSubstitution
+      unifyTypesImplNoSub t1 (substituteType sub t2)
+    _ -> unifyTypesImplNoSub t1 t2
+
+unifyTypesImplNoSub :: (MonadError MultipleErrors m, MonadState CheckState m) => SourceType -> SourceType -> m ()
+unifyTypesImplNoSub t1 t2 = do
+  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' t1 t2
   where
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t
@@ -185,7 +199,7 @@ unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
 -- Replace type wildcards with unknowns
 --
 replaceTypeWildcards :: (MonadWriter MultipleErrors m, MonadState CheckState m) => SourceType -> m SourceType
-replaceTypeWildcards = everywhereOnTypesM replace
+replaceTypeWildcards = spy "replaceTypeWildcards" $ everywhereOnTypesM replace
   where
   replace (TypeWildcard ann wdata) = do
     t <- freshType
@@ -220,7 +234,7 @@ varIfUnknown unks ty = do
     pure (getAnnForType ty, (u', Just k'))
 
   go :: SourceType -> m SourceType
-  go = everywhereOnTypesM $ \case
+  go = spy "varIfUnknown.go" $ everywhereOnTypesM $ \case
     (TUnknown ann u) ->
       TypeVar ann <$> toName u
     t -> pure t

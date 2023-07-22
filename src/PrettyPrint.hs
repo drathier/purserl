@@ -5,6 +5,10 @@ import Prelude
 import qualified Data.Text as T
 import Data.Function ((&))
 
+import System.IO.Unsafe (unsafePerformIO)
+import Data.Functor.Identity
+
+
 -- |
 sShow :: Show a => a -> String
 sShow a = pformat 0 $! show a -- T.unpack $! pShow a
@@ -43,3 +47,14 @@ pformat ident s =
     [] -> ""
 
 
+
+spyV tag f =
+  f
+  -- runIdentity (spy tag (Identity $ f))
+
+spy tag f = do
+  f
+  -- !_ <- pure $ unsafePerformIO $ putStrLn ("### " <> tag <> " pre")
+  -- res <- f
+  -- !_ <- pure $ unsafePerformIO $ putStrLn ("### " <> tag <> " post (" <> show ("skipped") <> ")")
+  -- pure res

@@ -9,6 +9,7 @@ module Language.PureScript.TypeChecker.Skolems
   ) where
 
 import Prelude
+import PrettyPrint
 
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify)
@@ -22,6 +23,7 @@ import Language.PureScript.Errors
 import Language.PureScript.Traversals (defS)
 import Language.PureScript.TypeChecker.Monad
 import Language.PureScript.Types
+import PrettyPrint
 
 -- | Generate a new skolem constant
 newSkolemConstant :: MonadState CheckState m => m Int
@@ -32,7 +34,7 @@ newSkolemConstant = do
 
 -- | Introduce skolem scope at every occurrence of a ForAll
 introduceSkolemScope :: MonadState CheckState m => Type a -> m (Type a)
-introduceSkolemScope = everywhereOnTypesM go
+introduceSkolemScope = spy "introduceSkolemScope" $ everywhereOnTypesM go
   where
   go (ForAll ann ident mbK ty Nothing) = ForAll ann ident mbK ty <$> (Just <$> newSkolemScope)
   go other = return other

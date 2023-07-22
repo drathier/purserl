@@ -57,6 +57,9 @@ import Language.PureScript.TypeChecker.Synonyms
 import Language.PureScript.Types
 import Language.PureScript.Pretty.Types
 
+import PrettyPrint
+
+
 generalizeUnknowns :: [(Unknown, SourceType)] -> SourceType -> SourceType
 generalizeUnknowns unks ty =
   generalizeUnknownsWithVars (unknownVarNames (usedTypeVariables ty) unks) ty
@@ -68,7 +71,7 @@ generalizeUnknownsWithVars binders ty =
 replaceUnknownsWithVars :: [(Unknown, (Text, a))] -> SourceType -> SourceType
 replaceUnknownsWithVars binders ty
   | null binders = ty
-  | otherwise = go ty
+  | otherwise = spyV "replaceUnknownsWithVars" $ go ty
   where
   go :: SourceType -> SourceType
   go = everywhereOnTypes $ \case
@@ -91,12 +94,15 @@ apply :: (MonadState CheckState m) => SourceType -> m SourceType
 apply ty = flip substituteType ty <$> gets checkSubstitution
 
 substituteType :: Substitution -> SourceType -> SourceType
-substituteType sub = everywhereOnTypes $ \case
+substituteType sub st = spyV "substituteType" $ substituteTypeImpl sub st
+
+substituteTypeImpl :: Substitution -> SourceType -> SourceType
+substituteTypeImpl sub = everywhereOnTypes $ \case
   TUnknown ann u ->
     case M.lookup u (substType sub) of
       Nothing -> TUnknown ann u
       Just (TUnknown ann' u1) | u1 == u -> TUnknown ann' u1
-      Just t -> substituteType sub t
+      Just t -> substituteTypeImpl sub t
   other ->
     other
 
@@ -494,7 +500,7 @@ promoteKind
   => Unknown
   -> SourceType
   -> m SourceType
-promoteKind u2 ty = do
+promoteKind u2 ty = spy "promoteKind" $ do
   lvl2 <- fst <$> lookupUnsolved u2
   flip everywhereOnTypesM ty $ \case
     ty'@(TUnknown ann u1) -> do
@@ -927,7 +933,7 @@ checkKindDeclaration _ ty = do
           pure $ ForAll a' v'' k' ty'' sc'
         other -> pure other
 
-  checkValidKind = everywhereOnTypesM $ \case
+  checkValidKind = spy "checkValidKind" $ everywhereOnTypesM $ \case
     ty'@(ConstrainedType ann _ _) ->
       throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
     other -> pure other
@@ -985,7 +991,7 @@ kindsOfAll moduleName syns dats clss = withFreshSubstitution $ do
               tyCtor = foldl (\ty -> srcKindApp ty . TUnknown nullSourceAnn . fst) (srcTypeConstructor tyCtorName) tyUnks
           (tyCtorName, (tyCtor, tyUnks))
         tySubs = fmap mkTySub tysUnks
-        replaceTypeCtors = everywhereOnTypes $ \case
+        replaceTypeCtors = spy "replaceTypeCtors" $ everywhereOnTypes $ \case
           TypeConstructor _ name
             | Just (tyCtor, _) <- lookup name tySubs -> tyCtor
           other -> other

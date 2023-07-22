@@ -522,6 +522,23 @@ declName BoundValueDeclaration{} = Nothing
 declName KindDeclaration{} = Nothing
 declName TypeDeclaration{} = Nothing
 
+declCtorName (DataDeclaration _ _ n _ _) = "DataDeclaration"
+declCtorName (TypeSynonymDeclaration _ n _ _) = "TypeSynonymDeclaration"
+declCtorName (ValueDeclaration vd) = "ValueDeclaration(" <> show vd <> ")"
+declCtorName (ExternDeclaration _ n _) = "ExternDeclaration"
+declCtorName (ExternDataDeclaration _ n _) = "ExternDataDeclaration"
+declCtorName (FixityDeclaration _ (Left (ValueFixity _ _ n))) = "FixityDeclaration"
+declCtorName (FixityDeclaration _ (Right (TypeFixity _ _ n))) = "FixityDeclaration"
+declCtorName (TypeClassDeclaration _ n _ _ _ _) = "TypeClassDeclaration"
+declCtorName (TypeInstanceDeclaration _ _ _ _ n _ _ _ _) = "TypeInstanceDeclaration"
+declCtorName (RoleDeclaration RoleDeclarationData{..}) = "RoleDeclaration"
+declCtorName ImportDeclaration{} = "ImportDeclaration"
+declCtorName BindingGroupDeclaration{} = "BindingGroupDeclaration"
+declCtorName DataBindingGroupDeclaration{} = "DataBindingGroupDeclaration"
+declCtorName BoundValueDeclaration{} = "BoundValueDeclaration"
+declCtorName KindDeclaration{} = "KindDeclaration"
+declCtorName TypeDeclaration{} = "TypeDeclaration"
+
 -- |
 -- Test if a declaration is a value declaration
 --

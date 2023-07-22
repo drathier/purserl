@@ -47,6 +47,8 @@ import Language.PureScript.TypeChecker.Unify (varIfUnknown)
 import Language.PureScript.TypeClassDictionaries
 import Language.PureScript.Types
 
+import System.IO.Unsafe (unsafePerformIO)
+
 addDataType
   :: (MonadState CheckState m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => ModuleName
@@ -276,8 +278,14 @@ typeCheckAll
   => ModuleName
   -> [Declaration]
   -> m [Declaration]
-typeCheckAll moduleName = traverse go
+typeCheckAll moduleName = traverse go2
   where
+  go2 d = do
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show moduleName <> ") typeCheckAll.go pre  " <> show (declName d))
+    res <- go d
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show moduleName <> ") typeCheckAll.go post " <> show (declName d) <> " details " <> (if False && declName d == Just (IdentName (Ident "payingFxInvoiceGroupingBraidMultipleInvoices")) then show ("before", declCtorName d, "after", res) else "skip-details"))
+    pure res
+
   go :: Declaration -> m Declaration
   go (DataDeclaration sa@(ss, _) dtype name args dctors) = do
     warnAndRethrow (addHint (ErrorInTypeConstructor name) . addHint (positionedError ss)) $ do
@@ -610,16 +618,21 @@ typeCheckModule _ (Module _ _ _ _ Nothing) =
   internalError "exports should have been elaborated before typeCheckModule"
 typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
   warnAndRethrow (addHint (ErrorInModule mn)) $ do
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show mn <> ") pre")
     let (decls', imports) = partitionEithers $ fromImportDecl <$> decls
     modify (\s -> s { checkCurrentModule = Just mn, checkCurrentModuleImports = imports })
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show mn <> ") marked current module")
     decls'' <- typeCheckAll mn $ ignoreWildcardsUnderCompleteTypeSignatures <$> decls'
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show mn <> ") type checked all decls")
     checkSuperClassesAreExported <- getSuperClassExportCheck
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show mn <> ") checked all superclasses are exported")
     for_ exps $ \e -> do
       checkTypesAreExported e
       checkClassMembersAreExported e
       checkClassesAreExported e
       checkSuperClassesAreExported e
       checkDataConstructorsAreExported e
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### type check (" <> show mn <> ") checked all exports")
     return $ Module ss coms mn (map toImportDecl imports ++ decls'') (Just exps)
   where
 
@@ -810,7 +823,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
         -- | (TypeConstructor _ qualTyName, _, _) : _ <- unapplyTypes <$> tcdInstanceTypes dict
         -- , qualTyName == Qualified (ByModuleName mn) name
         = True
-      isDictOfTypeRef _ = False
+      -- isDictOfTypeRef _ = False
       getDataConstructorNames :: TypeKind -> Maybe [ProperName 'ConstructorName]
       getDataConstructorNames (DataType _ _ constructors) = Just $ fst <$> constructors
       getDataConstructorNames _ = Nothing

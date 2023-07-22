@@ -97,21 +97,26 @@ rebuildModuleWithIndex
   -> Maybe (Int, Int)
   -> m ExternsFile
 rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex = do
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") pre")
   progress $ CompilingModule moduleName moduleIndex
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") linted")
 
   ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
     (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty)
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") desugared")
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
     (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") type checked")
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
           M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
     -- Imports cannot be linted before type checking because we need to
     -- known which newtype constructors are used to solve Coercible
     -- constraints in order to not report them as unused.
     censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") linted imports")
     return (checked, checkEnv)
 
   -- desugar case declarations *after* type- and exhaustiveness checking
@@ -119,16 +124,19 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   -- reports as not-exhaustive.
   (deguarded, nextVar') <- runSupplyT nextVar $ do
     desugarCaseGuards elaborated
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") desugared case")
 
   let upstreamDBs = M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
 
   regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") created binding groups")
   let mod' = Module ss coms moduleName regrouped exps
       corefn = CF.moduleToCoreFn env' mod'
       (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
       (renamedIdents, renamed) = renameInModule optimized
       exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
   ffiCodegen renamed
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") ffi codegen done")
 
   -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
   -- but I have not done so for two reasons:
@@ -144,6 +152,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
                Right d -> d
 
   evalSupplyT nextVar'' $ codegen env renamed docs exts
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### rebuildModuleWithIndex (" <> show moduleName <> ") purs codegen done")
   return exts
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
@@ -155,14 +164,17 @@ make :: forall m. (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWrit
      -> [CST.PartialResult Module]
      -> m [ExternsFile]
 make ma@MakeActions{..} ms = do
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### pre check module names")
   checkModuleNames
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### check module names done")
   cacheDb <- readCacheDb
-
-  -- let !_ = unsafePerformIO $ putStrLn (show ("cacheDb", cacheDb))
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### readCacheDB done")
 
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### sortModules done")
 
   (buildPlan, newCacheDb) <- BuildPlan.construct ma cacheDb (sorted, graph)
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### BuildPlan.construct done")
 
   let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
   let totalModuleCount = length toBeRebuilt
@@ -178,6 +190,7 @@ make ma@MakeActions{..} ms = do
       -- Prevent hanging on other modules when there is an internal error
       -- (the exception is thrown, but other threads waiting on MVars are released)
       `onExceptionLifted` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### BuildPlan fork loop done")
 
   -- Wait for all threads to complete, and collect results (and errors).
   (failures, successes) <-
@@ -192,13 +205,17 @@ make ma@MakeActions{..} ms = do
     in
       M.mapEither splitResults <$> BuildPlan.collectResults buildPlan
 
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### BuildPlan collectResults done")
   -- Write the updated build cache database to disk
   writeCacheDb $ Cache.removeModules (M.keysSet failures) newCacheDb
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### writeCacheDb done")
 
   writePackageJson
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### writePackageJson done")
 
   -- If generating docs, also generate them for the Prim modules
   outputPrimDocs
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### outputPrimDocs done")
 
   -- All threads have completed, rethrow any caught errors.
   let errors = M.elems failures
@@ -245,31 +262,39 @@ make ma@MakeActions{..} ms = do
 
   buildModule :: BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
   buildModule buildPlan moduleName cnt fp pwarnings mres deps = do
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") pre")
     result <- flip catchError (return . BuildJobFailed) $ do
       let pwarnings' = CST.toMultipleWarnings fp pwarnings
       tell pwarnings'
       m <- CST.unwrapParserError fp mres
+      !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") unwrapped parser errors")
       -- We need to wait for dependencies to be built, before checking if the current
       -- module should be rebuilt, so the first thing to do is to wait on the
       -- MVars for the module's dependencies.
       mexterns <- fmap unzip . sequence <$> traverse (getResult buildPlan) deps
-
+      !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") getResult buildPlan deps; done waiting for deps to build so we can load their externs")
+      -- TODO[drathier]: deps is very large; is it all transitive deps? does it differ from mainline?
       case mexterns of
         Just (_, externs) -> do
           -- We need to ensure that all dependencies have been included in Env
           C.modifyMVar_ (bpEnv buildPlan) $ \env -> do
             let
               go :: Env -> ModuleName -> m Env
-              go e dep = case lookup dep (zip deps externs) of
+              go e dep = case lookup dep (zip deps externs) of -- TODO[drathier]: linear search through a linked list here?
                 Just exts
                   | not (M.member dep e) -> externsEnv e exts
                 _ -> return e
-            foldM go env deps
+            res <- foldM go env deps
+            !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") env size: " <> show (M.size res))
+            pure res
+          !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") added all modules to our Env")
           env <- C.readMVar (bpEnv buildPlan)
           idx <- C.takeMVar (bpIndex buildPlan)
           C.putMVar (bpIndex buildPlan) (idx + 1)
+          !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") added ourselves to buildplan")
           let cfa = getCacheFilesAvailable buildPlan moduleName
           nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
+          !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") touched output timestamp")
 
           let doCompile wasCacheHit badExts =
                 do
@@ -296,7 +321,13 @@ make ma@MakeActions{..} ms = do
               Nothing -> False
               _ -> True
 
-          case shouldRecompile moduleName cfa externs of
+          let x = shouldRecompile moduleName cfa externs
+          !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") needs rebuild: " <> (case x of
+              Right _ -> "CacheHit"
+              Left Nothing -> "CacheMiss-NeverBuilt"
+              Left (Just _) -> "CacheMiss-NeedsRebuild"
+            ))
+          case x of
             Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
             Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
             --
@@ -309,7 +340,10 @@ make ma@MakeActions{..} ms = do
             Left badExts -> doCompile WasCacheMiss badExts
         Nothing -> return BuildJobSkipped
 
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") done build")
     BuildPlan.markComplete buildPlan moduleName result
+    !_ <- pure $ unsafePerformIO $ putStrLn ("### buildModule (" <> show moduleName <> ") marked build complete")
+    pure ()
 
   onExceptionLifted :: m a -> m b -> m a
   onExceptionLifted l r = control $ \runInIO -> runInIO l `onException` runInIO r

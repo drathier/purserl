@@ -22,7 +22,7 @@ import           Language.PureScript.Errors
 import           Language.PureScript.Names
 import           Language.PureScript.TypeChecker.Monad
 import           Language.PureScript.Types
-
+import PrettyPrint
 -- | Type synonym information (arguments with kinds, aliased type), indexed by name
 type SynonymMap = M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
 
@@ -33,7 +33,7 @@ replaceAllTypeSynonyms'
   -> KindMap
   -> SourceType
   -> Either MultipleErrors SourceType
-replaceAllTypeSynonyms' syns kinds = everywhereOnTypesTopDownM try
+replaceAllTypeSynonyms' syns kinds = spy "replaceAllTypeSynonyms'" $ everywhereOnTypesTopDownM try
   where
   try :: SourceType -> Either MultipleErrors SourceType
   try t = fromMaybe t <$> go (fst $ getAnnForType t) 0 [] [] t
