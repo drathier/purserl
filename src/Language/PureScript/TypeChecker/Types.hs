@@ -77,6 +77,7 @@ tvToExpr :: TypedValue' -> Expr
 tvToExpr (TypedValue' c e t) = typedValue c e t
 
 typedValue checkType value ty =
+  -- TODO[drathier] checkType arg, what is is used for? Are we doing needless everywhere-rewrites on already type checked values? Should it be a rewrite at all? Shouldn't it be a union find thingy? Or is this beta reduction? What about rank?
   TypedValue checkType value ty
   -- value
 

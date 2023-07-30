@@ -59,6 +59,7 @@ data PrettyPrintType
   | PPRecord [(Label, PrettyPrintType)] (Maybe PrettyPrintType)
   | PPRow [(Label, PrettyPrintType)] (Maybe PrettyPrintType)
   | PPTruncated
+  | PPTypeInfo Text PrettyPrintType
 
 type PrettyPrintConstraint = (Qualified (ProperName 'ClassName), [PrettyPrintType], [PrettyPrintType])
 
@@ -66,6 +67,7 @@ convertPrettyPrintType :: Int -> Type a -> PrettyPrintType
 convertPrettyPrintType = go
   where
   go _ (TUnknown _ n) = PPTUnknown n
+  go d (TypeCheckerOpt _ info t) = PPTypeInfo (T.pack (show info)) (go d t)
   go _ (TypeVar _ t) = PPTypeVar t Nothing
   go _ (TypeLevelString _ s) = PPTypeLevelString s
   go _ (TypeLevelInt _ n) = PPTypeLevelInt n
@@ -203,6 +205,11 @@ matchTypeAtom tro@TypeRenderOptions{troSuggesting = suggesting} =
         Just $ typeAsBox' l <> text " " <> typeAsBox' op <> text " " <> typeAsBox' r
       match (PPTypeOp op) = Just $ text $ T.unpack $ showQualified runOpName op
       match PPTruncated = Just $ text "..."
+      match (PPTypeInfo info inner) =
+        do
+          innerPP <- match inner
+          let infoPP = text $ (T.unpack info)
+          Just (infoPP `before` innerPP)
       match _ = Nothing
 
 matchType :: TypeRenderOptions -> Pattern () PrettyPrintType Box

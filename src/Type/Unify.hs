@@ -17,7 +17,7 @@ import Type.Type as Type
 import qualified Type.UnionFind as UF
 
 import Prelude
-import qualified Data.Text as T
+-- import qualified Data.Text as T
 
 
 -- UNIFY
@@ -92,11 +92,16 @@ instance Applicative Unify where
       in
       kf vars ok1 err
 
+  (*>) (Unify ka) (Unify kb) =
+    Unify $ \vars ok err ->
+      let
+        ok1 vars1 _ = kb vars1 ok err
+      in
+      ka vars ok1 err
+
 
 instance Monad Unify where
-  return a =
-    Unify $ \vars ok _ ->
-      ok vars a
+  return = pure
 
   (>>=) (Unify ka) callback =
     Unify $ \vars ok err ->
@@ -107,12 +112,7 @@ instance Monad Unify where
       in
       ka vars ok1 err
 
-  (>>) (Unify ka) (Unify kb) =
-    Unify $ \vars ok err ->
-      let
-        ok1 vars1 _ = kb vars1 ok err
-      in
-      ka vars ok1 err
+  (>>) = (*>)
 
 
 register :: IO Variable -> Unify Variable
@@ -352,7 +352,7 @@ combineRigidSupers rigid flex =
 
 
 atomMatchesSuper :: SuperType -> ModuleName.Canonical -> Name.Name -> Bool
-atomMatchesSuper super home name =
+atomMatchesSuper _super _home _name =
   False
 --  case super of
 --    Number ->
@@ -370,9 +370,9 @@ atomMatchesSuper super home name =
 --      Error.isString home name
 
 
-isNumber :: ModuleName.Canonical -> Name.Name -> Bool
-isNumber home name =
-  False
+-- isNumber :: ModuleName.Canonical -> Name.Name -> Bool
+-- isNumber home name =
+--   False
 --  home == ModuleName.basics
 --  &&
 --  (name == Name.int || name == Name.float)

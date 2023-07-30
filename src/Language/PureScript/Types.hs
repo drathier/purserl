@@ -22,6 +22,7 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
+import qualified Data.Map as M
 
 import Language.PureScript.AST.SourcePos
 import qualified Language.PureScript.Constants.Prim as C
@@ -53,12 +54,21 @@ data WildcardData = HoleWildcard Text | UnnamedWildcard | IgnoredWildcard
 instance NFData WildcardData
 instance Serialise WildcardData
 
+
+data TypeCheckerOptInfo = TypeCheckerOptInfo (M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType))
+  deriving (Show, Generic)
+
+instance NFData TypeCheckerOptInfo
+instance Serialise TypeCheckerOptInfo
+
 -- |
 -- The type of types
 --
 data Type a
   -- | A unification variable of type Type
   = TUnknown a Int
+  -- | TypeCheckerOpt
+  | TypeCheckerOpt a TypeCheckerOptInfo (Type a)
   -- | A named type variable
   | TypeVar a Text
   -- | A type-level string
@@ -224,6 +234,8 @@ typeToJSON annToJSON ty =
   case ty of
     TUnknown a b ->
       variant "TUnknown" a b
+    TypeCheckerOpt _ _ _ ->
+      error "notimpl"
     TypeVar a b ->
       variant "TypeVar" a b
     TypeLevelString a b ->
@@ -689,6 +701,7 @@ everythingWithContextOnTypes s0 r0 (<+>) f = go' s0 where
 
 annForType :: Lens' (Type a) a
 annForType k (TUnknown a b) = (\z -> TUnknown z b) <$> k a
+annForType k (TypeCheckerOpt a b c) = (\z -> TypeCheckerOpt z b c) <$> k a -- [drathier]: untested, tried to follow pattern, but not sure?
 annForType k (TypeVar a b) = (\z -> TypeVar z b) <$> k a
 annForType k (TypeLevelString a b) = (\z -> TypeLevelString z b) <$> k a
 annForType k (TypeLevelInt a b) = (\z -> TypeLevelInt z b) <$> k a
@@ -766,6 +779,7 @@ compareType typ typ' =
     where
       orderOf :: Type a -> Int
       orderOf TUnknown{} = 0
+      orderOf TypeCheckerOpt{} = 1000 -- [drathier]: hack?
       orderOf TypeVar{} = 1
       orderOf TypeLevelString{} = 2
       orderOf TypeLevelInt{} = 3

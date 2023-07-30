@@ -19,7 +19,7 @@ import qualified Data.Set as Set
 import qualified Elm.ModuleName as ModuleName
 --import Reporting.Doc ((<>))
 --import qualified Reporting.Doc as D
-import qualified Reporting.Annotation as A
+-- import qualified Reporting.Annotation as A
 
 
 
@@ -57,7 +57,7 @@ empty =
 
 
 toChars :: Localizer -> ModuleName.Canonical -> Name.Name -> String
-toChars (Localizer localizer) moduleName@(ModuleName.Canonical _ home) name =
+toChars (Localizer localizer) _moduleName@(ModuleName.Canonical _ home) name =
   case Map.lookup home localizer of
     Nothing ->
       Name.toChars home <> "." <> Name.toChars name

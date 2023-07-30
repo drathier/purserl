@@ -45,6 +45,7 @@ instance Ord UnkLevel where
 
 -- | A substitution of unification variables for types.
 data Substitution = Substitution
+  -- todo[drathier] unsafe index/pointers instead of map? do we really need ordering? Or Data.IntMap?
   { substType :: M.Map Int SourceType
   -- ^ Type substitution
   , substUnsolved :: M.Map Int (UnkLevel, SourceType)

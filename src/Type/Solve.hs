@@ -17,14 +17,14 @@ import qualified Data.Vector.Mutable as MVector
 import qualified AST.Canonical as Can
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as Error
-import qualified Reporting.Render.Type as RT
-import qualified Reporting.Render.Type.Localizer as L
+-- import qualified Reporting.Render.Type as RT
+-- import qualified Reporting.Render.Type.Localizer as L
 import qualified Type.Occurs as Occurs
 import Type.Type as Type
-import qualified Type.Error as ET
+-- import qualified Type.Error as ET
 import qualified Type.Unify as Unify
 import qualified Type.UnionFind as UF
-import qualified Data.Text as T
+-- import qualified Data.Text as T
 
 import Prelude
 

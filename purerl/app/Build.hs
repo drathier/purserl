@@ -278,6 +278,7 @@ compile' BuildOptions {..} = do
 --           (toJSONErrors verbose E.Warning warnings)
 --           (either (toJSONErrors verbose E.Error) (const []) errors)
 --       either (const exitFailure) (const (return ())) errors
+    printWarningsAndErrors verbose True warnings errors = error "printWarningsAndErrors unreachable"
 
     getModulePath :: Value -> Maybe FilePath
     getModulePath corefn =

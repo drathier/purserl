@@ -44,7 +44,7 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as E
 import qualified Type.Error as ET
 import qualified Type.UnionFind as UF
-import qualified Data.Text as T
+-- import qualified Data.Text as T
 
 
 -- CONSTRAINTS
@@ -317,7 +317,7 @@ nameToRigid name =
 
 
 toSuper :: Name.Name -> Maybe SuperType
-toSuper name =
+toSuper _name =
   -- TODO[drathier]: fix
   Nothing
 --  if Name.isNumberType name then

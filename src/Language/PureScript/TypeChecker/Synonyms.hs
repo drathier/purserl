@@ -33,7 +33,7 @@ replaceAllTypeSynonyms'
   -> KindMap
   -> SourceType
   -> Either MultipleErrors SourceType
-replaceAllTypeSynonyms' syns kinds = spy "replaceAllTypeSynonyms'" $ everywhereOnTypesTopDownM try
+replaceAllTypeSynonyms' syns kinds tipe = spy "replaceAllTypeSynonyms'" $ fmap (TypeCheckerOpt (nullSourceSpan, []) (TypeCheckerOptInfo syns)) $ everywhereOnTypesTopDownM try $ tipe
   where
   try :: SourceType -> Either MultipleErrors SourceType
   try t = fromMaybe t <$> go (fst $ getAnnForType t) 0 [] [] t

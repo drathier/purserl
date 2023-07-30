@@ -19,7 +19,7 @@ module Reporting.Annotation
 
 
 import Prelude hiding (traverse)
-import Control.Monad (liftM2)
+-- import Control.Monad (liftM2)
 -- import Data.Binary (Binary, get, put)
 import Data.Word (Word16)
 

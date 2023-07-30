@@ -58,6 +58,7 @@ common defaults
     -- Enable all warnings with -Weverything, then disable the ones we don’t care about
     -- -Weverything
     -Wwarn
+    -Werror=incomplete-patterns
 
     -- missing-exported-signatures turns off the more strict -Wmissing-signatures. See https://ghc.haskell.org/trac/ghc/ticket/14794#ticket
     -Wno-missing-exported-signatures
@@ -445,6 +446,21 @@ library
     Type.Type
     Type.Unify
     Type.UnionFind
+    AST.Canonical
+    AST.Utils.Type
+    Data.Index
+    Data.Name
+    Data.NonEmptyList
+    Data.Utf8
+    Elm.ModuleName
+    Elm.Package
+    Elm.Version
+    Reporting.Annotation
+    Reporting.Error.Type
+    Reporting.Render.Type
+    Reporting.Render.Type.Localizer
+    Type.Occurs
+
 
   other-modules:
     Data.Text.PureScript

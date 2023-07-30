@@ -7,11 +7,11 @@ module Type.Occurs
 
 
 import Prelude
-import Data.Foldable (foldrM)
-import qualified Data.Map.Strict as Map
+-- import Data.Foldable (foldrM)
+-- import qualified Data.Map.Strict as Map
 
 import Type.Type as Type
-import qualified Type.UnionFind as UF
+-- import qualified Type.UnionFind as UF
 
 
 
@@ -19,7 +19,7 @@ import qualified Type.UnionFind as UF
 
 
 occurs :: Type.Variable -> IO Bool
-occurs var =
+occurs _var =
   -- TODO[drathier]: impl
   pure False
   -- occursHelp [] var False

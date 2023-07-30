@@ -854,6 +854,7 @@ storeTypeRefs :: Type a -> State ToCSDB ()
 storeTypeRefs t =
   case t of
     TUnknown _ _ -> pure ()
+    TypeCheckerOpt _ _ _ -> pure ()
     TypeVar _ _ -> pure ()
     TypeLevelString _ _ -> pure ()
     TypeLevelInt _ _ -> pure ()

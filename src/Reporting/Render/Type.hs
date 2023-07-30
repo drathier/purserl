@@ -14,15 +14,15 @@ module Reporting.Render.Type
   where
 
 
-import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+-- import qualified Data.Maybe as Maybe
+-- import qualified Data.Name as Name
 
 --import qualified AST.Source as Src
 --import qualified AST.Canonical as Can
-import qualified Reporting.Annotation as A
+-- import qualified Reporting.Annotation as A
 --import qualified Reporting.Doc as D
 --import Reporting.Doc ( Doc, (<+>), (<>) )
-import qualified Reporting.Render.Type.Localizer as L
+-- import qualified Reporting.Render.Type.Localizer as L
 
 
 

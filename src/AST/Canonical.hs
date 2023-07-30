@@ -68,14 +68,14 @@ import Data.Name (Name)
 --import qualified AST.Source as Src
 --import qualified AST.Utils.Binop as Binop
 --import qualified AST.Utils.Shader as Shader
-import qualified Data.Index as Index
+-- import qualified Data.Index as Index
 --import qualified Elm.Float as EF
 import qualified Elm.ModuleName as ModuleName
 --import qualified Elm.String as ES
-import qualified Reporting.Annotation as A
+-- import qualified Reporting.Annotation as A
 --
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+-- import qualified Data.Name as Name
+-- import qualified Data.Utf8 as Utf8
 --import qualified Parse.Primitives as P
 --import qualified Parse.Space as Space
 --import qualified Reporting.Error.Syntax as E

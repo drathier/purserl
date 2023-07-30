@@ -19,11 +19,12 @@ module Elm.Version
 
 
 import Prelude hiding (max)
-import Control.Monad (liftM3)
+-- import Control.Monad (liftM3)
 --import Data.Binary (Binary, get, put, getWord8, putWord8)
-import qualified Data.Version as Version
-import Data.Word (Word8, Word16)
-import Foreign.Ptr (Ptr, plusPtr, minusPtr)
+-- import qualified Data.Version as Version
+-- import Data.Word (Word8, Word16)
+import Data.Word (Word16)
+-- import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 --import qualified Paths_elm
 
 --import qualified Json.Decode as D

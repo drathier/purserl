@@ -71,6 +71,7 @@ import           Text.Parsec.Error (Message(..))
 import qualified Text.PrettyPrint.Boxes as Box
 import           Witherable (wither)
 -- purserl
+import Language.PureScript.Pretty.Types (prettyPrintObjectKey)
 
 -- import           Language.PureScript.Errors (prettyPrintRef)
 import Language.PureScript.AST.Declarations (NameSource(..))
@@ -504,6 +505,12 @@ prettyPrintSingleError (PPEOptions codeColor full _level _showDocs relPath fileC
         [ detail
         , Box.moveRight 2 $ showSourceSpansInContext srcSpans
         ]
+    renderHint (ErrorInRowLabel lb) detail =
+      paras [ detail
+            , Box.hsep 1 Box.top [ line "while matching label"
+                                 , markCodeBox $ line $ prettyPrintObjectKey (runLabel lb)
+                                 ]
+            ]
 
     printRow :: (Int -> Type a -> Box.Box) -> Type a -> Box.Box
     printRow f t = markCodeBox $ indent $ f prettyDepth t

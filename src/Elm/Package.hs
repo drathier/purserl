@@ -28,15 +28,15 @@ module Elm.Package
   where
 
 import Prelude
-import Control.Monad (liftM2)
-import qualified Data.Coerce as Coerce
-import qualified Data.List as List
+-- import Control.Monad (liftM2)
+-- import qualified Data.Coerce as Coerce
+-- import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import Data.Monoid ((<>))
+-- import Data.Monoid ((<>))
 import qualified Data.Utf8 as Utf8
-import Data.Word (Word8)
-import Foreign.Ptr (Ptr, plusPtr, minusPtr)
+-- import Data.Word (Word8)
+-- import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 import System.FilePath ((</>))
 
 import qualified Elm.Version as V
@@ -80,7 +80,7 @@ data Canonical =
 
 
 isKernel :: Name -> Bool
-isKernel (Name author _) =
+isKernel (Name _author _) =
   -- [drathier]: is the package allowed to use Kernel imports?
   True -- author == elm || author == elm_explorations
 

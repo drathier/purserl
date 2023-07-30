@@ -21,16 +21,16 @@ module Reporting.Error.Type
 
 import Prelude hiding (round)
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
+-- import Data.Monoid ((<>))
 import qualified Data.Name as Name
 
-import qualified AST.Canonical as Can
+-- import qualified AST.Canonical as Can
 import qualified Data.Index as Index
 import qualified Reporting.Annotation as A
 -- import qualified Reporting.Doc as D
 -- import qualified Reporting.Render.Code as Code
 -- import qualified Reporting.Render.Type as RT
-import qualified Reporting.Render.Type.Localizer as L
+-- import qualified Reporting.Render.Type.Localizer as L
 -- import qualified Reporting.Report as Report
 -- import qualified Reporting.Suggest as Suggest
 import qualified Type.Error as T

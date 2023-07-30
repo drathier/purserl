@@ -49,12 +49,12 @@ pformat ident s =
 
 
 spyV tag f =
-  f
-  -- runIdentity (spy tag (Identity $ f))
+  -- f
+  runIdentity (spy tag (Identity $ f))
 
 spy tag f = do
-  f
-  -- !_ <- pure $ unsafePerformIO $ putStrLn ("### " <> tag <> " pre")
-  -- res <- f
-  -- !_ <- pure $ unsafePerformIO $ putStrLn ("### " <> tag <> " post (" <> show ("skipped") <> ")")
-  -- pure res
+  -- f
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### " <> tag <> " pre")
+  res <- f
+  !_ <- pure $ unsafePerformIO $ putStrLn ("### " <> tag <> " post (" <> show ("skipped") <> ")")
+  pure res
