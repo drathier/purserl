@@ -887,6 +887,9 @@ prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileCo
         in paras [ line "[drathier]: Could not match rows"
                  , line "Left-only labels:"
                  , row1LabelsBox
+                 , line " ^Hint: If this is a VexceptT/Veither/Ctx error, these Left labels are likely all the errors you haven't handled."
+                 , line ""
+                 , line ""
                  , line "Right-only labels:"
                  , row2LabelsBox
                  , line "Left-only type:"
