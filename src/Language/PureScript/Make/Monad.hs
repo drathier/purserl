@@ -127,7 +127,7 @@ readCborFile path =
 
 readCborFileIO :: Serialise a => FilePath -> IO (Maybe a)
 readCborFileIO path = do
-  r <- catchDoesNotExist $ catchDeserialiseFailure $ Serialise.readFileDeserialise path
+  r <- catchDoesNotExist $ catchDeserialiseFailure path $ Serialise.readFileDeserialise path
   return (join r)
 
 -- | Read an externs file, returning 'Nothing' if the file does not exist,
@@ -203,11 +203,12 @@ catchDoesNotExist inner = do
     Right x ->
       return (Just x)
 
-catchDeserialiseFailure :: IO a -> IO (Maybe a)
-catchDeserialiseFailure inner = do
+catchDeserialiseFailure :: String -> IO a -> IO (Maybe a)
+catchDeserialiseFailure path inner = do
   r <- tryJust fromException inner
   case r of
-    Left (_ :: Serialise.DeserialiseFailure) ->
+    Left (_ :: Serialise.DeserialiseFailure) -> do
+      putStrLn ("### corrupt-cbor:" <> path)
       return Nothing
     Right x ->
       return (Just x)
