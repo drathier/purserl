@@ -62,6 +62,9 @@ import qualified Data.ByteString as BS
 import qualified Crypto.Hash as Hash
 import qualified Data.ByteArray.Encoding as BAE
 
+import System.IO.Unsafe (unsafePerformIO)
+import           System.Environment (lookupEnv)
+
 newtype SerializationFormat a = SerializationFormat a
   deriving (Show, Eq, Generic)
 
@@ -1422,6 +1425,20 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
 
   in
+
+
+  let shouldCache = not $
+        case unsafePerformIO (lookupEnv "PURS_DISABLE_DISK_CACHE") of
+          Just "0" -> False
+          Just "no" -> False
+          Just "false" -> False
+          Just "False" -> False
+          Just "FALSE" -> False
+          Just "" -> False
+          Nothing -> False
+          _ -> True
+  in
+
   let possiblyImportedTypeAliasesFrom :: M.Map ModuleName () -- [(ProperName 'TypeName)]
       possiblyImportedTypeAliasesFrom =
         ds
@@ -1434,9 +1451,9 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
         <&> (,())
         & M.fromList
   in
-  let !exportedThings = findExportedThings exps in
+  let exportedThings = findExportedThings exps in
   -- let !importedThings = findImportedThings exps in
-  let findDepsRes = findDeps mn env ds in
+  let findDepsRes = if shouldCache == False then [] else findDeps mn env ds in
   let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
   let csdbDeps = flip execState mempty $ toCS $ dbDeps in
   let efOurCacheShapes = dbDeps & dbToOpaque & dbOpaqueIsctExports upstreamDBs exportedThings in
@@ -1480,6 +1497,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
   let efUpstreamCacheShapes :: M.Map ModuleName DBOpaque
       efUpstreamCacheShapes =
+        if shouldCache == False then M.empty else
           let currentDeps :: M.Map ModuleName ToCSDBInner
               currentDeps =
                 runToCSDB csdbDeps

@@ -129,17 +129,16 @@ compileImpl PSCMakeOptions{..} externsMemCache = do
     foreigns <- inferForeignModules filePathMap
 
     -- for devs refusing to run with swap enabled
-    shouldMemCache <- not $ do
-      v <- lookupEnv "PURS_DISABLE_MEMCACHE"
-      pure $ case v of
-        Just "0" -> False
-        Just "no" -> False
-        Just "false" -> False
-        Just "False" -> False
-        Just "FALSE" -> False
-        Just "" -> False
-        Nothing -> False
-        _ -> True
+    let shouldMemCache = not $
+          case unsafePerformIO (lookupEnv "PURS_DISABLE_MEMCACHE") of
+            Just "0" -> False
+            Just "no" -> False
+            Just "false" -> False
+            Just "False" -> False
+            Just "FALSE" -> False
+            Just "" -> False
+            Nothing -> False
+            _ -> True
 
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix (if shouldMemCache then Just externsMemCache else Nothing)
     P.make makeActions (map snd ms)

@@ -6,7 +6,7 @@ where
 import Prelude
 
 import Language.PureScript.Erl.CodeGen.AST
-    ( Erl(..), Atom, everywhereOnErl, pattern EApp, AppAnnotation (..) )
+    ( Erl(..), Atom, everywhereOnErl, pattern EApp, AppAnnotation (..), pattern EFun0 )
 import Data.Map as Map
 
 addMemoizeAnnotations :: Map Atom Int -> Erl -> Erl
@@ -23,4 +23,5 @@ addMemoizeAnnotations _memoizable = everywhereOnErl go
     other -> other
 
 memoizeAnnotation :: Erl -> Erl
-memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]
+-- memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]
+memoizeAnnotation emem = EApp RegularApp (EVar "'Elixir.PS.Util.Memoize':persistent_term") [EFun0 Nothing emem]
