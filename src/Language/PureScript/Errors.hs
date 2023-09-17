@@ -110,6 +110,7 @@ data SimpleErrorMessage
   | PartiallyAppliedSynonym (Qualified (ProperName 'TypeName))
   | EscapedSkolem Text (Maybe SourceSpan) SourceType
   | TypesDoNotUnify SourceType SourceType
+  | TypeRowsDoNotUnify SourceType SourceType SourceType SourceType SourceType -- leftLabels, left, both, right, rightLabels
   | KindsDoNotUnify SourceType SourceType
   | ConstrainedTypeUnified SourceType SourceType
   | OverlappingInstances (Qualified (ProperName 'ClassName)) [SourceType] [Qualified (Either SourceType Ident)]
@@ -291,6 +292,7 @@ errorCode em = case unwrapErrorMessage em of
   PartiallyAppliedSynonym{} -> "PartiallyAppliedSynonym"
   EscapedSkolem{} -> "EscapedSkolem"
   TypesDoNotUnify{} -> "TypesDoNotUnify"
+  TypeRowsDoNotUnify{} -> "TypeRowsDoNotUnify"
   KindsDoNotUnify{} -> "KindsDoNotUnify"
   ConstrainedTypeUnified{} -> "ConstrainedTypeUnified"
   OverlappingInstances{} -> "OverlappingInstances"
@@ -875,6 +877,21 @@ prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileCo
         in paras [ line "Could not match type"
                  , row1Box
                  , line "with type"
+                 , row2Box
+                 ]
+
+    renderSimpleErrorMessage (TypeRowsDoNotUnify uLeftLabels uLeft _uBoth uRight uRightLabels)
+      = let (row1Box, row2Box) = printRows uLeft uRight
+            (row1LabelsBox, row2LabelsBox) = printRows uLeftLabels uRightLabels
+
+        in paras [ line "[drathier]: Could not match rows"
+                 , line "Left-only labels:"
+                 , row1LabelsBox
+                 , line "Right-only labels:"
+                 , row2LabelsBox
+                 , line "Left-only type:"
+                 , row1Box
+                 , line "Right-only type:"
                  , row2Box
                  ]
 

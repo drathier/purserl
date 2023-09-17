@@ -33,6 +33,7 @@ import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, un
 import Language.PureScript.TypeChecker.Monad
 import Language.PureScript.TypeChecker.Skolems
 import Language.PureScript.Types
+import Language.PureScript.Label (Label)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: (MonadState CheckState m) => m SourceType
@@ -178,8 +179,53 @@ unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
     rest' <- freshTypeWithKind =<< elaborateKind (TUnknown a u1)
     solveType u1 (rowFromList (sd2, rest'))
     solveType u2 (rowFromList (sd1, rest'))
+  unifyTails r1' r2' | Just (leftLabels, left, both, right, rightLabels) <- diffRows r1' r2' =
+    throwError . errorMessage $ TypeRowsDoNotUnify (rowFromList leftLabels) (rowFromList left) (rowFromList both) (rowFromList right) (rowFromList rightLabels)
   unifyTails r1' r2' =
     throwError . errorMessage $ TypesDoNotUnify (rowFromList r1') (rowFromList r2')
+
+diffRows
+  :: ([RowListItem SourceAnn], SourceType)
+  -> ([RowListItem SourceAnn], SourceType)
+  -> Maybe
+      (([RowListItem SourceAnn], SourceType),
+       ([RowListItem SourceAnn], SourceType),
+       ([RowListItem SourceAnn], SourceType),
+       ([RowListItem SourceAnn], SourceType),
+       ([RowListItem SourceAnn], SourceType))
+diffRows (l,lann) (r,rann) =
+  do
+    lm <- rowListItemsToMap l
+    rm <- rowListItemsToMap r
+
+    let lOnly = M.difference lm rm
+    let rOnly = M.difference rm lm
+    let both = M.intersection lm rm
+    let lOnlyLabels = dropTypes <$> lOnly
+    let rOnlyLabels = dropTypes <$> rOnly
+
+    Just
+      ( (rowItemsMapToList lOnlyLabels, lann)
+      , (rowItemsMapToList lOnly, lann)
+      , (rowItemsMapToList both, lann)
+      , (rowItemsMapToList rOnly, rann)
+      , (rowItemsMapToList rOnlyLabels, rann)
+      )
+
+dropTypes :: (SourceAnn, Type SourceAnn) -> (SourceAnn, Type SourceAnn)
+dropTypes (ann, t) =
+  (ann, TypeWildcard ann UnnamedWildcard)
+
+rowListItemsToMap :: [RowListItem a] -> Maybe (M.Map Label (a, Type a))
+rowListItemsToMap rli = do
+  case rli of
+    (RowListItem ann label tipe):rest -> M.insert label (ann,tipe) <$> rowListItemsToMap rest
+    [] -> Just M.empty
+    _ -> Nothing
+
+rowItemsMapToList :: M.Map Label (a, Type a) -> [RowListItem a]
+rowItemsMapToList m =
+  (\(k,(ann,t)) -> RowListItem ann k t) <$> M.toList m
 
 -- |
 -- Replace type wildcards with unknowns
