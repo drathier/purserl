@@ -23,5 +23,5 @@ addMemoizeAnnotations _memoizable = everywhereOnErl go
     other -> other
 
 memoizeAnnotation :: Erl -> Erl
--- memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]
-memoizeAnnotation emem = EApp RegularApp (EVar "'Elixir.PS.Util.Memoize':persistent_term") [EFun0 Nothing emem]
+  memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]
+  -- memoizeAnnotation emem = EApp RegularApp (EVar "'Elixir.PS.Util.Memoize':persistent_term") [EFun0 Nothing emem]
