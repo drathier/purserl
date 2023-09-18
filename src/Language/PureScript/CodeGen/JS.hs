@@ -28,7 +28,7 @@ import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
 
-import Language.PureScript.AST.SourcePos (SourceSpan, displayStartEndPos)
+import Language.PureScript.AST.SourcePos (SourceSpan, displayStartEndPosShort)
 import Language.PureScript.CodeGen.JS.Common as Common
 import Language.PureScript.CoreImp.AST (AST, InitializerEffects(..), everywhere, everywhereTopDownM, withSourceSpan)
 import Language.PureScript.CoreImp.AST qualified as AST

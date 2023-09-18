@@ -36,13 +36,16 @@ import Data.Map.Merge.Strict qualified as M
 import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Make.Cache qualified as Cache
 
-import Language.PureScript.AST (Associativity, Declaration(..), DeclarationRef(..), Fixity(..), ImportDeclarationType, Module(..), NameSource(..), Precedence, SourceSpan, pattern TypeFixityDeclaration, pattern ValueFixityDeclaration, getTypeOpRef, getValueOpRef)
+-- import Language.PureScript.AST (Associativity, Declaration(..), DeclarationRef(..), Fixity(..), ImportDeclarationType, Module(..), NameSource(..), Precedence, SourceSpan, pattern TypeFixityDeclaration, pattern ValueFixityDeclaration, getTypeOpRef, getValueOpRef)
+import Language.PureScript.AST
 import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (DataDeclType, Environment(..), FunctionalDependency, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), dictTypeName, makeTypeClassData)
+-- import Language.PureScript.Environment (DataDeclType, Environment(..), FunctionalDependency, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), dictTypeName, makeTypeClassData)
+import Language.PureScript.Environment
 import Language.PureScript.Names (Ident, ModuleName, OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, isPlainIdent)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
-import Language.PureScript.Types (SourceConstraint, SourceType, srcInstanceType)
+-- import Language.PureScript.Types (SourceConstraint, SourceType, srcInstanceType)
+import Language.PureScript.Types
 
 import Paths_purescript as Paths
 
@@ -879,7 +882,7 @@ storeTypeRefs t =
       storeTypeRefs t1
       storeTypeRefs t2
 
-    ForAll _ _ mt1 t2 _ -> do
+    ForAll _ _ _ mt1 t2 _ -> do
       traverse_ storeTypeRefs mt1
       storeTypeRefs t2
 

@@ -46,7 +46,8 @@ import Language.PureScript.Docs.Prim qualified as Docs.Prim
 import Language.PureScript.Docs.Types qualified as Docs
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage')
 import Language.PureScript.Externs (ExternsFile, externsFileName)
-import Language.PureScript.Make.Monad (Make, copyFile, getTimestamp, getTimestampMaybe, hashFile, makeIO, readExternsFile, readJSONFile, readTextFile, writeCborFile, writeJSONFile, writeTextFile)
+-- import Language.PureScript.Make.Monad (Make, copyFile, getTimestamp, getTimestampMaybe, hashFile, makeIO, readExternsFile, readJSONFile, readTextFile, writeCborFile, writeJSONFile, writeTextFile)
+import Language.PureScript.Make.Monad
 import Language.PureScript.Make.Cache (CacheDb, ContentHash, normaliseForCache)
 import Language.PureScript.Names (Ident(..), ModuleName, runModuleName)
 import Language.PureScript.Options (CodegenTarget(..), Options(..))

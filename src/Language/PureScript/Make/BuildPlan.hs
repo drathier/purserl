@@ -16,7 +16,8 @@ import Prelude
 import Control.Concurrent.Async.Lifted as A
 import Control.Concurrent.Lifted as C
 import Control.Monad.Base (liftBase)
-import Control.Monad (foldM)
+-- import Control.Monad (foldM)
+import Control.Monad
 import Control.Monad.Trans.Control (MonadBaseControl(..))
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Foldable (foldl')
@@ -27,7 +28,8 @@ import Language.PureScript.AST (Module, getModuleName)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Errors (MultipleErrors(..))
-import Language.PureScript.Externs (ExternsFile)
+-- import Language.PureScript.Externs (ExternsFile)
+import Language.PureScript.Externs
 import Language.PureScript.Make.Actions as Actions
 import Language.PureScript.Make.Cache (CacheDb, CacheInfo, checkChanged)
 import Language.PureScript.Names (ModuleName, runModuleName)

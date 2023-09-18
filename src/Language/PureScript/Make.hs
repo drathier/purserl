@@ -35,7 +35,8 @@ import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
 import Language.PureScript.Environment (initEnvironment)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
-import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
+-- import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
+import Language.PureScript.Externs
 import Language.PureScript.Linter (Name(..), lint, lintImports)
 import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
 import Language.PureScript.Names (ModuleName, isBuiltinModuleName, runModuleName)
@@ -268,7 +269,7 @@ make ma@MakeActions{..} ms = do
           env <- C.readMVar (bpEnv buildPlan)
           idx <- C.takeMVar (bpIndex buildPlan)
           C.putMVar (bpIndex buildPlan) (idx + 1)
-          let cfa = getCacheFilesAvailable buildPlan moduleName
+          let cfa = BuildPlan.getCacheFilesAvailable buildPlan moduleName
           nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
 
           let doCompile wasCacheHit badExts =
@@ -296,7 +297,7 @@ make ma@MakeActions{..} ms = do
               Nothing -> False
               _ -> True
 
-          case shouldRecompile moduleName cfa externs of
+          case BuildPlan.shouldRecompile moduleName cfa externs of
             Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
             Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
             --

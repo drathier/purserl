@@ -76,7 +76,7 @@ printWarningsAndErrors verbose True files warnings errors = do
   either (const exitFailure) (const (return ())) errors
 
 compile :: PSCMakeOptions -> IO ()
-compile PSCMakeOptions{..} = do
+compile opts@PSCMakeOptions{..} = do
   included <- globWarningOnMisses warnFileTypeNotFound pscmInput
   excluded <- globWarningOnMisses warnFileTypeNotFound pscmExclude
   let input = included \\ excluded
