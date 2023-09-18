@@ -2,7 +2,7 @@ cabal-version:  2.4
 
 name:           purescript
 -- Note: don't add prerelease identifiers here! Add them in app/Version.hs and npm-package/package.json instead.
-version:        0.15.8
+version:        0.15.10
 synopsis:       PureScript Programming Language Compiler
 description:    A small strongly, statically typed programming language with expressive types, inspired by Haskell and compiling to JavaScript.
 category:       Language
@@ -87,7 +87,6 @@ common defaults
     -Wno-missing-export-lists
     -Wno-missing-kind-signatures
     -Wno-partial-fields
-    -Wno-prepositive-qualified-module
   default-language: Haskell2010
   default-extensions:
     BangPatterns
@@ -104,6 +103,7 @@ common defaults
     FlexibleContexts
     FlexibleInstances
     GeneralizedNewtypeDeriving
+    ImportQualifiedPost
     KindSignatures
     LambdaCase
     MultiParamTypeClasses

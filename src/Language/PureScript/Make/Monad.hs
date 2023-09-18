@@ -22,34 +22,34 @@ module Language.PureScript.Make.Monad
   , ExternsMemCache
   ) where
 
-import           Prelude
+import Prelude
 
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as Serialise
-import           Control.Exception (fromException, tryJust)
-import           Control.Monad (join, guard)
-import           Control.Monad.Base (MonadBase(..))
-import           Control.Monad.Error.Class (MonadError(..))
-import           Control.Monad.IO.Class
-import           Control.Monad.Logger
-import           Control.Monad.Reader (MonadReader(..), ReaderT(..))
-import           Control.Monad.Trans.Control (MonadBaseControl(..))
-import           Control.Monad.Trans.Except
-import           Control.Monad.Writer.Class (MonadWriter(..))
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as B
-import           Data.Text (Text)
-import qualified Data.Text as Text
-import           Data.Time.Clock (UTCTime, getCurrentTime)
-import           Language.PureScript.Errors
-import           Language.PureScript.Externs (ExternsFile, externsIsCurrentVersion)
-import           Language.PureScript.Make.Cache (ContentHash, hash)
-import           Language.PureScript.Options
-import           System.Directory (createDirectoryIfMissing, getModificationTime, setModificationTime)
-import qualified System.Directory as Directory
-import           System.FilePath (takeDirectory)
-import           System.IO.Error (tryIOError, isDoesNotExistError)
-import           System.IO.UTF8 (readUTF8FileT)
+import Codec.Serialise (Serialise)
+import Codec.Serialise qualified as Serialise
+import Control.Exception (fromException, tryJust)
+import Control.Monad (join, guard)
+import Control.Monad.Base (MonadBase(..))
+import Control.Monad.Error.Class (MonadError(..))
+import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.Logger (Logger, runLogger')
+import Control.Monad.Reader (MonadReader(..), ReaderT(..))
+import Control.Monad.Trans.Control (MonadBaseControl(..))
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Control.Monad.Writer.Class (MonadWriter(..))
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as B
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Time.Clock (UTCTime, getCurrentTime)
+import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), singleError)
+import Language.PureScript.Externs (ExternsFile, externsIsCurrentVersion)
+import Language.PureScript.Make.Cache (ContentHash, hash)
+import Language.PureScript.Options (Options)
+import System.Directory (createDirectoryIfMissing, getModificationTime, setModificationTime)
+import System.Directory qualified as Directory
+import System.FilePath (takeDirectory)
+import System.IO.Error (tryIOError, isDoesNotExistError)
+import System.IO.UTF8 (readUTF8FileT)
 
 import Data.IORef as IORef
 import qualified Data.HashMap.Strict as MS

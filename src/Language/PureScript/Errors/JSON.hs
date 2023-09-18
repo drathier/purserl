@@ -4,12 +4,12 @@ module Language.PureScript.Errors.JSON where
 
 import Prelude
 
-import qualified Data.Aeson.TH as A
-import qualified Data.List.NonEmpty as NEL
+import Data.Aeson.TH qualified as A
+import Data.List.NonEmpty qualified as NEL
 import qualified System.Console.ANSI as ANSI
 import Data.Text (Text)
 
-import qualified Language.PureScript as P
+import Language.PureScript qualified as P
 
 data ErrorPosition = ErrorPosition
   { startLine :: Int
