@@ -808,8 +808,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
         -- [drathier]: disable check for Generic instances effectively exposing ctors, because it's a super annoying warning.
         -- | (TypeConstructor _ qualTyName, _, _) : _ <- unapplyTypes <$> tcdInstanceTypes dict
         -- , qualTyName == Qualified (ByModuleName mn) name
-        = True
-      -- isDictOfTypeRef _ = False
+        = False
       getDataConstructorNames :: TypeKind -> Maybe [ProperName 'ConstructorName]
       getDataConstructorNames (DataType _ _ constructors) = Just $ fst <$> constructors
       getDataConstructorNames _ = Nothing
