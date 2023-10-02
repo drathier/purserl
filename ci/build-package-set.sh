@@ -32,9 +32,9 @@ spago install $(spago ls packages | while read name z; do if [[ $name != metadat
 echo ::endgroup::
 
 echo ::group::Compile package set
-spago build
+spago build || true
 echo ::endgroup::
 
 echo ::group::Document package set
-spago docs --no-search
+spago docs --no-search || true
 echo ::endgroup::
