@@ -194,12 +194,8 @@ make ma@MakeActions{..} ms = do
       M.mapEither splitResults <$> BuildPlan.collectResults buildPlan
 
   -- Write the updated build cache database to disk
-  case () of
-    _ | M.null failures == False ->
-      -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
-      pure ()
-    _ ->
-      writeCacheDb $ Cache.removeModules (M.keysSet failures) newCacheDb
+  -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
+  writeCacheDb $ Cache.removeModules (M.keysSet failures) $ M.unionWith (\new _old -> new) newCacheDb cacheDb
 
   writePackageJson
 
@@ -251,8 +247,8 @@ make ma@MakeActions{..} ms = do
 
   buildModule :: BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
   buildModule buildPlan moduleName cnt fp pwarnings mres deps = do
-    let onErr err = Debug.Trace.trace (show ("buildModule catchError", moduleName, err)) $ return (BuildJobFailed err)
-    result <- flip catchError (onErr) $ do
+    -- NOTE[drathier]: catchError here only ever fires if there's an error in a module we're building; it does not fire if a module is skipped because upstream modules failed to build.
+    result <- flip catchError (return . BuildJobFailed) $ do
       let pwarnings' = CST.toMultipleWarnings fp pwarnings
       tell pwarnings'
       m <- CST.unwrapParserError fp mres
