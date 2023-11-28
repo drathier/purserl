@@ -479,6 +479,9 @@ instance ToCS Expr () where
       App e1 e2 -> do
         toCS e1
         toCS e2
+      VisibleTypeApp e sourceType -> do
+        toCS e
+        toCS sourceType
       Unused e -> toCS e
       Var _ qIdent -> csdbPutIdent qIdent
       Op _ qValueOpName -> csdbPutValueOp qValueOpName
