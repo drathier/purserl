@@ -508,9 +508,9 @@ instance ToCS Expr () where
         toCS inExpr
 
       TypeClassDictionary _ _ _ -> internalError "[drathier]: should be unreachable, all TypeClassDictionary ctors should have been expanded already"
-      DeferredDictionary _ _ -> internalError "[drathier]should be unreachable, all DeferredDictionary ctors should have been expanded already"
-      DerivedInstancePlaceholder _ _ -> internalError "[drathier]should be unreachable, all DerivedInstancePlaceholder ctors should have been expanded already"
-      AnonymousArgument -> internalError "[drathier]: shshould be unreachable, all AnonymousArgument ctors should have been expanded already"
+      DeferredDictionary _ _ -> internalError "[drathier]: should be unreachable, all DeferredDictionary ctors should have been expanded already"
+      DerivedInstancePlaceholder _ _ -> internalError "[drathier]: should be unreachable, all DerivedInstancePlaceholder ctors should have been expanded already"
+      AnonymousArgument -> internalError "[drathier]: should be unreachable, all AnonymousArgument ctors should have been expanded already"
       Hole _ -> internalError "[drathier]: should be unreachable, all Hole ctors should have been expanded already"
       PositionedValue _ _ e -> toCS e
 
