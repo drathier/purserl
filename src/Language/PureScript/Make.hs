@@ -251,7 +251,7 @@ make ma@MakeActions{..} ms = do
 
   buildModule :: BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
   buildModule buildPlan moduleName cnt fp pwarnings mres deps = do
-    let onErr err = Debug.Trace.trace (show ("buildModule catchError", moduleName, err)) $ return (BuildJobFailed err)
+    let onErr err = return (BuildJobFailed err)
     result <- flip catchError (onErr) $ do
       let pwarnings' = CST.toMultipleWarnings fp pwarnings
       tell pwarnings'
