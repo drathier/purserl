@@ -169,7 +169,7 @@ shouldRecompile mn cfa externs = do
       let oldExts = pbExternsFile pb in
       let old = efUpstreamCacheShapes oldExts in
       let shapesMap = M.intersectionWith (\_ s -> s) old $ M.fromList $ (\ef -> (efModuleName ef, efOurCacheShapes ef)) <$> externs in
-      let !_ = if old == mempty then trace (show ("WARNING: module doesn't export anything at all! [drathier]: Yes it does; this guard doesn't check for re-exports." :: String, mn)) () else () in
+      -- let !_ = if old == mempty then trace (show ("WARNING: module doesn't export anything at all! [drathier]: Yes it does; this guard doesn't check for re-exports." :: String, mn)) () else () in
 
       let
           interestingDiff5 =

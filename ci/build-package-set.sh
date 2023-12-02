@@ -28,7 +28,7 @@ spago upgrade-set
 # Override the `metadata` package's version to match `purs` version
 # so that `spago build` actually works
 sed -i'' "\$c in upstream with metadata.version = \"v$(purs --version | { read v z && echo $v; })\"" packages.dhall
-spago install $(spago ls packages | while read name z; do if [[ $name != metadata ]]; then echo $name; fi; done)
+spago install $(spago ls packages | while read name z; do if test $name != metadata && test $name != "halogen-bootstrap5"; then echo $name; fi; done)
 echo ::endgroup::
 
 echo ::group::Compile package set
