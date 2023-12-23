@@ -43,7 +43,7 @@ import Language.PureScript.Names (ModuleName, isBuiltinModuleName, runModuleName
 import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
-import Language.PureScript.Make.BuildPlan (BuildJobResult(..), BuildPlan(..), getResult)
+import Language.PureScript.Make.BuildPlan (BuildJobResult(..), BuildPlan(..), getResult, ShouldRecompile(..))
 import Language.PureScript.Make.BuildPlan qualified as BuildPlan
 import Language.PureScript.Make.Cache qualified as Cache
 import Language.PureScript.Make.Actions as Actions
@@ -86,7 +86,7 @@ rebuildModule'
   -> [ExternsFile]
   -> Module
   -> m ExternsFile
-rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing
+rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing ""
 
 rebuildModuleWithIndex
   :: forall m
@@ -96,9 +96,10 @@ rebuildModuleWithIndex
   -> [ExternsFile]
   -> Module
   -> Maybe (Int, Int)
+  -> T.Text
   -> m ExternsFile
-rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex = do
-  progress $ CompilingModule moduleName moduleIndex
+rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex cacheInfoToPrintToUserAlongSideCompilingMsg = do
+  progress $ CompilingModule moduleName moduleIndex cacheInfoToPrintToUserAlongSideCompilingMsg
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim
@@ -274,9 +275,9 @@ make ma@MakeActions{..} ms = do
           let cfa = BuildPlan.getCacheFilesAvailable buildPlan moduleName
           nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
 
-          let doCompile wasCacheHit badExts =
+          let doCompile wasCacheHit badExts cacheInfoToPrintToUserAlongSideCompilingMsg =
                 do
-                  (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
+                  (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt)) cacheInfoToPrintToUserAlongSideCompilingMsg
                   let meta = (("cfa" :: String, cfa), ("badExts" :: String, badExts), ("exts" :: String, exts))
                   case (badExts, wasCacheHit) of
                     (Just e, WasCacheMiss) | e == exts ->
@@ -300,16 +301,18 @@ make ma@MakeActions{..} ms = do
               _ -> True
 
           case BuildPlan.shouldRecompile moduleName cfa externs of
-            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
-            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
+            FullCacheHit badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts) " skipping experimental cache (hit)"
+            CacheMissExternsChanged badExts cacheExplanation | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss (Just badExts) cacheExplanation
+            CacheMissSourceChangedOrNeverBuilt | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss Nothing "skipping experimental cache (miss)"
             --
-            Right exts
+            FullCacheHit exts
               -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
               | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
               ->
               return $ BuildJobSucceeded pwarnings' exts
-            Right badExts -> doCompile WasCacheHit (Just badExts)
-            Left badExts -> doCompile WasCacheMiss badExts
+            FullCacheHit badExts -> doCompile WasCacheHit (Just badExts) " (cache hit)"
+            CacheMissExternsChanged badExts cacheExplanation -> doCompile WasCacheMiss (Just badExts) cacheExplanation
+            CacheMissSourceChangedOrNeverBuilt -> doCompile WasCacheMiss Nothing " (source changed)"
         Nothing -> return BuildJobSkipped
 
     BuildPlan.markComplete buildPlan moduleName result

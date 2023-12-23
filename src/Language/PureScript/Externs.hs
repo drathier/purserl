@@ -16,6 +16,9 @@ module Language.PureScript.Externs
   , DB
   , dbDiffDiff
   , dbOpaqueDiffDiff
+  , DBOpaque
+  , dbOpaqueDiff
+  , dbOpaqueDiffPrettyPrintOneLine
   ) where
 
 import Prelude
@@ -35,6 +38,7 @@ import Data.Map qualified as M
 import Data.Map.Merge.Strict qualified as M
 import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Make.Cache qualified as Cache
+import Data.Map.Merge.Strict qualified as M
 
 -- import Language.PureScript.AST (Associativity, Declaration(..), DeclarationRef(..), Fixity(..), ImportDeclarationType, Module(..), NameSource(..), Precedence, SourceSpan, pattern TypeFixityDeclaration, pattern ValueFixityDeclaration, getTypeOpRef, getValueOpRef)
 import Language.PureScript.AST
@@ -400,6 +404,8 @@ data ToCSDBInner
 -- NOTE[drathier]: some idents are run and re-packaged before we get here, so just matching a flat ident won't get you everything you need :( So we run the idents and wrap them up again
 newtype RunIdent = RunIdent T.Text
   deriving (Show, Eq, Ord, Generic)
+
+runRunIdent (RunIdent r) = r
 
 instance Serialise RunIdent
 
@@ -944,20 +950,31 @@ instance Monoid DB where
   mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 dbToOpaque :: DB -> DBOpaque
-dbToOpaque (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+dbToOpaque (DB dataOrNewtypeDeclsTypeOnly
+               dataOrNewtypeDeclsFull
+               ctorTypes
+               typeSynonymDecls
+               valueDecls
+               externDecls
+               externDataDecls
+               opFixity
+               ctorFixity
+               tyOpFixity
+               tyClassDecls
+               tyClassInstanceDecls) =
   DBOpaque
-  (a1 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a2 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  a3
-  (a4 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a5 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a6 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a7 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a8 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a9 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a10 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a11 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a12 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (dataOrNewtypeDeclsTypeOnly & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (dataOrNewtypeDeclsFull & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    ctorTypes
+    (typeSynonymDecls & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (valueDecls & M.map (\v -> v & fmap (\(CSValueDeclaration nameKind int t _) -> (CSValueDeclaration nameKind int t mempty)) & serialise & cacheShapeHashFromByteString))
+    (externDecls & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (externDataDecls & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (opFixity & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (ctorFixity & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (tyOpFixity & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (tyClassDecls & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+    (tyClassInstanceDecls & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
 
 data DBOpaque
   = DBOpaque
@@ -988,6 +1005,37 @@ instance Semigroup DBOpaque where
 
 instance Monoid DBOpaque where
   mempty = DBOpaque mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
+
+data DBOpaqueDiff
+  = DBOpaqueDiff
+    -- TODO[drathier]: ToCSDB here is only needed to figure out what we depend on. It shouldn't be needed to be stored anywhere.
+    -- what things did we find?
+    -- NOTE[drathier]: this gathers a list of direct dependencies, not transitive dependencies, and it doesn't fetch the shape of the dependencies. It's just the set of things we depend on, for us to fetch later.
+    -- TODO[drathier]: make sure all these lists are singletons
+    -- TODO[drathier]: all that have a ToCSDB should have it separately like in this first row below, and the e.g. CSDataDeclaration should only contain the things that, if they change, should cause a recompile of things depending on this thing
+    { _dataOrNewtypeDeclsTypeOnly_opaquediff :: M.Map (ProperName 'TypeName) (CacheShapeHash, CacheShapeHash)
+    , _dataOrNewtypeDeclsFull_opaquediff :: M.Map (ProperName 'TypeName) (CacheShapeHash, CacheShapeHash)
+    , _ctorTypes_opaquediff :: M.Map (ProperName 'ConstructorName) (ProperName 'TypeName, ProperName 'TypeName)
+    , _typeSynonymDecls_opaquediff :: M.Map (ProperName 'TypeName) (CacheShapeHash, CacheShapeHash)
+    , _valueDecls_opaquediff :: M.Map RunIdent (CacheShapeHash, CacheShapeHash)
+    , _externDecls_opaquediff :: M.Map RunIdent (CacheShapeHash, CacheShapeHash)
+    , _externDataDecls_opaquediff :: M.Map (ProperName 'TypeName) (CacheShapeHash, CacheShapeHash)
+    , _opFixity_opaquediff :: M.Map (OpName 'ValueOpName) (CacheShapeHash, CacheShapeHash)
+    , _ctorFixity_opaquediff :: M.Map (OpName 'ValueOpName) (CacheShapeHash, CacheShapeHash)
+    , _tyOpFixity_opaquediff :: M.Map (OpName 'TypeOpName) (CacheShapeHash, CacheShapeHash)
+    , _tyClassDecls_opaquediff :: M.Map (ProperName 'ClassName) (CacheShapeHash, CacheShapeHash)
+    , _tyClassInstanceDecls_opaquediff :: M.Map RunIdent (CacheShapeHash, CacheShapeHash)
+    }
+  deriving (Show, Eq, Generic)
+
+instance Serialise DBOpaqueDiff
+
+instance Semigroup DBOpaqueDiff where
+  DBOpaqueDiff a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DBOpaqueDiff b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DBOpaqueDiff (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
+
+instance Monoid DBOpaqueDiff where
+  mempty = DBOpaqueDiff mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
+
 
 cacheShapeHashFromByteString :: ByteString -> CacheShapeHash
 cacheShapeHashFromByteString b =
@@ -1094,6 +1142,189 @@ dbOpaqueDiffDiff (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DBOpaque b1 
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10))
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11))
       ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12))
+
+dbOpaqueDiffDiff2 :: DBOpaque -> DBOpaque -> DBOpaqueDiff
+dbOpaqueDiffDiff2 (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
+    let
+      a1x = a1 & fmap (\q -> (q, CacheShapeHash "new"))
+      a2x = a2 & fmap (\q -> (q, CacheShapeHash "new"))
+      a3x = a3 & fmap (\q -> (q, ProperName "new"))
+      a4x = a4 & fmap (\q -> (q, CacheShapeHash "new"))
+      a5x = a5 & fmap (\q -> (q, CacheShapeHash "new"))
+      a6x = a6 & fmap (\q -> (q, CacheShapeHash "new"))
+      a7x = a7 & fmap (\q -> (q, CacheShapeHash "new"))
+      a8x = a8 & fmap (\q -> (q, CacheShapeHash "new"))
+      a9x = a9 & fmap (\q -> (q, CacheShapeHash "new"))
+      a10x = a10 & fmap (\q -> (q, CacheShapeHash "new"))
+      a11x = a11 & fmap (\q -> (q, CacheShapeHash "new"))
+      a12x = a12 & fmap (\q -> (q, CacheShapeHash "new"))
+    in
+    DBOpaqueDiff
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a1x b1))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a2x b2))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a3x b3))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a4x b4))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a5x b5))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a6x b6))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a7x b7))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a8x b8))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a9x b9))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a10x b10))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a11x b11))
+      ((M.differenceWith (\(x,_) y -> if x == y then Nothing else Just (x,y)) a12x b12))
+
+dbOpaqueDiffDiffPrep2 :: DBOpaque -> DBOpaqueDiff
+dbOpaqueDiffDiffPrep2 (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+    let
+      a1x = a1 & fmap (\q -> (q, CacheShapeHash "new"))
+      a2x = a2 & fmap (\q -> (q, CacheShapeHash "new"))
+      a3x = a3 & fmap (\q -> (q, ProperName "new"))
+      a4x = a4 & fmap (\q -> (q, CacheShapeHash "new"))
+      a5x = a5 & fmap (\q -> (q, CacheShapeHash "new"))
+      a6x = a6 & fmap (\q -> (q, CacheShapeHash "new"))
+      a7x = a7 & fmap (\q -> (q, CacheShapeHash "new"))
+      a8x = a8 & fmap (\q -> (q, CacheShapeHash "new"))
+      a9x = a9 & fmap (\q -> (q, CacheShapeHash "new"))
+      a10x = a10 & fmap (\q -> (q, CacheShapeHash "new"))
+      a11x = a11 & fmap (\q -> (q, CacheShapeHash "new"))
+      a12x = a12 & fmap (\q -> (q, CacheShapeHash "new"))
+    in
+    DBOpaqueDiff a1x a2x a3x a4x a5x a6x a7x a8x a9x a10x a11x a12x
+
+data DBDiff
+  = OnlyOld DBOpaque -- module removed
+  | OnlyNew DBOpaque -- module added
+  | Diff DBOpaqueDiffX -- module changed
+  deriving (Show, Eq, Generic)
+
+dbOpaqueDiff :: M.Map ModuleName DBOpaque -> M.Map ModuleName DBOpaque -> M.Map ModuleName DBDiff
+dbOpaqueDiff old new =
+  M.merge
+    (M.mapMissing (\_key oldValue -> OnlyOld oldValue))
+    (M.mapMissing (\_key newValue -> OnlyNew newValue))
+    (M.zipWithMaybeMatched (\_key oldValue newValue ->
+      case dbOpaqueDiffSingle oldValue newValue of
+        v | v == emptyDBOpaqueDiffX -> Nothing
+        v -> Just (Diff v)
+      ))
+    old
+    new
+
+data DBDiffSingle a
+  = SingleOnlyOld a
+  | SingleOnlyNew a
+  | SingleSame a
+  | SingleDiff a a
+  deriving (Show, Eq, Generic)
+
+
+data DBOpaqueDiffX
+  = DBOpaqueDiffX
+    (M.Map (ProperName 'TypeName) (DBDiffSingle CacheShapeHash))
+    (M.Map (ProperName 'TypeName) (DBDiffSingle CacheShapeHash))
+    (M.Map (ProperName 'ConstructorName) (DBDiffSingle (ProperName 'TypeName)))
+    (M.Map (ProperName 'TypeName) (DBDiffSingle CacheShapeHash))
+    (M.Map RunIdent (DBDiffSingle CacheShapeHash))
+    (M.Map RunIdent (DBDiffSingle CacheShapeHash))
+    (M.Map (ProperName 'TypeName) (DBDiffSingle CacheShapeHash))
+    (M.Map (OpName 'ValueOpName) (DBDiffSingle CacheShapeHash))
+    (M.Map (OpName 'ValueOpName) (DBDiffSingle CacheShapeHash))
+    (M.Map (OpName 'TypeOpName) (DBDiffSingle CacheShapeHash))
+    (M.Map (ProperName 'ClassName) (DBDiffSingle CacheShapeHash))
+    (M.Map RunIdent (DBDiffSingle CacheShapeHash))
+  deriving (Show, Eq, Generic)
+
+emptyDBOpaqueDiffX = DBOpaqueDiffX M.empty M.empty M.empty M.empty M.empty M.empty M.empty M.empty M.empty M.empty M.empty M.empty
+
+dbOpaqueDiffSingle (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
+  let
+    f o n =
+      M.merge
+        -- (M.mapMissing (\_key oldValue -> SingleOnlyOld oldValue))
+        M.dropMissing
+        -- (M.mapMissing (\_key newValue -> SingleOnlyNew newValue))
+        M.dropMissing
+        (M.zipWithMaybeMatched (\_key oldValue newValue ->
+          case oldValue == newValue of
+            True -> Nothing -- SingleSame oldValue
+            False ->  Just (SingleDiff oldValue newValue)
+        ))
+        o
+        n
+  in
+  DBOpaqueDiffX
+    (f a1 b1)
+    (f a2 b2)
+    (f a3 b3)
+    (f a4 b4)
+    (f a5 b5)
+    (f a6 b6)
+    (f a7 b7)
+    (f a8 b8)
+    (f a9 b9)
+    (f a10 b10)
+    (f a11 b11)
+    (f a12 b12)
+
+
+dbOpaqueDiffPrettyPrintOneLine :: M.Map ModuleName DBDiff -> T.Text
+dbOpaqueDiffPrettyPrintOneLine m =
+  let
+        f bestSoFar modu this =
+          case (bestSoFar, this) of
+            (_, Diff diff) | diff == emptyDBOpaqueDiffX -> bestSoFar
+            (Nothing, _) -> Just (modu, this)
+            (Just (_, OnlyOld _), OnlyOld _) -> bestSoFar
+            (Just (_, OnlyNew _), OnlyOld _) -> bestSoFar
+            (Just (_, Diff _), OnlyOld _) -> bestSoFar
+            (Just (_, OnlyOld _), OnlyNew _) -> Just (modu, this)
+            (Just (_, OnlyNew _), OnlyNew _) -> Just (modu, this)
+            (Just (_, Diff _), OnlyNew _) -> Just (modu, this)
+            (Just (_, OnlyOld _), Diff _) -> Just (modu, this)
+            (Just (_, OnlyNew _), Diff _) -> Just (modu, this)
+            (Just (_, Diff _), Diff _) -> bestSoFar
+
+
+  in
+  case M.foldlWithKey' f Nothing m of
+    Nothing -> " (failed to figure out why)"
+    Just (modu, OnlyOld _) -> " (module removed)"
+    Just (modu, OnlyNew _) -> " (module added)"
+    Just (modu, Diff (DBOpaqueDiffX
+     dataOrNewtypeDeclsTypeOnly
+     dataOrNewtypeDeclsFull
+     ctorTypes
+     typeSynonymDecls
+     valueDecls
+     externDecls
+     externDataDecls
+     opFixity
+     ctorFixity
+     tyOpFixity
+     tyClassDecls
+     tyClassInstanceDecls
+     ))
+     ->
+      let
+        toText :: T.Text -> T.Text -> T.Text -> T.Text
+        toText what after t =
+          let (ModuleName m) = modu in
+          " (" <> what <> "" <> m <> "." <> t <> " " <> after <> ")"
+      in
+      case () of
+        _ | M.null dataOrNewtypeDeclsTypeOnly == False -> dataOrNewtypeDeclsTypeOnly & M.keys & head & runProperName & toText "data-type " "changed"
+        _ | M.null dataOrNewtypeDeclsFull == False -> dataOrNewtypeDeclsFull & M.keys & head & runProperName & toText "data-decl " "changed"
+        _ | M.null ctorTypes == False -> ctorTypes & M.keys & head & runProperName & toText "ctor " "changed"
+        _ | M.null typeSynonymDecls == False -> typeSynonymDecls & M.keys & head & runProperName & toText "type alias " "changed"
+        _ | M.null valueDecls == False -> valueDecls & M.keys & head & runRunIdent & toText "" "changed"
+        _ | M.null externDecls == False -> externDecls & M.keys & head & runRunIdent & toText "extern-value " "changed"
+        _ | M.null externDataDecls == False -> externDataDecls & M.keys & head & runProperName & toText "extern-data " "changed"
+        _ | M.null opFixity == False -> opFixity & M.keys & head & runOpName & toText "operator fixity " "changed"
+        _ | M.null ctorFixity == False -> ctorFixity & M.keys & head & runOpName & toText "infix ctor fixity " "changed"
+        _ | M.null tyOpFixity == False -> tyOpFixity & M.keys & head & runOpName & toText "type operator fixity " "changed"
+        _ | M.null tyClassDecls == False -> tyClassDecls & M.keys & head & runProperName & toText "type class " "changed"
+        _ | M.null tyClassInstanceDecls == False -> tyClassInstanceDecls & M.keys & head & runRunIdent & toText "type class instance " "changed"
+        _ -> " (failed to find why in diff)"
 
 
 findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]

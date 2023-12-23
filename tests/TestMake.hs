@@ -570,7 +570,7 @@ compileWithOptions opts input = do
     foreigns <- P.inferForeignModules filePathMap
     let makeActions =
           (P.buildMakeActions modulesDir filePathMap foreigns True)
-            { P.progress = \(P.CompilingModule mn _) ->
+            { P.progress = \(P.CompilingModule mn _ _) ->
                 liftIO $ modifyMVar_ recompiled (return . Set.insert mn)
             }
     P.make makeActions (map snd ms)

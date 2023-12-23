@@ -9,6 +9,7 @@ module Language.PureScript.Make.BuildPlan
   , collectResults
   , markComplete
   , needsRebuild
+  , ShouldRecompile(..)
   ) where
 
 import Prelude
@@ -151,7 +152,12 @@ cfaPrebuilt cfa =
     SourceChanged -> Nothing
     UpToDate pb -> Just pb
 
-shouldRecompile :: ModuleName -> CacheFilesAvailable -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile
+data ShouldRecompile
+  = FullCacheHit ExternsFile
+  | CacheMissSourceChangedOrNeverBuilt
+  | CacheMissExternsChanged ExternsFile T.Text
+
+shouldRecompile :: ModuleName -> CacheFilesAvailable -> [ExternsFile] -> ShouldRecompile
 shouldRecompile mn cfa externs = do
   -- let cfatag =
   --       case cfa of
@@ -163,8 +169,8 @@ shouldRecompile mn cfa externs = do
   --         DepChanged _ -> ()
   --         _ -> trace (T.unpack (runModuleName mn) <> " shouldRecompile? " <> show cfatag) ()
   case cfa of
-    UpToDate pb -> Right (pbExternsFile pb)
-    SourceChanged -> Left Nothing
+    UpToDate pb -> FullCacheHit (pbExternsFile pb)
+    SourceChanged -> CacheMissSourceChangedOrNeverBuilt
     DepChanged pb ->
       let oldExts = pbExternsFile pb in
       let old = efUpstreamCacheShapes oldExts in
@@ -172,6 +178,7 @@ shouldRecompile mn cfa externs = do
       -- let !_ = if old == mempty then trace (show ("WARNING: module doesn't export anything at all! [drathier]: Yes it does; this guard doesn't check for re-exports." :: String, mn)) () else () in
 
       let
+          interestingDiff5 :: M.Map ModuleName DBOpaque
           interestingDiff5 =
             M.differenceWith
               (\a b ->
@@ -181,14 +188,18 @@ shouldRecompile mn cfa externs = do
               )
               old
               shapesMap
+
+          interestingDiff6 = dbOpaqueDiff old shapesMap
+          interestingDiff7 = dbOpaqueDiffPrettyPrintOneLine interestingDiff6
       in
+      -- trace (T.unpack (runModuleName mn) <> ": cache info: " <> sShow interestingDiff6) $
       case interestingDiff5 == mempty of
         True ->
           -- trace (T.unpack (runModuleName mn) <> ": cache hit") $
-          Right oldExts
+          FullCacheHit oldExts
         False ->
-          -- trace (T.unpack (runModuleName mn) <> ": cache miss: " <> sShow interestingDiff5) $
-          Left (Just oldExts)
+          trace (T.unpack (runModuleName mn) <> ": cache miss: " <> sShow interestingDiff6) $
+          CacheMissExternsChanged oldExts interestingDiff7
 
 
 -- | Gets the the build result for a given module name independent of whether it
