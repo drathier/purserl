@@ -13,6 +13,7 @@ module Language.PureScript.Make.BuildPlan
 
 import Prelude
 
+import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.Async.Lifted as A
 import Control.Concurrent.Lifted as C
 import Control.Monad.Base (liftBase)
@@ -163,8 +164,12 @@ shouldRecompile mn cfa externs = do
   --         DepChanged _ -> ()
   --         _ -> trace (T.unpack (runModuleName mn) <> " shouldRecompile? " <> show cfatag) ()
   case cfa of
-    UpToDate pb -> Right (pbExternsFile pb)
-    SourceChanged -> Left Nothing
+    UpToDate pb ->
+          -- caching trace ("ooo UpToDate:  " <> T.unpack (runModuleName mn)) $
+      Right (pbExternsFile pb)
+    SourceChanged ->
+          -- caching trace ("ooo SourceChanged stale:  " <> T.unpack (runModuleName mn)) $
+      Left Nothing
     DepChanged pb ->
       let oldExts = pbExternsFile pb in
       let old = efUpstreamCacheShapes oldExts in
@@ -184,9 +189,10 @@ shouldRecompile mn cfa externs = do
       in
       case interestingDiff5 == mempty of
         True ->
-          -- trace (T.unpack (runModuleName mn) <> ": cache hit") $
+          -- caching trace ("ooo DepChanged stale:  " <> T.unpack (runModuleName mn)) $
           Right oldExts
         False ->
+          -- caching trace ("ooo DepChanged hit:  " <> T.unpack (runModuleName mn)) $
           -- trace (T.unpack (runModuleName mn) <> ": cache miss: " <> sShow interestingDiff5) $
           Left (Just oldExts)
 
@@ -215,9 +221,9 @@ construct
 construct MakeActions{..} cacheDb (sorted, graph) = do
   let sortedModuleNames = map (getModuleName . CST.resPartial) sorted
   rebuildStatuses <- A.forConcurrently sortedModuleNames getRebuildStatus
-  let prebuilt =
-        foldl' collectPrebuiltModules M.empty $
-          mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
+  let prebuilt = M.empty
+        -- foldl' collectPrebuiltModules M.empty $
+        --   mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
   let dirty =
         foldl' collectDirtyModules M.empty $
           mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
@@ -241,7 +247,7 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
     getRebuildStatus :: ModuleName -> m RebuildStatus
     getRebuildStatus moduleName = do
       inputInfo <- getInputTimestampsAndHashes moduleName
-      case inputInfo of
+      -- caching trace ("getRebuildStatus: " <> T.unpack (runModuleName moduleName) <> " " <> show (fmap (fmap (fmap (const ()))) inputInfo)) $ case inputInfo of
         Left RebuildNever -> do
           dirtyExterns <- snd <$> readExterns moduleName
           prebuilt <- findExistingExtern dirtyExterns moduleName
@@ -313,7 +319,7 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
             Just modTimes ->
               case maximumMaybe modTimes of
                 Just depModTime | pbModificationTime pb < depModTime ->
-                  M.insert moduleName SourceChanged prev
+                  M.insert moduleName (DepChanged pb) prev -- NOTE[drathier]: hard-coded source changed to depchanged, so we can skip the transitive timestamp check here and only rely on the later timestamp+hash+externs caching
                 _ -> M.insert moduleName (UpToDate pb) prev
 
 maximumMaybe :: Ord a => [a] -> Maybe a

@@ -195,7 +195,17 @@ make ma@MakeActions{..} ms = do
 
   -- Write the updated build cache database to disk
   -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
-  writeCacheDb $ Cache.removeModules (M.keysSet failures) $ M.unionWith (\new _old -> new) newCacheDb cacheDb
+
+  writeCacheDb $ M.unionWith (\new _old -> new) (Cache.removeModules (M.keysSet failures) $ newCacheDb) cacheDb
+  -- case () of
+  --   _ | M.null failures == False ->
+  --     -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
+  --     pure ()
+  --   _ ->
+  --     writeCacheDb $ Cache.removeModules (M.keysSet failures) newCacheDb
+
+-- caching verkar okej iom removeModules på new successful builds, men vi skriver alldeles för många filer till disk nu. Undvik att toucha och skriva över filer om innehållet ej ändrats, istället för att toucha filer för att få gamla prebuilt-logiken att funka. Ingenting räknas som prebuilt med den här logiken nu. 2023-12-24
+
 
   writePackageJson
 
