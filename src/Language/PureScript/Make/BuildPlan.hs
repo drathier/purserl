@@ -247,7 +247,8 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
     getRebuildStatus :: ModuleName -> m RebuildStatus
     getRebuildStatus moduleName = do
       inputInfo <- getInputTimestampsAndHashes moduleName
-      -- caching trace ("getRebuildStatus: " <> T.unpack (runModuleName moduleName) <> " " <> show (fmap (fmap (fmap (const ()))) inputInfo)) $ case inputInfo of
+      -- caching trace ("getRebuildStatus: " <> T.unpack (runModuleName moduleName) <> " " <> show (fmap (fmap (fmap (const ()))) inputInfo)) $
+      case inputInfo of
         Left RebuildNever -> do
           dirtyExterns <- snd <$> readExterns moduleName
           prebuilt <- findExistingExtern dirtyExterns moduleName
