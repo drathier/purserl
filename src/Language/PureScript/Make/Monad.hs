@@ -150,9 +150,10 @@ readExternsFile mmemCacheRef path = do
           )
   case mCache of
     Just cache -> do
-      -- liftIO $ putStrLn ("readExternsFile cache hit: " <> path)
+      -- caching liftIO $ putStrLn ("readExternsFile cache hit: " <> path)
       return (Just cache)
     Nothing -> do
+      -- caching liftIO $ putStrLn ("readExternsFile cache miss: " <> path)
       mexterns <- readExternsFileImpl path
       maybeWriteExternsToMemCache mmemCacheRef path mNewHash mexterns
       pure mexterns
@@ -163,7 +164,7 @@ maybeWriteExternsToMemCache mmemCacheRef path mexternsHash mexterns = do
   case mmemCacheRef of
     Nothing -> pure ()
     Just memCacheRef -> do
-      -- liftIO $ putStrLn ("readExternsFile cache write: " <> path)
+      -- caching liftIO $ putStrLn ("readExternsFile cache write: " <> path)
       () <- liftIO $
         case mexternsHash of
           Nothing -> pure ()
@@ -245,11 +246,13 @@ writeTextFile path text = makeIO ("write file: " <> Text.pack path) $ do
 -- 'MonadError' instance.
 writeJSONFile :: (MonadIO m, MonadError MultipleErrors m) => Aeson.ToJSON a => FilePath -> a -> m ()
 writeJSONFile path value = makeIO ("write JSON file: " <> Text.pack path) $ do
+  -- caching liftIO $ putStrLn ("writeJsonFile: " <> path)
   createParentDirectory path
   Aeson.encodeFile path value
 
 writeCborFile :: (MonadIO m, MonadError MultipleErrors m) => Maybe ExternsMemCache -> FilePath -> ExternsFile -> m ()
 writeCborFile mmemCacheRef path value = do
+  -- caching liftIO $ putStrLn ("writeCborFile: " <> path)
   res <- makeIO ("write Cbor file: " <> Text.pack path) (writeCborFileIO path value)
   mNewHash <- hashFileMaybe path
   maybeWriteExternsToMemCache mmemCacheRef path mNewHash (Just value)
@@ -265,6 +268,7 @@ writeCborFileIO path value = do
 copyFile :: (MonadIO m, MonadError MultipleErrors m) => FilePath -> FilePath -> m ()
 copyFile src dest =
   makeIO ("copy file: " <> Text.pack src <> " -> " <> Text.pack dest) $ do
+    -- caching liftIO $ putStrLn ("copy file from: " <> src <> " to " <> dest)
     createParentDirectory dest
     Directory.copyFile src dest
 
