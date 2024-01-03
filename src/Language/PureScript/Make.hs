@@ -12,12 +12,14 @@ module Language.PureScript.Make
 import Prelude
 
 import Control.Concurrent.Lifted as C
-import Control.Exception.Base (onException)
-import Control.Monad (foldM, unless, when)
+import Control.DeepSeq (force)
+import Control.Exception.Lifted (onException, bracket_, evaluate)
+import Control.Monad (foldM, unless, when, (<=<))
+import Control.Monad.Base (MonadBase(liftBase))
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Supply (evalSupplyT, runSupply, runSupplyT)
-import Control.Monad.Trans.Control (MonadBaseControl(..), control)
+import Control.Monad.Trans.Control (MonadBaseControl(..))
 import Control.Monad.Trans.State (runStateT)
 import Control.Monad.Writer.Class (MonadWriter(..), censor)
 import Control.Monad.Writer.Strict (runWriterT)
@@ -29,6 +31,7 @@ import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Text qualified as T
+import Debug.Trace (traceMarkerIO)
 import Language.PureScript.AST (ErrorMessageHint(..), Module(..), SourceSpan(..), getModuleName, getModuleSourceSpan, importPrim)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
@@ -69,7 +72,7 @@ import qualified Build as Erl.Build
 -- This function is used for fast-rebuild workflows (PSCi and psc-ide are examples).
 rebuildModule
   :: forall m
-   . (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+   . (MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => MakeActions m
   -> [ExternsFile]
   -> Module
@@ -80,7 +83,7 @@ rebuildModule actions externs m = do
 
 rebuildModule'
   :: forall m
-   . (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+   . (MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => MakeActions m
   -> Env
   -> [ExternsFile]
@@ -90,7 +93,7 @@ rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing
 
 rebuildModuleWithIndex
   :: forall m
-   . (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+   . (MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => MakeActions m
   -> Env
   -> [ExternsFile]
@@ -165,12 +168,21 @@ make ma@MakeActions{..} ms = do
 
   (buildPlan, newCacheDb) <- BuildPlan.construct ma cacheDb (sorted, graph)
 
+  -- Limit concurrent module builds to the number of capabilities as
+  -- (by default) inferred from `+RTS -N -RTS` or set explicitly like `-N4`.
+  -- This is to ensure that modules complete fully before moving on, to avoid
+  -- holding excess memory during compilation from modules that were paused
+  -- by the Haskell runtime.
+  capabilities <- getNumCapabilities
+  let concurrency = max 1 capabilities
+  lock <- C.newQSem concurrency
+
   let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
   let totalModuleCount = length toBeRebuilt
   for_ toBeRebuilt $ \m -> fork $ do
     let moduleName = getModuleName . CST.resPartial $ m
     let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
-    buildModule buildPlan moduleName totalModuleCount
+    buildModule lock buildPlan moduleName totalModuleCount
       (spanName . getModuleSourceSpan . CST.resPartial $ m)
       (fst $ CST.resFull m)
       (fmap importPrim . snd $ CST.resFull m)
@@ -178,7 +190,7 @@ make ma@MakeActions{..} ms = do
 
       -- Prevent hanging on other modules when there is an internal error
       -- (the exception is thrown, but other threads waiting on MVars are released)
-      `onExceptionLifted` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
+      `onException` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
 
   -- Wait for all threads to complete, and collect results (and errors).
   (failures, successes) <-
@@ -255,8 +267,8 @@ make ma@MakeActions{..} ms = do
   inOrderOf :: (Ord a) => [a] -> [a] -> [a]
   inOrderOf xs ys = let s = S.fromList xs in filter (`S.member` s) ys
 
-  buildModule :: BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
-  buildModule buildPlan moduleName cnt fp pwarnings mres deps = do
+  buildModule :: QSem -> BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
+  buildModule lock buildPlan moduleName cnt fp pwarnings mres deps = do
     -- NOTE[drathier]: catchError here only ever fires if there's an error in a module we're building; it does not fire if a module is skipped because upstream modules failed to build.
     result <- flip catchError (return . BuildJobFailed) $ do
       let pwarnings' = CST.toMultipleWarnings fp pwarnings
@@ -286,14 +298,27 @@ make ma@MakeActions{..} ms = do
 
           let doCompile wasCacheHit badExts =
                 do
-                  (exts, warnings) <- listen $ rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
-                  let meta = (("cfa" :: String, cfa), ("badExts" :: String, badExts), ("exts" :: String, exts))
-                  case (badExts, wasCacheHit) of
-                    (Just e, WasCacheMiss) | e == exts ->
-                      trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues pointless rebuild, should have been a cache hit. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
-                    (Just e, WasCacheHit) | e /= exts ->
-                      trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues missing rebuild, caching system said it was a cache hit but rebuilding it changed some files. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
-                    _ -> pure ()
+                  -- Bracket all of the per-module work behind the semaphore, including
+                  -- forcing the result. This is done to limit concurrency and keep
+                  -- memory usage down; see comments above.
+                  (exts, warnings) <- bracket_ (C.waitQSem lock) (C.signalQSem lock) $ do
+                      -- Eventlog markers for profiling; see debug/eventlog.js
+                      liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " start"
+                      -- Force the externs and warnings to avoid retaining excess module
+                      -- data after the module is finished compiling.
+                      extsAndWarnings <- evaluate . force <=< listen $ do
+                        rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
+
+                      liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
+                      let meta = (("cfa" :: String, cfa), ("badExts" :: String, badExts), ("exts" :: String, exts))
+                      _ <- case (badExts, wasCacheHit) of
+                        (Just e, WasCacheMiss) | e == exts ->
+                          trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues pointless rebuild, should have been a cache hit. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
+                        (Just e, WasCacheHit) | e /= exts ->
+                          trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues missing rebuild, caching system said it was a cache hit but rebuilding it changed some files. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
+                        _ -> pure ()
+                      return extsAndWarnings
+
                   return $ BuildJobSucceeded (pwarnings' <> warnings) exts
 
           -- [drathier]: so that we can quickly go back and forth between caching and non-caching versions when testing this out
@@ -324,8 +349,6 @@ make ma@MakeActions{..} ms = do
 
     BuildPlan.markComplete buildPlan moduleName result
 
-  onExceptionLifted :: m a -> m b -> m a
-  onExceptionLifted l r = control $ \runInIO -> runInIO l `onException` runInIO r
 
 data WasCacheHit = WasCacheHit | WasCacheMiss
 

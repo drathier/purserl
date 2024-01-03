@@ -2,6 +2,111 @@
 
 Notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.15.14
+
+Bugfixes:
+
+* Fix a compilation memory regression for very large files (#4521 by @mjrussell)
+
+  When compiling a a very large file (>12K lines)
+  the CSE pass could balloon memory and result in increased
+  compilation times.
+
+  This fix uses a strict Map instead of a lazy Map to avoid
+  building up unnecessary thunks during the optimization pass.
+
+* Fix two space leaks while compiling many modules (#4517 by @MonoidMusician)
+
+  The first would interleave compilation of too many modules at once, which
+  would increase memory usage, especially for single threaded builds with
+  `+RTS -N1 -RTS`. Now the number of concurrent modules is limited to
+  the number of threads available to the
+  [GHC runtime system](https://downloads.haskell.org/ghc/latest/docs/users_guide/using-concurrent.html#rts-options-for-smp-parallelism).
+
+  The second would hold on to memory from modules that compiled with warnings
+  until the end of the build when the warnings were printed and the memory freed.
+  This is now fixed with additional `NFData` instances.
+
+## 0.15.13
+
+New features:
+
+* Replace `UnusableDeclaration` with updated `NoInstanceFound` (#4513 by @JordanMartinez)
+
+  Previously, the following type class would be invalid
+  because there was no way for the compiler to infer
+  which type class instance to select because
+  the type variable in the class head `a` was
+  not mentioned in `bar`'s type signature:
+  
+  ```purs
+  class Foo a where
+    bar :: Int
+  ```
+
+  The recently-added visible type applications (VTAs)
+  can now be used to guide the compiler in such cases:
+  
+  ```purs
+  class Foo a where bar :: Int
+  instance Foo String where bar = 0
+  someInt = bar @String -- use the `String` instance
+  ```
+
+  Without VTAs, the compiler
+  will still produce an `InstanceNotFound` error, but this error 
+  has been updated to note which type variables in the class head
+  can only be disambiguated via visible type applications.
+  Given the following code
+
+  ```purs
+  class Single tyVarDoesNotAppearInBody where 
+    useSingle :: Int
+
+  single :: Int
+  single = useSingle
+  ```
+  
+  The error reported for `useSingle` will be:
+  
+  ```
+  No type class instance was found for
+
+    Main.Single t0
+
+  The instance head contains unknown type variables.
+  
+
+  Note: The following type class members found in the expression require visible type applications 
+  to be unambiguous (e.g. tyClassMember @Int).
+    Main.useSingle
+      tyNotAppearInBody
+  ```
+
+  For a multiparameter typeclass with functional dependencies...
+  
+  ```purs
+  class MultiFdBidi a b | a -> b, b -> a where
+    useMultiFdBidi :: Int
+
+  multiFdBidi :: Int
+  multiFdBidi = useMultiFdBidi
+  ```
+
+  ...the "Note" part is updated to read
+  ```
+  Note: The following type class members found in the expression require visible type applications 
+  to be unambiguous (e.g. tyClassMember @Int).
+    Main.useMultiFdBidi
+      One of the following sets of type variables:
+        a
+        b
+  ```
+
+Bugfixes:
+
+* Fix parsing bug where `@var` was allowed in type class head (#4523 by @JordanMartinez)
+
 ## 0.15.12
 
 New features:
