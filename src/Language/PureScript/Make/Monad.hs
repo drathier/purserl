@@ -55,6 +55,7 @@ import Data.IORef as IORef
 import qualified Data.HashMap.Strict as MS
 import qualified Data.ByteString as BS
 import System.Environment (lookupEnv)
+import Control.DeepSeq (NFData, force)
 
 -- | A monad for running make actions
 newtype Make a = Make
@@ -172,7 +173,7 @@ maybeWriteExternsToMemCache mmemCacheRef path mexternsHash mexterns = do
             case mexterns of
               Nothing -> pure ()
               Just externs ->
-                IORef.atomicModifyIORef' memCacheRef (\x -> (MS.insert path (externsHash, externs) x, ()))
+                IORef.atomicModifyIORef' memCacheRef (\x -> (MS.insert path (force (externsHash, externs)) x, ()))
       pure ()
 
 readExternsFileImpl :: (MonadIO m, MonadError MultipleErrors m) => FilePath -> m (Maybe ExternsFile)

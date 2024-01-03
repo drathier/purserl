@@ -21,7 +21,7 @@ import           Prelude
 
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise
-import           Control.Exception (tryJust, fromException)
+import           Control.Exception (tryJust, fromException, Exception (displayException))
 import           Control.Monad (join, guard)
 import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.Error.Class (MonadError(..))
@@ -69,8 +69,8 @@ runMake opts = runLogger' . runExceptT . flip runReaderT opts . unMake
 -- case that an IOException is thrown.
 makeIO :: (MonadIO m, MonadError MultipleErrors m) => Text -> IO a -> m a
 makeIO description io = do
-  e <- liftIO $ tryIOError io
-  either (throwError . singleError . ErrorMessage [] . FileIOError description) return e
+  res <- liftIO (tryIOError io)
+  either (throwError . singleError . ErrorMessage [] . FileIOError description . Text.pack . displayException) pure res
 
 -- | Get a file's modification time in the 'Make' monad, capturing any errors
 -- using the 'MonadError' instance.

@@ -310,13 +310,6 @@ make ma@MakeActions{..} ms = do
                         rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
 
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
-                      let meta = (("cfa" :: String, cfa), ("badExts" :: String, badExts), ("exts" :: String, exts))
-                      _ <- case (badExts, wasCacheHit) of
-                        (Just e, WasCacheMiss) | e == exts ->
-                          trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues pointless rebuild, should have been a cache hit. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
-                        (Just e, WasCacheHit) | e /= exts ->
-                          trace (show moduleName <> ": ⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues missing rebuild, caching system said it was a cache hit but rebuilding it changed some files. Context, for debugging: " <> sShow meta <> "\n⚠️ BUG_PLEASE_REPORT ⚠️ https://github.com/drathier/purescript/issues \n") (pure ())
-                        _ -> pure ()
                       return extsAndWarnings
 
                   return $ BuildJobSucceeded (pwarnings' <> warnings) exts

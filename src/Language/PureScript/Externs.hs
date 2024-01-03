@@ -1,4 +1,5 @@
 {-# Language DeriveAnyClass #-}
+{-# Language NoGeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FunctionalDependencies #-}
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
@@ -30,9 +31,8 @@ import Data.Foldable (fold)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Version (showVersion)
-import Data.Map qualified as M
 import Data.List.NonEmpty qualified as NEL
-import Data.Map qualified as M
+import Data.Map.Strict qualified as M
 import Data.Map.Merge.Strict qualified as M
 import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Make.Cache qualified as Cache
@@ -73,7 +73,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import           System.Environment (lookupEnv)
 
 newtype SerializationFormat a = SerializationFormat a
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 instance Serialise a => Serialise (SerializationFormat a)
 instance Monoid a => Monoid (SerializationFormat a) where
@@ -259,7 +259,7 @@ data CSDataDeclarationTypeOnly =
     , csDataDeclKind :: Maybe CSKindDeclaration
     , csDataDeclRole :: Maybe CSRoleDeclaration
     }
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 -- Only value-level details. Only needed when ctors are used. Not useful without its corresponding CSDataDeclarationTypeOnly.
 data CSDataConstructorDeclaration
@@ -267,7 +267,7 @@ data CSDataConstructorDeclaration
     { csDataCtorName :: !(ProperName 'ConstructorName)
     , csDataCtorFields :: ![(Ident, Type ())]
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 -- Both type-level and value-level details together, for when ctors are in use.
 data CSDataDeclarationWithCtors =
@@ -275,7 +275,7 @@ data CSDataDeclarationWithCtors =
     { csDataDeclTypeOnly ::  CSDataDeclarationTypeOnly
     , csDataDeclCtorDecls :: [CSDataConstructorDeclaration]
     }
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSDataDeclarationTypeOnly
 instance Serialise CSDataConstructorDeclaration
@@ -285,28 +285,28 @@ instance Serialise CSDataDeclarationWithCtors
   -- A type synonym declaration (name, arguments, type)
   --
 data CSTypeSynonymDeclaration = CSTypeSynonymDeclaration (ProperName 'TypeName) [(Text, Maybe (Type ()))] (Type ()) ToCSDB (Maybe CSKindDeclaration)
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSTypeSynonymDeclaration
   -- |
   -- A kind signature declaration
   --
 data CSKindDeclaration = CSKindDeclaration (Type ())
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSKindDeclaration
   -- |
   -- A role declaration (name, roles)
   --
 data CSRoleDeclaration = CSRoleDeclaration [Role]
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSRoleDeclaration
   -- |
   -- A value declaration (name, top-level binders, optional guard, value)
   --
 data CSValueDeclaration = CSValueDeclaration NameKind Int (Type ()) ToCSDB
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSValueDeclaration
 
@@ -314,41 +314,41 @@ instance Serialise CSValueDeclaration
   -- A foreign import declaration (name, type)
   --
 data CSExternDeclaration = CSExternDeclaration ToCSDB
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSExternDeclaration
   -- |
   -- A data type foreign import (name, kind)
   --
 data CSExternDataDeclaration = CSExternDataDeclaration ToCSDB
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSExternDataDeclaration
   -- |
   -- A fixity declaration
   --
 data CSOpFixity = CSOpFixity Fixity (Qualified Ident)
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSOpFixity
 data CSCtorFixity = CSCtorFixity Fixity (Qualified (ProperName 'ConstructorName))
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSCtorFixity
 data CSTyOpFixity = CSTyOpFixity Fixity (Qualified (ProperName 'TypeName))
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSTyOpFixity
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
 data CSTypeClassDeclaration = CSTypeClassDeclaration [(Text, Maybe (Type ()))] ([Constraint ()], ToCSDB) [FunctionalDependency] [CSTypeDeclaration]
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSTypeClassDeclaration
 
 data CSTypeDeclaration = CSTypeDeclaration Ident (Type ()) ToCSDB
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSTypeDeclaration
   -- |
@@ -359,7 +359,7 @@ instance Serialise CSTypeDeclaration
   -- declaration, while the second @SourceAnn@ serves as the
   -- annotation for the type class and its arguments.
 data CSTypeInstanceDeclaration = CSTypeInstanceDeclaration (ChainId, Integer) ToCSDB (Qualified (ProperName 'ClassName)) ToCSDB (CSTypeInstanceBody, ToCSDB)
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, NFData)
 
 instance Serialise CSTypeInstanceDeclaration
 
@@ -367,13 +367,13 @@ data CSTypeInstanceBody
   = CSDerivedInstance
   | CSNewtypeInstance
   | CSExplicitInstance
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 instance Serialise CSTypeInstanceBody
 
 data ToCSDB
   = ToCSDB (M.Map ModuleName ToCSDBInner)
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 runToCSDB :: ToCSDB -> M.Map ModuleName ToCSDBInner
 runToCSDB (ToCSDB a) = a
@@ -397,11 +397,11 @@ data ToCSDBInner
     , _referencedValues :: M.Map RunIdent ()
     , _referencedValueOp :: M.Map (OpName 'ValueOpName) ()
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 -- NOTE[drathier]: some idents are run and re-packaged before we get here, so just matching a flat ident won't get you everything you need :( So we run the idents and wrap them up again
 newtype RunIdent = RunIdent T.Text
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, NFData)
 
 instance Serialise RunIdent
 
@@ -937,7 +937,7 @@ data DB
     , _tyClassDecls :: M.Map (ProperName 'ClassName) [CSTypeClassDeclaration]
     , _tyClassInstanceDecls :: M.Map RunIdent [CSTypeInstanceDeclaration]
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 instance Semigroup DB where
   DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
@@ -981,7 +981,7 @@ data DBOpaque
     , _tyClassDecls_opaque :: M.Map (ProperName 'ClassName) CacheShapeHash
     , _tyClassInstanceDecls_opaque :: M.Map RunIdent CacheShapeHash
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 instance Serialise DBOpaque
 
@@ -1000,7 +1000,7 @@ cacheShapeHashFromByteString b =
     digest & show & BS8.fromString & CacheShapeHash
 
 newtype CacheShapeHash = CacheShapeHash BS8.ByteString
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NFData)
 
 instance Serialise CacheShapeHash
 

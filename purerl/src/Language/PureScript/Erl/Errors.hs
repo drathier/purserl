@@ -308,7 +308,7 @@ prettyPrintSingleError (PPEOptions codeColor full _level _showDocs relPath fileC
 
     renderSimpleErrorMessage (FileIOError doWhat err) =
       paras [ line $ "I/O error while trying to " <> doWhat
-            , indent . lineS $ displayException err
+            , indent . line $ err
             ]
 
     renderSimpleErrorMessage (InternalError text) =

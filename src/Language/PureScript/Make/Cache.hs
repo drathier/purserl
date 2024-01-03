@@ -29,6 +29,7 @@ import Data.These (These(..))
 import Data.Time.Clock (UTCTime)
 import Data.Traversable (for)
 import System.FilePath qualified as FilePath
+import Control.DeepSeq (NFData)
 
 import Language.PureScript.Names (ModuleName)
 
@@ -49,7 +50,7 @@ digestFromHex =
 -- | Defines the hash algorithm we use for cache invalidation of input files.
 newtype ContentHash = ContentHash
   { unContentHash :: Digest SHA512 }
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, NFData)
 
 instance Aeson.ToJSON ContentHash where
   toJSON = Aeson.toJSON . digestToHex . unContentHash
