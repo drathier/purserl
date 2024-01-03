@@ -27,6 +27,8 @@ extra-deps:
 - hspec-2.10.9
 - hspec-core-2.10.9
 - hspec-discover-2.10.9
+# [drathier]: compress cbor externs files
+- zlib-0.6.3.0
 nix:
   packages:
   - zlib

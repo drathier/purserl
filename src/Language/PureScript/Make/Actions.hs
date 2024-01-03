@@ -13,6 +13,9 @@ module Language.PureScript.Make.Actions
 
 import Prelude
 
+import Debug.Trace (trace)
+import Codec.Serialise as Serialise
+import Data.ByteString.Lazy qualified as B
 import Control.Monad (unless, when)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.IO.Class (MonadIO(..))
@@ -323,10 +326,35 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
   foreignHrlFile mn = moduleDir mn </> T.unpack (erlModuleName mn ForeignModule) ++ ".hrl"
 
 
+  debugPrintStats filename (ExternsFile efVersion efModuleName efExports efImports efFixities efTypeFixities efDeclarations efSourceSpan efUpstreamCacheShapes efOurCacheShapes) =
+    let
+          f edef =
+            case edef of
+              EDType {..} -> show ("EDType", edTypeName, B.length (Serialise.serialise edef))
+              EDTypeSynonym {..} -> show ("EDTypeSynonym", edTypeSynonymName, B.length (Serialise.serialise edef))
+              EDDataConstructor {..} -> show ("EDDataConstructor", edDataCtorName, B.length (Serialise.serialise edef))
+              EDValue {..} -> show ("EDValue", edValueName, B.length (Serialise.serialise edef))
+              EDClass {..} -> show ("EDClass", edClassName, B.length (Serialise.serialise edef))
+              EDInstance {..} -> show ("EDInstance", edInstanceClassName, B.length (Serialise.serialise edef))
+    in
+
+    trace (show ("efVersion", filename, B.length (Serialise.serialise efVersion))) $
+    trace (show ("efModuleName", filename, B.length (Serialise.serialise efModuleName))) $
+    trace (show ("efExports", filename, B.length (Serialise.serialise efExports))) $
+    trace (show ("efImports", filename, B.length (Serialise.serialise efImports))) $
+    trace (show ("efFixities", filename, B.length (Serialise.serialise efFixities))) $
+    trace (show ("efTypeFixities", filename, B.length (Serialise.serialise efTypeFixities))) $
+    trace (show ("efDeclarations", filename, B.length (Serialise.serialise efDeclarations))) $
+    trace (show ("efSourceSpan", filename, B.length (Serialise.serialise efSourceSpan))) $
+    trace (show ("efUpstreamCacheShapes", filename, B.length (Serialise.serialise efUpstreamCacheShapes))) $
+    trace (show ("efOurCacheShapes", filename, B.length (Serialise.serialise efOurCacheShapes))) $
+    trace (show ("efDeclarations-single", fmap f efDeclarations)) $
+    pure 42
 
   codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
   codegen environment m docs exts = do
     let mn = CF.moduleName m
+    -- lift $ debugPrintStats (outputFilename mn externsFileName) exts
     lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
     when (S.member CoreFn codegenTargets) $ do

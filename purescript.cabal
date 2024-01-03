@@ -213,7 +213,8 @@ common defaults
     -- purerl
     base-compat-batteries,
     optparse-applicative,
-    unordered-containers >=0.2.19.1
+    unordered-containers >=0.2.19.1,
+    zlib >=0.6.3.0
 
 library
   import: defaults
@@ -448,6 +449,7 @@ executable purs
   main-is: Main.hs
   ghc-options: -fno-warn-unused-do-bind -threaded -rtsopts -with-rtsopts=-N -Wno-unused-packages
   build-depends:
+    zlib >=0.6.3.0,
     ansi-wl-pprint >=0.6.9 && <0.7,
     exceptions >=0.10.4 && <0.11,
     network >=3.1.2.7 && <3.2,
