@@ -50,6 +50,7 @@ import System.Directory qualified as Directory
 import System.FilePath (takeDirectory)
 import System.IO.Error (tryIOError, isDoesNotExistError)
 import System.IO.UTF8 (readUTF8FileT)
+import Data.ByteString.Lazy qualified as BSL
 
 import Data.IORef as IORef
 import qualified Data.HashMap.Strict as MS
@@ -262,16 +263,16 @@ writeCborFile mmemCacheRef path value = do
 writeCborFileIO :: Serialise a => FilePath -> a -> IO ()
 writeCborFileIO path value = do
   createParentDirectory path
-  Serialise.writeFileSerialise path value
+  let contents = Serialise.serialise value
+  BSL.writeFile path contents
+  -- Serialise.writeFileSerialise path value
 
 -- | Copy a file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.
-copyFile :: (MonadIO m, MonadError MultipleErrors m) => FilePath -> FilePath -> m ()
-copyFile src dest =
-  makeIO ("copy file: " <> Text.pack src <> " -> " <> Text.pack dest) $ do
-    -- caching liftIO $ putStrLn ("copy file from: " <> src <> " to " <> dest)
-    createParentDirectory dest
-    Directory.copyFile src dest
+copyFile :: FilePath -> FilePath -> Make ()
+copyFile src dest = do
+  contents <- makeIO ("copy file: " <> Text.pack src <> " -> " <> Text.pack dest) $ B.readFile src
+  writeTextFile dest contents
 
 createParentDirectory :: FilePath -> IO ()
 createParentDirectory = createDirectoryIfMissing True . takeDirectory
