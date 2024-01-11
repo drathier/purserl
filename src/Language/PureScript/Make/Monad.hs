@@ -263,9 +263,9 @@ writeCborFile mmemCacheRef path value = do
 writeCborFileIO :: Serialise a => FilePath -> a -> IO ()
 writeCborFileIO path value = do
   createParentDirectory path
-  let contents = Serialise.serialise value
-  BSL.writeFile path contents
-  -- Serialise.writeFileSerialise path value
+  -- let contents = Serialise.serialise value
+  -- BSL.writeFile path contents
+  Serialise.writeFileSerialise path value
 
 -- | Copy a file in the 'Make' monad, capturing any errors using the
 -- 'MonadError' instance.
