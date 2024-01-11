@@ -47,6 +47,8 @@ import           System.IO.Error (tryIOError, isDoesNotExistError)
 import           System.IO.UTF8 (readUTF8FileT)
 import qualified Language.PureScript.Make.Cache as Cache
 
+import Debug.Trace
+
 -- | A monad for running make actions
 newtype Make a = Make
   { unMake :: ReaderT Options (ExceptT MultipleErrors (Logger MultipleErrors)) a
@@ -158,6 +160,7 @@ writeJSONFile path value = makeIO ("write JSON file: " <> Text.pack path) $ do
 -- 'MonadError' instance.
 copyFile :: FilePath -> FilePath -> Make ()
 copyFile src dest =
+  trace (show ("Tried to copyFile with wrong copyFile function! This should never ever happen!", "src", src, "dest", dest)) $
   makeIO ("copy file: " <> Text.pack src <> " -> " <> Text.pack dest) $ do
     createParentDirectory dest
     Directory.copyFile src dest
