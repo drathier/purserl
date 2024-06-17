@@ -23,6 +23,7 @@ import Data.Aeson qualified as Aeson
 import Control.Concurrent.STM (newTVarIO)
 import "monad-logger" Control.Monad.Logger (MonadLogger, logDebug, logError, logInfo)
 import Data.IORef (newIORef)
+import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy.Char8 qualified as BSL8
@@ -111,6 +112,7 @@ command = Opts.helper <*> subcommands where
 
   server :: ServerOptions -> IO ()
   server opts'@(ServerOptions dir globs outputPath port logLevel editorMode polling noWatch) = do
+    putText (T.pack (show ("ServerOptions opts'", opts')))
     when (logLevel == LogDebug || logLevel == LogAll)
       (putText "Parsed Options:" *> print opts')
     maybe (pure ()) setCurrentDirectory dir
@@ -151,7 +153,7 @@ command = Opts.helper <*> subcommands where
     ServerOptions
       <$> optional (Opts.strOption (Opts.long "directory" `mappend` Opts.short 'd'))
       <*> many (Opts.argument Opts.str (Opts.metavar "Source GLOBS..."))
-      <*> Opts.strOption (Opts.long "output-directory" `mappend` Opts.value "output/")
+      <*> Opts.strOption (Opts.long "output-directory" `mappend` Opts.value "output-lsp/")
       <*> (fromIntegral <$>
            Opts.option Opts.auto (Opts.long "port" `mappend` Opts.short 'p' `mappend` Opts.value (4242 :: Integer)))
       <*> (parseLogLevel <$> Opts.strOption

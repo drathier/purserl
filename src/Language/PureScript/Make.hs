@@ -22,7 +22,7 @@ import Control.Monad.Supply (evalSupplyT, runSupply, runSupplyT)
 import Control.Monad.Trans.Control (MonadBaseControl(..))
 import Control.Monad.Trans.State (runStateT)
 import Control.Monad.Writer.Class (MonadWriter(..), censor)
-import Control.Monad.Writer.Strict (runWriterT)
+import Control.Monad.Writer.Strict (runWriterT, lift)
 import Data.Function (on)
 import Data.Foldable (fold, for_)
 import Data.List (foldl', sortOn)
@@ -101,15 +101,19 @@ rebuildModuleWithIndex
   -> Maybe (Int, Int)
   -> m ExternsFile
 rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex = do
-  progress $ CompilingModule moduleName moduleIndex
+  progress $ CompilingModule moduleName moduleIndex "1"
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim
 
   ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "2"
     (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty)
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "3"
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "4"
     (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "5"
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
           M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
     -- Imports cannot be linted before type checking because we need to
@@ -117,6 +121,8 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     -- constraints in order to not report them as unused.
     censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
     return (checked, checkEnv)
+
+  -- progress $ CompilingModule moduleName moduleIndex "6"
 
   -- desugar case declarations *after* type- and exhaustiveness checking
   -- since pattern guards introduces cases which the exhaustiveness checker
@@ -134,6 +140,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
       exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
   ffiCodegen renamed
 
+  -- progress $ CompilingModule moduleName moduleIndex "7"
   -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
   -- but I have not done so for two reasons:
   -- 1. This should never fail; any genuine errors in the code should have been
@@ -147,7 +154,9 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
                Right d -> d
 
+  -- progress $ CompilingModule moduleName moduleIndex "8"
   evalSupplyT nextVar'' $ codegen env renamed docs exts
+  -- progress $ CompilingModule moduleName moduleIndex "9"
   return exts
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
