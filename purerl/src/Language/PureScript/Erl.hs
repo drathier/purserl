@@ -3,4 +3,4 @@ module Language.PureScript.Erl where
 import Data.Text (Text)
 
 versionString :: Text
-versionString = "S67"
+versionString = "S68"
