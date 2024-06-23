@@ -18,9 +18,11 @@ import Language.PureScript.AST (Declaration(..), ErrorMessageHint(..), Module(..
 import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', errorMessage'', parU)
-import Language.PureScript.Names (ModuleName)
+import Language.PureScript.Names (ModuleName, runModuleName)
 import Data.List.NonEmpty qualified as NE
 import Data.Sequence qualified as Seq
+import qualified Debug.Trace as Trace
+import qualified Data.Text as T
 
 -- | A list of modules with their transitive dependencies
 type ModuleGraph = [(ModuleName, [ModuleName])]
@@ -49,7 +51,7 @@ sortModules dependencyDepth toSig ms = do
       ms' = (\m -> (m, toSig m)) <$> ms
       mns = S.fromList $ map (sigModuleName . snd) ms'
     verts <- parU ms' (toGraphNode mns)
-    ms'' <- parU (stronglyConnComp verts) (toModule verts)
+    void $ parU (stronglyConnComp verts) (toModule verts)
     let (graph, fromVertex, toVertex) = graphFromEdges verts
         moduleGraph = do (_, mn, _) <- verts
                          let v       = fromMaybe (internalError "sortModules: vertex not found") (toVertex mn)
@@ -58,7 +60,12 @@ sortModules dependencyDepth toSig ms = do
                                          Transitive -> reachable graph v
                              toKey i = case fromVertex i of (_, key, _) -> key
                          return (mn, filter (/= mn) (map toKey deps))
-    return (fst <$> ms'', moduleGraph)
+    let
+      heuristic :: ModuleName -> Int
+      heuristic name = -1 * List.sum (map (List.length . List.filter ((==) name . fst) . sigImports . snd) ms')
+
+    let ms'' = naiveSearch heuristic mempty ms'
+    return (Trace.trace ((<> "X") . show $ T.unpack . runModuleName . sigModuleName . snd <$> ms') $  Trace.traceShow (T.unpack . runModuleName  . sigModuleName . snd <$> ms'') $ fst <$> ms'' , moduleGraph)
   where
     toGraphNode :: S.Set ModuleName -> (a, ModuleSignature) -> m ((a, ModuleSignature), ModuleName, [ModuleName])
     toGraphNode mns m@(_, ModuleSignature _ mn deps) = do
@@ -69,6 +76,22 @@ sortModules dependencyDepth toSig ms = do
             . errorMessage' pos
             $ ModuleNotFound dep
       pure (m, mn, map fst deps)
+
+naiveSearch :: (ModuleName -> Int) -> Set ModuleName -> [(a, ModuleSignature)] -> [(a, ModuleSignature)]
+naiveSearch _ _ [] = []
+naiveSearch f built toBuild =
+  let
+    pickDeps :: (a, ModuleSignature) -> Set ModuleName
+    pickDeps (_, x) = S.fromList $ fst <$> sigImports x
+
+    pickName :: (a, ModuleSignature) -> ModuleName
+    pickName = sigModuleName . snd
+
+    (yes, no) = List.partition (\x -> built `S.isSubsetOf` pickDeps x) toBuild
+    newNames = S.fromList $ pickName <$> yes
+  in naiveSearch f (built <> newNames) (List.sortBy (\a b -> on compare (f . pickName) a b) no) ++ yes
+  -- in naiveSearch (d + 1) (built <> newNames) (List.sortBy (\a b -> on compare (S.size . pickDeps) a b) no) ++ yes
+  -- in naiveSearch (d + 1) (built <> newNames) no ++ yes
 
 -- | Calculate a list of used modules based on explicit imports and qualified names.
 usedModules :: Declaration -> Maybe (ModuleName, SourceSpan)
@@ -89,12 +112,12 @@ toModule verts (CyclicSCC ms) =
             let (graph, fromVertex, toVertex) = graphFromEdges verts in
             let msToVertex a = fromJust (toVertex (sigModuleName (snd a))) in
             let f z = sigModuleName <$> (\(x,_,_) -> snd x) $ fromVertex z in
-            let (sccNodes :: S.Set Vertex) = S.fromList $ fromJust <$> toVertex <$> sigModuleName <$> snd <$> (msRoot : msRest) in
+            let (sccNodes :: S.Set Vertex) = S.fromList ((fromJust <$> toVertex <$> sigModuleName) . snd <$> (msRoot : msRest)) in
             let startState = Seq.fromList $ filter (\(_,_,x) -> S.member x sccNodes) $ NE.toList $ (\x -> (S.empty, [], msToVertex x)) <$> ms' in
 
             let firstNode = fromJust (toVertex (sigModuleName (snd n))) in
             let dfs :: S.Set Vertex -> [Vertex] -> [Vertex]
-                dfs seen (a:ax) | S.member a sccNodes == False = dfs seen ax
+                dfs seen (a:ax) | not (S.member a sccNodes) = dfs seen ax
                 dfs seen (a:ax) | S.member a seen = [a]
                 dfs seen (a:_) = a : dfs (S.insert a seen) (graph ! a)
             in
@@ -102,18 +125,18 @@ toModule verts (CyclicSCC ms) =
             let bfs :: Int -> Seq.Seq (S.Set Vertex, [Vertex], Vertex) -> [Vertex]
                 bfs i _ | 1000000 < i =
                   let cycleWithTail@(cycleWithTailFirst:cycleWithTailRest) = reverse $ dfs S.empty [firstNode]
-                  in cycleWithTailFirst : (reverse $ (cycleWithTailFirst : reverse (takeWhile (/= cycleWithTailFirst) cycleWithTailRest)))
+                  in cycleWithTailFirst : reverse (cycleWithTailFirst : reverse (takeWhile (/= cycleWithTailFirst) cycleWithTailRest))
                 bfs i (rest Seq.:|> (aset,apath,a)) | S.member a aset = (a:apath)
                 bfs i (rest Seq.:|> (aset,apath,a)) =
-                  let outs = Seq.fromList $ (\x -> (S.insert a aset, a:apath, x)) <$> filter (\x -> S.member x sccNodes) (graph ! a) in
+                  let outs = Seq.fromList $ (\x -> (S.insert a aset, a:apath, x)) <$> filter (`S.member` sccNodes) (graph ! a) in
                   bfs (i + Seq.length outs) (outs <> rest)
 
                 cycleWithTail = bfs 0 startState
             in
-            NE.fromList $ map (\(x,_,_) -> x) $ map fromVertex $ reverse $
+            NE.fromList $ map ((\(x,_,_) -> x) . fromVertex) (reverse $
               case cycleWithTail of
                 [a,b] | a == b -> [a]
-                a -> a
+                a -> a)
 
           ms'' =
             case msRest of
