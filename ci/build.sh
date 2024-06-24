@@ -28,6 +28,12 @@ set -ex
 STACK="stack --no-terminal --haddock --jobs=2"
 
 echo "RTSOPTS $RTSOPTS"
+echo "args0 $0"
+echo "args1 $1"
+echo "args2 $2"
+echo "args3 $3"
+echo "args4 $4"
+echo "args5 $5"
 
 #STACK_OPTS="--test" # not running tests; we just want something built
 STACK_OPTS="$RTSOPTS"
