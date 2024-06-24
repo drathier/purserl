@@ -27,8 +27,10 @@ set -ex
 # and these failures are very easy to miss otherwise.
 STACK="stack --no-terminal --haddock --jobs=2"
 
+echo "RTSOPTS $RTSOPTS"
+
 #STACK_OPTS="--test" # not running tests; we just want something built
-STACK_OPTS=""
+STACK_OPTS="$RTSOPTS"
 if [ "$CI_RELEASE" = "true" -o "$CI_PRERELEASE" = "true" ]
 then
   STACK_OPTS="$STACK_OPTS --flag=purescript:RELEASE"

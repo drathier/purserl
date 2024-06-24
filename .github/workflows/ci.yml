@@ -60,6 +60,7 @@ jobs:
           - os: ["windows-2019"]
           - os: ["self-hosted", "macos", "ARM64"]
           - os: ["self-hosted", "Linux", "ARM64"]
+          - rtsopts: ["", "-n128m -A4096m"]#, "-A1024m -n32m", "-A256m -n16m"]
 
     runs-on: "${{ matrix.os }}"
     container: "${{ matrix.image }}"
@@ -116,7 +117,7 @@ jobs:
           path: |
             /root/.stack
             ${{ steps.haskell.outputs.stack-root }}
-          key: "${{ matrix.image || runner.os }}--MdyPsf-${{ hashFiles('stack.yaml') }}"
+          key: "${{ matrix.image || runner.os }}--${{runner.rtsopts}}--MdyPsf-${{ hashFiles('stack.yaml') }}"
 
       - name: "(Windows only) Configure Stack to store its programs in STACK_ROOT"
         # This ensures that the local GHC and MSYS binaries that Stack installs
@@ -128,7 +129,7 @@ jobs:
           echo "local-programs-path: $STACK_ROOT/programs" > $STACK_ROOT/config.yaml
 
       - id: "build"
-        run: "ci/fix-home ci/build.sh"
+        run: "RTSOPTS=${{runner.rtsopts}} ci/fix-home ci/build.sh"
 
       - name: "(Linux only) Build the entire package set"
         if: "contains(matrix.os, 'ubuntu-latest')"

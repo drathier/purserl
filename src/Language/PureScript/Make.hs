@@ -185,6 +185,7 @@ make ma@MakeActions{..} ms = do
   capabilities <- getNumCapabilities
   let concurrency = max 1 capabilities
   lock <- C.newQSem concurrency
+  -- print ("purs-concurrency:" <> show capabilities)
 
   let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
   let totalModuleCount = length toBeRebuilt
