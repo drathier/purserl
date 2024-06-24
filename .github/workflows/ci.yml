@@ -52,15 +52,33 @@ jobs:
     strategy:
       fail-fast: false # do not cancel builds for other OSes if one fails
       matrix:
-        rtsopts: ["", "-n128m -A4096m"]#, "-A1024m -n32m", "-A256m -n16m"]
+        #rtsopts: ["", "-n128m -A4096m"]#, "-A1024m -n32m", "-A256m -n16m"]
         include:
           - # If upgrading the Haskell image, also upgrade it in the lint job below
             os: ["ubuntu-latest"]
+            rtsopts: ""
             image: haskell:9.2.5@sha256:2597b0e2458165a6635906204f7fac43c22e7d2a46aca1235a811194bb6cd419
           - os: ["macOS-11"]
+            rtsopts: ""
           - os: ["windows-2019"]
+            rtsopts: ""
           - os: ["self-hosted", "macos", "ARM64"]
+            rtsopts: ""
           - os: ["self-hosted", "Linux", "ARM64"]
+            rtsopts: ""
+
+          - # If upgrading the Haskell image, also upgrade it in the lint job below
+            os: ["ubuntu-latest"]
+            rtsopts: "-n128m -A4096m"
+            image: haskell:9.2.5@sha256:2597b0e2458165a6635906204f7fac43c22e7d2a46aca1235a811194bb6cd419
+          - os: ["macOS-11"]
+            rtsopts: "-n128m -A4096m"
+          - os: ["windows-2019"]
+            rtsopts: "-n128m -A4096m"
+          - os: ["self-hosted", "macos", "ARM64"]
+            rtsopts: "-n128m -A4096m"
+          - os: ["self-hosted", "Linux", "ARM64"]
+            rtsopts: "-n128m -A4096m"
 
     runs-on: "${{ matrix.os }}"
     container: "${{ matrix.image }}"
