@@ -36,7 +36,7 @@ echo "args4 $4"
 echo "args5 $5"
 
 #STACK_OPTS="--test" # not running tests; we just want something built
-STACK_OPTS=" --ghc-options=\"-with-rtsopts=\\\"-N $RTSOPTS\\\"\" "
+STACK_OPTS=" \"--ghc-options=\\\"-with-rtsopts=\\\\\\\\\\\"-N $RTSOPTS\\\\\\\\\\\"\\\" \" "
 if [ "$CI_RELEASE" = "true" -o "$CI_PRERELEASE" = "true" ]
 then
   STACK_OPTS="$STACK_OPTS --flag=purescript:RELEASE"
