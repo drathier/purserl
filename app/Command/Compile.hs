@@ -78,17 +78,13 @@ printWarningsAndErrors verbose True files warnings errors = do
   either (const exitFailure) (const (return ())) errors
 
 compile :: PSCMakeOptions -> IO ()
-compile PSCMakeOptions{..} = do
+compile opts@PSCMakeOptions{..} = do
   input <- toInputGlobs $ PSCGlobs
     { pscInputGlobs = pscmInput
     , pscInputGlobsFromFile = pscmInputFromFile
     , pscExcludeGlobs = pscmExclude
     , pscWarnFileTypeNotFound = warnFileTypeNotFound "compile"
     }
-compile opts@PSCMakeOptions{..} = do
-  included <- globWarningOnMisses warnFileTypeNotFound pscmInput
-  excluded <- globWarningOnMisses warnFileTypeNotFound pscmExclude
-  let input = included \\ excluded
 
   externsMemCache <- newIORef MS.empty
   shouldRunAgain <- do
@@ -128,8 +124,8 @@ compile opts@PSCMakeOptions{..} = do
               _ -> exitFailure
   run
 
-compile :: PSCMakeOptions -> IO ()
-compile PSCMakeOptions{..} = do
+compileImpl :: PSCMakeOptions -> P.ExternsMemCache -> IO Int
+compileImpl PSCMakeOptions{..} externsMemCache = do
   input <- toInputGlobs $ PSCGlobs
     { pscInputGlobs = pscmInput
     , pscInputGlobsFromFile = pscmInputFromFile
