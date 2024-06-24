@@ -126,7 +126,7 @@ jobs:
           path: |
             /root/.stack
             ${{ steps.haskell.outputs.stack-root }}
-          key: "${{ matrix.image || runner.os }}--${{runner.rtsopts}}--MdyPsf-${{ hashFiles('stack.yaml') }}"
+          key: "${{ matrix.image || runner.os }}--${{matrix.rtsopts}}--MdyPsf-${{ hashFiles('stack.yaml') }}"
 
       - name: "(Windows only) Configure Stack to store its programs in STACK_ROOT"
         # This ensures that the local GHC and MSYS binaries that Stack installs
@@ -138,7 +138,7 @@ jobs:
           echo "local-programs-path: $STACK_ROOT/programs" > $STACK_ROOT/config.yaml
 
       - id: "build"
-        run: "RTSOPTS=${{runner.rtsopts}} ci/fix-home ci/build.sh \"${{runner.rtsopts}}\""
+        run: "RTSOPTS=${{matrix.rtsopts}} ci/fix-home ci/build.sh \"${{matrix.rtsopts}}\""
 
       - name: "(Linux only) Build the entire package set"
         if: "contains(matrix.os, 'ubuntu-latest')"
@@ -211,7 +211,7 @@ jobs:
         if: "${{ env.CI_PRERELEASE == 'true' && steps.build.outputs.do-not-prerelease != 'true' }}"
         uses: "actions/upload-artifact@v3"
         with:
-          name: "${{ runner.os }}-${{ runner.arch }}-${{runner.rtsopts}}-bundle"
+          name: "${{ runner.os }}-${{ runner.arch }}-${{matrix.rtsopts}}-bundle"
           path: |
             sdist-test/bundle/*.sha
             sdist-test/bundle/*.tar.gz
