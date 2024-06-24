@@ -65,7 +65,7 @@ sortModules dependencyDepth toSig ms = do
       heuristic name = -1 * List.sum (map (List.length . List.filter ((==) name . fst) . sigImports . snd) ms')
 
     let ms'' = naiveSearch heuristic mempty ms'
-    return (Trace.trace ((<> "X") . show $ T.unpack . runModuleName . sigModuleName . snd <$> ms') $  Trace.traceShow (T.unpack . runModuleName  . sigModuleName . snd <$> ms'') $ fst <$> ms'' , moduleGraph)
+    return (fst <$> ms'', moduleGraph)
   where
     toGraphNode :: S.Set ModuleName -> (a, ModuleSignature) -> m ((a, ModuleSignature), ModuleName, [ModuleName])
     toGraphNode mns m@(_, ModuleSignature _ mn deps) = do
