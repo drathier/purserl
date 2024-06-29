@@ -153,7 +153,7 @@ command = Opts.helper <*> subcommands where
     ServerOptions
       <$> optional (Opts.strOption (Opts.long "directory" `mappend` Opts.short 'd'))
       <*> many (Opts.argument Opts.str (Opts.metavar "Source GLOBS..."))
-      <*> Opts.strOption (Opts.long "output-directory" `mappend` Opts.value "output-lsp/")
+      <*> Opts.strOption (Opts.long "output-directory" `mappend` Opts.value "output/")
       <*> (fromIntegral <$>
            Opts.option Opts.auto (Opts.long "port" `mappend` Opts.short 'p' `mappend` Opts.value (4242 :: Integer)))
       <*> (parseLogLevel <$> Opts.strOption
