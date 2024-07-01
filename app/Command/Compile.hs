@@ -108,7 +108,7 @@ compile opts@PSCMakeOptions{..} = do
                 ExitFailure code -> pure code
                 ExitSuccess -> pure 0
               )
-
+        -- ASSUMPTION[em]: Any "erl-diff" messages have been outputted before the "done compiler" message
         case shouldRunAgain of
           True -> do
             putStrLn ("### done compiler: " <> show res)
