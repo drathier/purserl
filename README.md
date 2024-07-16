@@ -4,6 +4,22 @@ A small strongly typed programming language with expressive types that compiles 
 
 [![Hackage](https://img.shields.io/hackage/v/purescript.svg)](http://hackage.haskell.org/package/purescript) [![Build Status](https://github.com/purescript/purescript/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purescript/purescript/actions/workflows/ci.yml)
 
+## Purserl local builds
+Mac build, for machines with lots of ram:
+```
+stack install --work-dir .stack-work-O2 --ghc-options="-O2 -with-rtsopts=\"-N -A2048m -n128m\""; purs +RTS --info 
+```
+
+Mac build, for machines with less ram, guessed ok values
+```
+stack install --work-dir .stack-work-O2 --ghc-options="-O2 -with-rtsopts=\"-N -A256m -n16m\""; purs +RTS --info 
+```
+
+x86 build, sadly defaults are as good as it gets:
+```
+stack install --work-dir .stack-work-O2 --ghc-options="-O2 -with-rtsopts=\"-N\""; purs +RTS --info 
+```
+
 ## Language info
 
 - [PureScript home](http://purescript.org)
