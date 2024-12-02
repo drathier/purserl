@@ -112,7 +112,6 @@ command = Opts.helper <*> subcommands where
 
   server :: ServerOptions -> IO ()
   server opts'@(ServerOptions dir globs outputPath port logLevel editorMode polling noWatch) = do
-    putText (T.pack (show ("ServerOptions opts'", opts')))
     when (logLevel == LogDebug || logLevel == LogAll)
       (putText "Parsed Options:" *> print opts')
     maybe (pure ()) setCurrentDirectory dir

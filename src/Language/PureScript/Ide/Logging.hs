@@ -18,14 +18,14 @@ import Control.Monad.Trans.Control (MonadBaseControl)
 
 runLogger :: MonadIO m => MonadBaseControl IO m => IdeLogLevel -> LoggingT m a -> m a
 runLogger logLevel' =
-  (runFileLoggingT "/tmp/purs-lsp.log")
-  -- runStdoutLoggingT . filterLogger (\_ logLevel ->
-  --                                      case logLevel' of
-  --                                        LogAll -> True
-  --                                        LogDefault -> not (logLevel == LevelOther "perf" || logLevel == LevelDebug)
-  --                                        LogNone -> False
-  --                                        LogDebug -> logLevel /= LevelOther "perf"
-  --                                        LogPerf -> logLevel == LevelOther "perf")
+  -- (runFileLoggingT "/tmp/purs-lsp.log")
+  runStdoutLoggingT . filterLogger (\_ logLevel ->
+                                       case logLevel' of
+                                         LogAll -> True
+                                         LogDefault -> not (logLevel == LevelOther "perf" || logLevel == LevelDebug)
+                                         LogNone -> False
+                                         LogDebug -> logLevel /= LevelOther "perf"
+                                         LogPerf -> logLevel == LevelOther "perf")
 
 labelTimespec :: Text -> TimeSpec -> Text
 labelTimespec label duration = label <> ": " <> displayTimeSpec duration

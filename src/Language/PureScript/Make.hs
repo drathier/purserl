@@ -101,7 +101,7 @@ rebuildModuleWithIndex
   -> Maybe (Int, Int)
   -> m ExternsFile
 rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex = do
-  progress $ CompilingModule moduleName moduleIndex "1"
+  progress $ CompilingModule moduleName moduleIndex
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim

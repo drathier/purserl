@@ -113,13 +113,15 @@ data RebuildPolicy
 
 -- | Progress messages from the make process
 data ProgressMessage
-  = CompilingModule ModuleName (Maybe (Int, Int)) String
+  -- = CompilingModule ModuleName (Maybe (Int, Int)) String
+  = CompilingModule ModuleName (Maybe (Int, Int))
   -- ^ Compilation started for the specified module
   deriving (Show, Eq, Ord)
 
 -- | Render a progress message
 renderProgressMessage :: T.Text -> ProgressMessage -> T.Text
-renderProgressMessage infx (CompilingModule mn mi ms) =
+--renderProgressMessage infx (CompilingModule mn mi ms) =
+renderProgressMessage infx (CompilingModule mn mi) =
   T.concat
     [ renderProgressIndex mi
     -- , " "
