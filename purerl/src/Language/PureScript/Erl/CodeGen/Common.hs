@@ -186,6 +186,7 @@ erlAnyReserved = [
   "fun",
   "if",
   "let",
+  "maybe",
   "not",
   "of",
   "or",
