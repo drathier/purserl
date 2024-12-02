@@ -15,8 +15,10 @@ import Data.Traversable (for)
 import Language.PureScript qualified as P
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Errors.JSON (JSONResult(..), toJSONErrors)
+import Language.PureScript.Glob (toInputGlobs, PSCGlobs(..), warnFileTypeNotFound)
 import Language.PureScript.Make (buildMakeActions, inferForeignModules, runMake)
 import Options.Applicative qualified as Opts
+import SharedCLI qualified
 import System.Console.ANSI qualified as ANSI
 import System.Exit (exitSuccess, exitFailure)
 import System.Directory (getCurrentDirectory)
@@ -38,6 +40,7 @@ import System.IO.Unsafe (unsafePerformIO)
 
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
+  , pscmInputFromFile :: Maybe FilePath
   , pscmExclude      :: [FilePath]
   , pscmOutputDir    :: FilePath
   , pscmOpts         :: P.Options
@@ -121,7 +124,12 @@ compile opts@PSCMakeOptions{..} = do
 
 compileImpl :: PSCMakeOptions -> P.ExternsMemCache -> IO Int
 compileImpl PSCMakeOptions{..} externsMemCache = do
-  input <- globWarningOnMisses warnFileTypeNotFound pscmInput
+  input <- toInputGlobs $ PSCGlobs
+    { pscInputGlobs = pscmInput
+    , pscInputGlobsFromFile = pscmInputFromFile
+    , pscExcludeGlobs = pscmExclude
+    , pscWarnFileTypeNotFound = warnFileTypeNotFound "compile"
+    }
   when (null input) $ do
     hPutStr stderr $ unlines [ "purs compile: No input files."
                              , "Usage: For basic information, try the `--help' option."
@@ -133,7 +141,7 @@ compileImpl PSCMakeOptions{..} externsMemCache = do
     let filePathMap = M.fromList $ map (\(fp, pm) -> (P.getModuleName $ CST.resPartial pm, Right fp)) ms
     foreigns <- inferForeignModules filePathMap
 
-    -- for devs refusing to run with swap enabled
+    -- [drathier]: for devs refusing to run with swap enabled
     let shouldMemCache = not $
           case unsafePerformIO (lookupEnv "PURS_DISABLE_MEMCACHE") of
             Just "0" -> False
@@ -149,29 +157,6 @@ compileImpl PSCMakeOptions{..} externsMemCache = do
     P.make makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
   exitSuccess
-
-warnFileTypeNotFound :: String -> IO ()
-warnFileTypeNotFound = hPutStrLn stderr . ("purs compile: No files found using pattern: " ++)
-
-globWarningOnMisses :: (String -> IO ()) -> [FilePath] -> IO [FilePath]
-globWarningOnMisses warn = concatMapM globWithWarning
-  where
-  globWithWarning pattern' = do
-    paths <- glob pattern'
-    when (null paths) $ warn pattern'
-    return paths
-  concatMapM f = fmap concat . mapM f
-
-inputFile :: Opts.Parser FilePath
-inputFile = Opts.strArgument $
-     Opts.metavar "FILE"
-  <> Opts.help "The input .purs file(s)."
-
-excludedFiles :: Opts.Parser FilePath
-excludedFiles = Opts.strOption $
-     Opts.short 'x'
-  <> Opts.long "exclude-files"
-  <> Opts.help "Glob of .purs files to exclude from the supplied files."
 
 outputDirectory :: Opts.Parser FilePath
 outputDirectory = Opts.strOption $
@@ -243,8 +228,9 @@ options =
     handleTargets ts = S.fromList (if P.JSSourceMap `elem` ts then P.JS : ts else ts)
 
 pscMakeOptions :: Opts.Parser PSCMakeOptions
-pscMakeOptions = PSCMakeOptions <$> many inputFile
-                                <*> many excludedFiles
+pscMakeOptions = PSCMakeOptions <$> many SharedCLI.inputFile
+                                <*> SharedCLI.globInputFile
+                                <*> many SharedCLI.excludeFiles
                                 <*> outputDirectory
                                 <*> options
                                 <*> (not <$> noPrefix)
