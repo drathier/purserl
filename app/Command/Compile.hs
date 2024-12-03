@@ -80,10 +80,6 @@ printWarningsAndErrors verbose True files warnings errors = do
 
 compile :: PSCMakeOptions -> IO ()
 compile opts@PSCMakeOptions{..} = do
-  included <- globWarningOnMisses warnFileTypeNotFound pscmInput
-  excluded <- globWarningOnMisses warnFileTypeNotFound pscmExclude
-  let input = included \\ excluded
-
   externsMemCache <- newIORef MS.empty
   shouldRunAgain <- do
     v <- lookupEnv "PURS_LOOP_EVERY_SECOND"
