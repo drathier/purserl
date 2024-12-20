@@ -95,6 +95,8 @@ data Erl
   -- Spec attribute
   | ESpec Atom EType
   | EType Atom [Text] EType
+  -- [drathier]: Try
+  | ETryAnyAny Erl Erl
 
   deriving (Show, Eq)
 
@@ -333,6 +335,7 @@ everywhereOnErl f = go
   go (ECaseOf e binds) = f $ ECaseOf (go e) $ map (second go) binds
   go (EListLiteral es) = f $ EListLiteral (map go es)
   go (EListCons es e) = f $ EListCons (map go es) (go e)
+  go (ETryAnyAny e1 e2) = f $ ETryAnyAny (go e1) (go e2)
 
   go other = f other
 
@@ -361,6 +364,7 @@ everywhereOnErlTopDownM f = f >=> go
   go (ECaseOf e binds) = ECaseOf <$> f' e <*> fargs binds
   go (EListLiteral es) = EListLiteral <$> traverse f' es
   go (EListCons es e) = EListCons <$> traverse f' es <*> f' e
+  go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
   go other = f other
 
 -- Sorry. Really want a type that allows "child context" under binders etc
@@ -389,6 +393,7 @@ everywhereOnErlTopDownMThen f = f'
   go (ECaseOf e binds) = ECaseOf <$> f' e <*> fargs binds
   go (EListLiteral es) = EListLiteral <$> traverse f' es
   go (EListCons es e) = EListCons <$> traverse f' es <*> f' e
+  go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
   go other = fst <$> f other
   
 everything :: forall r. (r -> r -> r) -> (Erl -> r) -> Erl -> r
@@ -409,4 +414,5 @@ everything (<>.) f = go
   go e0@(ECaseOf e binds) = foldl (<>.) (f e0 <>. go e) (map (go . snd) binds)
   go e0@(EListLiteral es) = foldl (<>.) (f e0) (map go es)
   go e0@(EListCons es e) = foldl (<>.) (f e0) (map go $ es <> [e])
+  go e0@(ETryAnyAny e1 e2) = f e0 <>. go e1 <>. go e2
   go other = f other
