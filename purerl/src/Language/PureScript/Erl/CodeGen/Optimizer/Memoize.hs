@@ -6,8 +6,9 @@ where
 import Prelude
 
 import Language.PureScript.Erl.CodeGen.AST
-    ( Erl(..), Atom, everywhereOnErl, pattern EApp, AppAnnotation (..), pattern EFun0 )
+    ( Erl(..), Atom, everywhereOnErl, pattern EApp, AppAnnotation (..), pattern EFun0, litAtom, qualFunCall )
 import Data.Map as Map
+import Language.PureScript.Erl.Pretty ( prettyPrintErl )
 
 addMemoizeAnnotations :: Map Atom Int -> Erl -> Erl
 addMemoizeAnnotations _memoizable = everywhereOnErl go
@@ -23,5 +24,17 @@ addMemoizeAnnotations _memoizable = everywhereOnErl go
     other -> other
 
 memoizeAnnotation :: Erl -> Erl
-memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]
+-- memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]
 -- memoizeAnnotation emem = EApp RegularApp (EVar "'Elixir.PS.Util.Memoize':persistent_term") [EFun0 Nothing emem]
+memoizeAnnotation emem =
+  let
+      key = litAtom (prettyPrintErl id [emem])
+  in
+  ETryAnyAny
+    (qualFunCall "persistent_term" "get" [key])
+    (EBlock
+      [ EVarBind "X" emem
+      , qualFunCall "persistent_term" "put" [key, EVar "X"]
+      , EVar "X"
+      ]
+    )
