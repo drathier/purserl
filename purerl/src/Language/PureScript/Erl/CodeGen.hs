@@ -278,16 +278,16 @@ moduleToErl ::
   CodegenEnvironment ->
   Module Ann ->
   [(T.Text, Int)] ->
-  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl], Map Atom Int)
+  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl]) -- , Map Atom Int)
 moduleToErl codegenEnv m@(Module _ _ mn _ _ _ _ _ _) foreignExports =
   rethrow (addHint (ErrorInModule mn)) $ do
     (res, (warnings, Any needRuntimeLazy)) <- runWriterT $ moduleToErl' codegenEnv m foreignExports
     tell warnings
 
     pure $ if needRuntimeLazy then
-      let (exports, namedSpecs, foreignSpecs, decls, safeExports, safeDecls, memoizable) = res
+      let (exports, namedSpecs, foreignSpecs, decls, safeExports, safeDecls) = res
 
-      in (exports, namedSpecs, foreignSpecs, runtimeLazy : runtimeLazyCurried : decls, safeExports, safeDecls, memoizable)
+      in (exports, namedSpecs, foreignSpecs, runtimeLazy : runtimeLazyCurried : decls, safeExports, safeDecls)
     else
       res
 
@@ -335,7 +335,7 @@ moduleToErl' ::
   CodegenEnvironment ->
   Module Ann ->
   [(T.Text, Int)] ->
-  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl], Map Atom Int)
+  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl]) -- , Map Atom Int)
 moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ declaredExports _ foreigns origDecls) foreignExports =
   do
     res <- traverse topBindToErl decls
@@ -363,16 +363,16 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         fnl _ = Nothing
         safeExports = mapMaybe fnl safeDecls
 
-        memoizable =
-          M.mapKeys (qualifiedToErl mn) $
-            M.mapMaybe
-              ( \case
-                  Arity (n, _) | n > 0 -> Just n
-                  _ -> Nothing
-              )
-              arities
-              -- Var _ qi@(Qualified _ _)
-    return (exports, namedSpecs, foreignSpecs, attributes ++ erlDecls, safeExports, safeDecls, memoizable)
+        -- memoizable =
+        --   M.mapKeys (qualifiedToErl mn) $
+        --     M.mapMaybe
+        --       ( \case
+        --           Arity (n, _) | n > 0 -> Just n
+        --           _ -> Nothing
+        --       )
+        --       arities
+        --       -- Var _ qi@(Qualified _ _)
+    return (exports, namedSpecs, foreignSpecs, attributes ++ erlDecls, safeExports, safeDecls)
   where
     declaredExportsSet = Set.fromList declaredExports
 
@@ -557,6 +557,56 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             pure
               ([(ident', arity)], [EFunctionDef (uncurryType arity =<< erlangType) ss ident' vars callCurriedErl])
 
+      -- let curriedWrappingUncurriedStepped arity = do
+      --       vars <- replicateM arity freshNameErl
+      --       let f direct ones =
+      --             let app = EApp RegularApp (EAtomLiteral ident') (EVar <$> vars)
+      --                 callUncurriedErl = curriedLambda app ones
+      --             in ([(ident', length direct)], [EFunctionDef (uncurryType (length direct) =<< erlangType) ss ident' direct callUncurriedErl])
+      --             <>
+      --             case direct of
+      --               [] -> ([],[])
+      --               d:ds -> f ds (d:ones)
+      --       case reverse vars of
+      --         v:vs -> pure $ f vs [v]
+      --         [] -> pure ([],[])
+
+      -- let curriedWrappingUncurriedStepped2 arity absCount n = do
+      --       -- vars <- replicateM arity freshNameErl
+      --       -- erl' <- valueToErl $ val
+      --       -- let erl'' = curriedLambda erl' (drop n vars)
+      --       -- let uncurried = ([(ident', n)], [EFunctionDef (uncurryType n =<< erlangType) ss ident' (take n vars) (outerWrapper erl'')])
+---- 
+---- 
+      --       -- vars <- replicateM arity freshNameErl
+      --       -- let app = EApp RegularApp (EAtomLiteral ident') (EVar <$> vars)
+      --       --     callUncurriedErl = curriedLambda app ones
+      --       -- in ([(ident', length direct)], [EFunctionDef (uncurryType (length direct) =<< erlangType) ss ident' direct callUncurriedErl])
+      --       -- let nExactArgs = min (min absCount arity) n
+      --       -- let nToCurry = min absCount arity
+      --       -- let nToAppCurry = n - (min absCount arity)
+-- 
+      --       -- INVARIANT[drathier]: n <= arity, absCount <= arity
+      --       vars <- replicateM arity freshNameErl
+      --       let app = EApp RegularApp (EAtomLiteral ident') (EVar <$> take absCount vars)
+      --           callUncurriedErl =
+      --             curriedLambda (curriedApp (EVar <$> (drop absCount vars)) app) (drop n vars)
+-- 
+-- 
+      --             -- curriedApp (EVar <$> (drop absCount vars)) $
+      --             --   curriedLambda app (drop n vars)
+      --       -- pure ([(ident', 0)], [EFunctionDef (TFun [] <$> erlangType) ss ident' [] callUncurriedErl])
+      --       pure ([(ident', n)], [EFunctionDef (uncurryType n =<< erlangType) ss ident' (take n vars) callUncurriedErl])
+
+-- f(a,b) = fun(c) -> (f(a,b))(c)
+-- f(a,b,c) = (f(a,b))(c)
+
+            -- pure uncurried
+
+-- f(a,b,c) =
+-- f(a,b) = fun(c) -> f(a,b,c)
+-- f(a) = fun(b) -> fun(c) -> f(a,b,c)
+
       let guard :: Monoid a => Bool -> a -> a
           guard t x = if t then x else mempty
 
@@ -603,9 +653,20 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   erl'' <- valueToErl $ foldl applyStep val (take n vars)
                   pure ([(ident', n)], [EFunctionDef Nothing ss ident' (take n vars) (outerWrapper erl'')])
 
+            -------
+            -- do
+            --   erl' <- valueToErl $ foldl applyStep val vars
+            --   curriedWrap <- curriedWrappingUncurried arity
+            --   curriedWraps <- curriedWrappingUncurriedStepped arity (countAbs val)
+            --   let uncurried = ([(ident', arity)], [EFunctionDef (uncurryType arity =<< erlangType) ss ident' vars (outerWrapper erl')])
+            --   pure $ uncurried <> guard (0 < arity) curriedWraps
+
+            -------
+
             if countAbs val == arity && usedArity arity
               then do
                 erl' <- valueToErl $ foldl applyStep val vars
+                -- curriedWrap <- curriedWrappingUncurried arity
                 curriedWrap <- curriedWrappingUncurried arity
                 let uncurried = ([(ident', arity)], [EFunctionDef (uncurryType arity =<< erlangType) ss ident' vars (outerWrapper erl')])
                 pure $ uncurried <> guard (usedExceptArity arity) curriedWrap <> split

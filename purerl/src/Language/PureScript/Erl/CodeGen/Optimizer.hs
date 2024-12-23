@@ -38,8 +38,8 @@ import Control.Monad ((<=<))
 -- |
 -- Apply a series of optimizer passes to simplified Javascript code
 --
-optimize :: MonadSupply m => [(Atom, Int)] -> Map Atom Int -> [Erl] -> m [Erl]
-optimize exports memoizable es = removeUnusedFuns exports <$>
+optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
+optimize exports es = removeUnusedFuns exports <$>
   traverse go es
   where
   go erl =
@@ -53,7 +53,8 @@ optimize exports memoizable es = removeUnusedFuns exports <$>
     erl'' <- untilFixedPoint tidyUp
       =<< untilFixedPoint (return . magicDo expander) 
       erl'
-    pure $ addMemoizeAnnotations memoizable erl''
+    -- pure $ addMemoizeAnnotations memoizable erl''
+    pure erl''
 
   expander = buildExpander es
 
@@ -62,11 +63,11 @@ optimize exports memoizable es = removeUnusedFuns exports <$>
     [ pure . collapseNestedBlocks
     , pure . inlineSimpleGuards
     , pure . beginBinds
-    , pure . evaluateIifes
+    , pure . evaluateIifes -- NOTE[drathier]: skipping this step doesn't change the resulting output/ folder contents at all; presumably it's handled by the etaConvert step
     , pure . singleBegin
     , pure . replaceAppliedFunRefs
     , pure . collectLists
-    , etaConvert
+    , etaConvert -- NOTE[drathier]: this removes/inlines IIFE's statefully, but `evaluateIifes` step before also perhaps does the same?
     ]
 
 

@@ -1,6 +1,6 @@
 # Please update Haskell image versions under .github/workflows/ci.yml together to use the same GHC version
 # (or the CI build will fail)
-resolver: lts-20.26
+resolver: lts-20.9
 pvp-bounds: both
 packages:
 - '.'
@@ -27,6 +27,7 @@ extra-deps:
 - hspec-2.10.9
 - hspec-core-2.10.9
 - hspec-discover-2.10.9
+- happy-1.20.1.1@sha256:a381633c5e8f9e9e5a8e1900930ce13172397b4677fcfcc08cd38eb3f73b61b1,5811
 nix:
   packages:
   - zlib

@@ -404,7 +404,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
         Nothing ->
           return []
 
-      (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl, memoizable) <- do
+      (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl) <- do
         -- SupplyT.mapSupplyT
         --   (\(Language.PureScript.Erl.Make.Monad.Make m, i) ->
         --     (Make
@@ -441,8 +441,8 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           (moduleToErl env m foreignExports) -- :: SupplyT Language.PureScript.Erl.Make.Monad.Make
 
 
-      optimized <- optimize exports memoizable rawErl
-      checked <- optimize checkedExports memoizable checkedRawErl
+      optimized <- optimize exports rawErl
+      checked <- optimize checkedExports checkedRawErl
 
       dir <- lift $ makeIO "get file info: ." getCurrentDirectory
       let makeAbsFile file = dir </> file
