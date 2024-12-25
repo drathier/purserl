@@ -14,7 +14,7 @@ import Data.Text qualified as T
 import Data.List (nub, concatMap)
 
 addMemoizeAnnotations :: Map Atom Int -> Erl -> Erl
-addMemoizeAnnotations _memoizable = id
+-- addMemoizeAnnotations _memoizable = id
 addMemoizeAnnotations _memoizable = everywhereOnErl go
   where
   go e = case e of
@@ -37,46 +37,45 @@ memoizeAnnotation emem =
       -- key = T.replace "\n" "" $ T.replace " " "" $ prettyPrintErl id [emem]
       ememAstHash = (abs (hash (prettyPrintErl id [emem])))
       key = T.pack (show ememAstHash)
-      keyAtom = litAtom key
+      keyAtom = litAtom (key)
       uniqueVar = uniqueVarPrefix <> key
-      keyTuple = ETupleLiteral ([keyAtom, EVar "?MODULE"] <> extVarsAsErl)
+      -- NOTE[drathier]: ?MODULE is needed in key because common names like `append` can be duplicated in many modules, sometimes with different meaning, even if the local ast is identical. It causes some keys to be duplicated, but that's the trade-off for now.
+      keyTuple = ETupleLiteral ([litAtom "PsMemoKey", keyAtom, EVar "?MODULE"] <> extVarsAsErl)
+      collectDep expr =
+        case expr of
+          EVar var | not (uniqueVarPrefix `T.isPrefixOf` var) -> [var]
+          _ -> []
       externalVariables =
         nub $
         everything
           (<>)
           (\erl ->
             case erl of
-              EApp _ _ args ->
-                concatMap
-                (\arg ->
-                  case arg of
-                    EVar var | not (uniqueVarPrefix `T.isPrefixOf` var) -> [var]
-                    _ -> []
-                )
-                args
+              EApp _ fn args ->
+                collectDep fn <> concatMap collectDep args
               _ -> []
           ) emem
       extVarsAsAtoms = Prelude.map litAtom externalVariables
       extVarsAsErl = Prelude.map EVar externalVariables
+
   in
   -- case elem ememAstHash maybeModuleHashes of
   --   False -> memoizeAnnotationOld emem
   --   True ->
       ETryAnyAny
-        (qualFunCall "persistent_term" "get" [keyTuple])
+        -- (qualFunCall "persistent_term" "get" [keyTuple])
+        (qualFunCall "Elixir.Zen.TermCache" "get" [keyTuple])
         -- (EBlock
-        --   [ EVarBind uniqueVar (qualFunCall "persistent_term" "get" [keyTuple])
+        --   [ EVarBind uniqueVar (qualFunCall "Elixir.Zen.TermCache" "get" [keyTuple])
         --   , EVarBind uniqueVar emem
         --   ]
         -- )
-        (scope
-          (EBlock
-            ( [ (qualFunCall "erlang" "display" [ETupleLiteral ([EVar "?MODULE", EVar "?LINE", EVar "?FUNCTION_NAME", keyAtom, litAtom "ExtVars"] <> extVarsAsAtoms)]) ] <>
-            [ EVarBind uniqueVar emem
-            , qualFunCall "persistent_term" "put" [keyTuple, EVar uniqueVar]
-            , EVar uniqueVar
-            ]
-            )
+        (EBlock
+          ( -- [ (qualFunCall "erlang" "display" [ETupleLiteral ([EVar "?MODULE", EVar "?LINE", EVar "?FUNCTION_NAME", keyAtom, litAtom "ExtVars"] <> extVarsAsAtoms)]) ] <>
+          [ EVarBind uniqueVar emem
+          , qualFunCall "Elixir.Zen.TermCache" "put" [keyTuple, EVar uniqueVar]
+          , EVar uniqueVar
+          ]
           )
         )
 
