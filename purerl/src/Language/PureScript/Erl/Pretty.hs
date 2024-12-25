@@ -40,6 +40,11 @@ currentIndent = do
   current <- get
   return $ emit $ T.replicate (indent current) " "
   
+currentIndent' :: (Emit gen) => Int -> StateT PrinterState Maybe gen
+currentIndent' d = do
+  current <- get
+  return $ emit $ T.replicate (d + indent current) " "
+
 
 literals :: (Emit gen) => Pattern PrinterState Erl gen
 literals = mkPattern' match
@@ -107,6 +112,24 @@ literals = mkPattern' match
     , return $ emit " | "
     , prettyPrintErl' e
     , return $ emit "]"
+    ]
+
+  match (ETryAnyAny e1 e2) = withIndent $ mconcat <$> sequence
+    [ return $ emit "\n"
+    , currentIndent
+    , return $ emit "try\n"
+    , currentIndent' 2
+    , withIndent $ prettyPrintErl' e1
+    , return $ emit "\n"
+    , currentIndent
+    , return $ emit "catch\n"
+    , currentIndent' 2
+    , return $ emit "_:_ ->\n"
+    , currentIndent' 4
+    , withIndent' 4 $ prettyPrintErl' e2
+    , return $ emit "\n"
+    , currentIndent
+    , return $ emit "end"
     ]
 
   match (EBlock es) =

@@ -213,7 +213,9 @@ common defaults
     -- purerl
     base-compat-batteries,
     optparse-applicative,
-    unordered-containers >=0.2.19.1
+    unordered-containers >=0.2.19.1,
+    -- drathier
+    hashable
 
 library
   import: defaults

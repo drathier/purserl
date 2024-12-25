@@ -102,6 +102,7 @@ replaceIdents vars = go
     go (EMapUpdate e binds) = f $ EMapUpdate (go e) $ map (second go) binds
     go (EListLiteral es) = f $ EListLiteral (map go es)
     go (EListCons es e) = f $ EListCons (map go es) (go e)
+    go (ETryAnyAny e1 e2) = f $ ETryAnyAny (go e1) (go e2)
     go v@(EVar var) = fromMaybe v $ lookup var vars
     go other = other
 
