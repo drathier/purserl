@@ -9,7 +9,7 @@ import Language.PureScript.CoreFn.Expr (Bind, Expr(..))
 import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.CoreFn.Traversals (everywhereOnValues)
 import Language.PureScript.Constants.Libs qualified as C
-
+import Debug.Trace qualified as Debug
 -- |
 -- CoreFn optimization pass.
 --
@@ -24,8 +24,15 @@ optimizeModuleDecls = map transformBinds
     = optimizeDataFunctionApply
 
 optimizeDataFunctionApply :: Expr a -> Expr a
-optimizeDataFunctionApply e = case e of
-  (App a (App _ (Var _ fn) x) y)
-    | C.I_functionApply <- fn -> App a x y
-    | C.I_functionApplyFlipped <- fn -> App a y x
-  _ -> e
+optimizeDataFunctionApply e =
+  case e of
+    (App a (App _ (Var _ fn) x) y)
+      | C.I_functionApply <- fn -> App a x y
+      | C.I_functionApplyFlipped <- fn -> App a y x
+
+    (App a (Var b fn) (Var c impl)) | C.I_map <- fn, C.I_functorArray <- impl -> Var a C.I_arrayMap
+    (App a (Var b fn) (Var c impl)) | C.I_map <- fn, C.I_functorMaybe <- impl -> Var a C.I_maybeMap
+    (App a (Var b fn) (Var c impl)) | C.I_map <- fn, C.I_functorEither <- impl -> Var a C.I_eitherMap
+    -- (App a (Var b fn) (Var c impl)) | C.I_map <- fn, C.I_functorList <- impl -> Var a C.I_listMap -- TODO[drathier]: impl is typeclassy; reimplement without type class or we'll get an inf loop here
+    -- (App a (Var b fn) (Var c impl)) | C.I_map <- fn, C.I_functorEffect <- impl -> Var a C.I_eMap -- TODO[drathier]: implementation in E.purs is just Functor.map, so inf loop if we do this rewrite. Effect.purs doesn't expose the function. UnsafePerformEffect doesn't seem pretty enough. Implement it in FFI instead.
+    _ -> e

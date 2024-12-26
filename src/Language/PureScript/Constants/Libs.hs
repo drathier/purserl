@@ -110,7 +110,8 @@ $(TH.declare do
       TH.var "flip"
 
   TH.mod "Data.Functor" do
-    TH.cls "Functor" ; TH.asIdent do TH.asString do TH.var "map"
+    TH.cls "Functor"
+    TH.asIdent do TH.asString do TH.vars ["map", "functorArray"]
 
   TH.mod "Data.Generic.Rep" do
     TH.cls "Generic" ; TH.asIdent do TH.vars ["from", "to"]
@@ -260,5 +261,138 @@ $(TH.declare do
 
   TH.mod "Unsafe.Coerce" do
     TH.asPair do TH.var "unsafeCoerce"
+
+  -- [drathier]: purserl-specific modules
+
+  TH.mod "Array" do
+    TH.prefixWith "array" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+        -- TODO: semigroup, monoid
+
+  TH.mod "E" do
+    TH.prefixWith "e" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  -- TH.mod "Effect" do
+  --   -- TH.prefixWith "effect" do
+  --     TH.asIdent do
+  --       TH.var "applicativeEffect"
+  --       TH.var "applyEffect"
+  --       TH.var "bindEffect"
+  --       TH.var "functorEffect"
+  --       TH.var "monadEffect"
+  --       TH.var "monoidEffect"
+  --       TH.var "semigroupEffect"
+
+  TH.mod "Either" do
+    TH.asIdent do TH.asString do TH.var "functorEither"
+    TH.prefixWith "either" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "Erl.Data.List.Types" do
+    TH.asIdent do
+      TH.asString do
+        TH.var "functorList"
+        TH.var "functorWithIndexIntList"
+        TH.var "functorNonEmptyList"
+        TH.var "functorWithIndexIntNonEmp"
+
+  -- TH.mod "List" do
+  --   TH.prefixWith "list" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Map" do
+  --   TH.prefixWith "map" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  TH.mod "Maybe" do
+    TH.asIdent do TH.asString do TH.var "functorMaybe"
+    TH.prefixWith "maybe" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "Data.Array.NonEmpty.Internal" do
+    TH.var "functorNonEmptyArray"
+
+  TH.mod "NonEmptyArray" do
+    TH.prefixWith "nonEmptyArray" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "NonEmptyList" do
+    TH.prefixWith "nonEmptyList" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  -- TH.mod "Queue" do
+  --   TH.prefixWith "queue" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Set" do
+  --   TH.prefixWith "set" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "String" do
+  --   TH.prefixWith "string" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Tuple" do
+  --   TH.prefixWith "tuple" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Variant" do
+  --   TH.prefixWith "variant" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  TH.mod "Veither" do
+    TH.prefixWith "veither" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "VexceptT" do
+    TH.prefixWith "vexceptT" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
 
   )
