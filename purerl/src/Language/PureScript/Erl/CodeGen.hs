@@ -278,16 +278,16 @@ moduleToErl ::
   CodegenEnvironment ->
   Module Ann ->
   [(T.Text, Int)] ->
-  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl], Map Atom Int)
+  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl]) -- , Map Atom Int)
 moduleToErl codegenEnv m@(Module _ _ mn _ _ _ _ _ _) foreignExports =
   rethrow (addHint (ErrorInModule mn)) $ do
     (res, (warnings, Any needRuntimeLazy)) <- runWriterT $ moduleToErl' codegenEnv m foreignExports
     tell warnings
 
     pure $ if needRuntimeLazy then
-      let (exports, namedSpecs, foreignSpecs, decls, safeExports, safeDecls, memoizable) = res
+      let (exports, namedSpecs, foreignSpecs, decls, safeExports, safeDecls) = res
 
-      in (exports, namedSpecs, foreignSpecs, runtimeLazy : runtimeLazyCurried : decls, safeExports, safeDecls, memoizable)
+      in (exports, namedSpecs, foreignSpecs, runtimeLazy : runtimeLazyCurried : decls, safeExports, safeDecls)
     else
       res
 
@@ -335,7 +335,7 @@ moduleToErl' ::
   CodegenEnvironment ->
   Module Ann ->
   [(T.Text, Int)] ->
-  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl], Map Atom Int)
+  m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl]) -- , Map Atom Int)
 moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ declaredExports _ foreigns origDecls) foreignExports =
   do
     res <- traverse (\b ->
@@ -367,16 +367,16 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         fnl _ = Nothing
         safeExports = mapMaybe fnl safeDecls
 
-        memoizable =
-          M.mapKeys (qualifiedToErl mn) $
-            M.mapMaybe
-              ( \case
-                  Arity (n, _) | n > 0 -> Just n
-                  _ -> Nothing
-              )
-              arities
-              -- Var _ qi@(Qualified _ _)
-    return (exports, namedSpecs, foreignSpecs, attributes ++ erlDecls, safeExports, safeDecls, memoizable)
+        -- memoizable =
+        --   M.mapKeys (qualifiedToErl mn) $
+        --     M.mapMaybe
+        --       ( \case
+        --           Arity (n, _) | n > 0 -> Just n
+        --           _ -> Nothing
+        --       )
+        --       arities
+        --       -- Var _ qi@(Qualified _ _)
+    return (exports, namedSpecs, foreignSpecs, attributes ++ erlDecls, safeExports, safeDecls)
   where
     declaredExportsSet = Set.fromList declaredExports
 
