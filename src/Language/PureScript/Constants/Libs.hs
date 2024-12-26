@@ -59,9 +59,12 @@ $(TH.declare do
     TH.asIdent do TH.asString do TH.var "apply"
 
   TH.mod "Control.Applicative" do
+    TH.asIdent do TH.asString do TH.var "applicativeArray"
     TH.asIdent do TH.asPair do TH.asString do TH.var "pure"
 
   TH.mod "Control.Bind" do
+    TH.asIdent do TH.asString do TH.var "bindArray"
+    TH.asIdent do TH.var "bind"
     TH.asPair do
       TH.asString do
         TH.var "bind"
@@ -293,6 +296,8 @@ $(TH.declare do
 
   TH.mod "Either" do
     TH.asIdent do TH.asString do TH.var "functorEither"
+    TH.asIdent do TH.asString do TH.var "bindEither"
+    TH.asIdent do TH.asString do TH.var "applicativeEither"
     TH.prefixWith "either" do
       TH.asIdent do
         TH.var "map"
@@ -323,6 +328,8 @@ $(TH.declare do
 
   TH.mod "Maybe" do
     TH.asIdent do TH.asString do TH.var "functorMaybe"
+    TH.asIdent do TH.asString do TH.var "bindMaybe"
+    TH.asIdent do TH.asString do TH.var "applicativeMaybe"
     TH.prefixWith "maybe" do
       TH.asIdent do
         TH.var "map"
