@@ -15,7 +15,7 @@ import Control.Arrow (first, second)
 import Control.Monad (foldM, replicateM, unless)
 import Control.Monad.Error.Class (MonadError (..))
 import Control.Monad.Reader (MonadReader (..))
-import Control.Monad.Supply.Class (MonadSupply (fresh))
+import Control.Monad.Supply.Class (MonadSupply (fresh), bumpToNextRoundNumber)
 import Control.Monad.Writer (MonadWriter (..), Any (Any), WriterT (runWriterT))
 import Data.Either (fromRight)
 import Data.Foldable (find, traverse_, foldl')
@@ -338,7 +338,11 @@ moduleToErl' ::
   m ([(Atom, Int)], [Erl], [Erl], [Erl], [(Atom, Int)], [Erl], Map Atom Int)
 moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ declaredExports _ foreigns origDecls) foreignExports =
   do
-    res <- traverse topBindToErl decls
+    res <- traverse (\b ->
+      do
+        bumpToNextRoundNumber
+        topBindToErl b
+      ) decls
     reexports <- traverse reExportForeign foreigns
     let exportTypes = mapMaybe (\(_, _, t, _) -> t) reexports
         foreignSpecs = map (\(ident, ty) -> ESpec (qualifiedToErl' mn ForeignModule ident) (replaceVars ty)) exportTypes
