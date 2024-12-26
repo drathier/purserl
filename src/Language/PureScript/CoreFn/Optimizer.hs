@@ -43,10 +43,18 @@ optimizeDataFunctionApply e =
     -- (App a (Var b fn) (Var c impl)) | C.I_bind <- fn, C.I_bindMaybe <- impl -> Var a C.I_bindMaybe
     -- -- (control_bind@ps:bind((either@ps:bindEither())))
     -- (App a (Var b fn) (Var c impl)) | C.I_bind <- fn, C.I_bindEither <- impl -> Var a C.I_eitherBind
+    -- (control_bind@ps:bind((effect@ps:bindEffect())))
+    (App a (Var b fn) (Var c impl)) | C.I_bind <- fn, C.I_bindEffect <- impl -> Var a C.I_effectBindE
 
     -- (control_applicative@ps:pure((control_applicative@ps:applicativeArray())))
     (App a (Var b fn) (Var c impl)) | C.I_pure <- fn, C.I_applicativeArray <- impl -> Var a C.I_arrayPure
     (App a (Var b fn) (Var c impl)) | C.I_pure <- fn, C.I_applicativeMaybe <- impl -> Var a C.I_maybePure
     (App a (Var b fn) (Var c impl)) | C.I_pure <- fn, C.I_applicativeEither <- impl -> Var a C.I_eitherPure
+    -- (control_applicative@ps:pure((effect@ps:applicativeEffect())))
+    (App a (Var b fn) (Var c impl)) | C.I_pure <- fn, C.I_applicativeEffect <- impl -> Var a C.I_effectPureE
+
+    -- ASSUMPTION[drathier]: all discard instances are implemented as `discard = bind`
+    -- (control_bind@ps:discard((control_bind@ps:discardUnit()), (effect@ps:bindEffect())))
+    (App a (App b (Var c fn) (Var d _discardImpl)) (Var e bindImpl)) | C.I_discard <- fn, C.I_bindEffect <- bindImpl -> Var a C.I_effectBindE
 
     _ -> e

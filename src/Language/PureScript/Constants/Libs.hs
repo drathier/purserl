@@ -65,6 +65,7 @@ $(TH.declare do
   TH.mod "Control.Bind" do
     TH.asIdent do TH.asString do TH.var "bindArray"
     TH.asIdent do TH.var "bind"
+    TH.asIdent do TH.var "discard"
     TH.asPair do
       TH.asString do
         TH.var "bind"
@@ -196,7 +197,13 @@ $(TH.declare do
 
   -- purescript-effect
 
-  TH.mod "Effect" (P.pure ())
+  TH.mod "Effect" do
+    TH.asIdent do TH.asString do TH.var "bindEffect"
+    TH.asIdent do TH.asString do TH.var "applicativeEffect"
+    TH.prefixWith "effect" do
+      TH.asIdent do
+        TH.var "bindE"
+        TH.var "pureE"
 
   TH.mod "Effect.Uncurried" do
     TH.asPair do TH.vars ["mkEffectFn", "runEffectFn"]
