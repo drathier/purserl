@@ -13,9 +13,9 @@ import Data.Hashable (hash)
 import Data.Text qualified as T
 import Data.List (nub, concatMap)
 
-addMemoizeAnnotations :: Map Atom Int -> Erl -> Erl
+addMemoizeAnnotations :: Erl -> Erl
 -- addMemoizeAnnotations _memoizable = id
-addMemoizeAnnotations _memoizable = everywhereOnErl go
+addMemoizeAnnotations = everywhereOnErl go
   where
   go e = case e of
     EApp SyntheticApp _ _

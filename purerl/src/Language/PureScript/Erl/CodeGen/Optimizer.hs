@@ -53,8 +53,7 @@ optimize exports es = removeUnusedFuns exports <$>
     erl'' <- untilFixedPoint tidyUp
       =<< untilFixedPoint (return . magicDo expander) 
       erl'
-    -- pure $ addMemoizeAnnotations memoizable erl''
-    pure erl''
+    pure $ addMemoizeAnnotations erl''
 
   expander = buildExpander es
 

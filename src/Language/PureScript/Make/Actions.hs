@@ -407,7 +407,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
         Nothing ->
           return []
 
-      (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl, memoizable) <- do
+      (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl) <- do
         -- SupplyT.mapSupplyT
         --   (\(Language.PureScript.Erl.Make.Monad.Make m, i) ->
         --     (Make
@@ -443,16 +443,16 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           f
           (moduleToErl env m foreignExports) -- :: SupplyT Language.PureScript.Erl.Make.Monad.Make
 
-      -- !_ <-
-      --   case True of -- runModuleName mn == "Hex" of
-      --     True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".txt") (show rawErl)
-      --     False -> pure ()
-      -- !_ <-
-      --   case True of -- runModuleName mn == "Hex" of
-      --     True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (show m)
-      --     False -> pure ()
-      optimized <- optimize exports memoizable rawErl
-      checked <- optimize checkedExports memoizable checkedRawErl
+      !_ <-
+        case True of -- runModuleName mn == "Hex" of
+          True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".txt") (show rawErl)
+          False -> pure ()
+      !_ <-
+        case True of -- runModuleName mn == "Hex" of
+          True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (show m)
+          False -> pure ()
+      optimized <- optimize exports rawErl
+      checked <- optimize checkedExports checkedRawErl
 
       dir <- lift $ makeIO "get file info: ." getCurrentDirectory
       let makeAbsFile file = dir </> file
