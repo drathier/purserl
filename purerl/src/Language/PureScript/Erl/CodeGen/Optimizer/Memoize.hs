@@ -67,11 +67,12 @@ memoizeAnnotation emem =
       --   , EVarBind uniqueVar emem
       --   ]
       -- )
-      (EBlock
-        ( -- [ (qualFunCall "erlang" "display" [ETupleLiteral ([EVar "?MODULE", EVar "?LINE", EVar "?FUNCTION_NAME", keyAtom, litAtom "ExtVars"] <> extVarsAsAtoms)]) ] <>
-        [ EVarBind uniqueVar emem
-        , qualFunCall "Elixir.Zen.TermCache" "put" [keyTuple, EVar uniqueVar]
-        , EVar uniqueVar
-        ]
-        )
-      )
+      (qualFunCall "Elixir.Zen.TermCache" "put" [keyTuple, emem])
+      -- (EBlock
+      --   ( -- [ (qualFunCall "erlang" "display" [ETupleLiteral ([EVar "?MODULE", EVar "?LINE", EVar "?FUNCTION_NAME", keyAtom, litAtom "ExtVars"] <> extVarsAsAtoms)]) ] <>
+      --   [ EVarBind uniqueVar emem
+      --   , qualFunCall "Elixir.Zen.TermCache" "put" [keyTuple, EVar uniqueVar]
+      --   , EVar uniqueVar
+      --   ]
+      --   )
+      -- )
