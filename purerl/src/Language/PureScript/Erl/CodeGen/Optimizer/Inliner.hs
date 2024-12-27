@@ -138,6 +138,10 @@ inlineCommonValues expander = everywhereOnErl convert
       | isDict semiringNumber dict && isUncurriedFn fnOne fn = ENumericLiteral (Right 1.0)
       | isDict boundedBoolean dict && isUncurriedFn fnBottom fn = EAtomLiteral $ Atom Nothing "false"
       | isDict boundedBoolean dict && isUncurriedFn fnTop fn = EAtomLiteral $ Atom Nothing "true"
+
+      -- drathier added, functions rather than dicts
+      | isFnName (EC.effect, snd $ C.P_effectPureE) fn = EFun0 Nothing dict
+
     convert fn
       | isFn (EC.dataUnit, EC.unit) fn = EAtomLiteral $ Atom Nothing "unit"
       | isFn (EC.erlDataMap, EC.empty) fn = EMapLiteral []
