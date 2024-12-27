@@ -231,13 +231,13 @@ literals = mkPattern' match
   match EApp{} = mzero
 
   printFunTy _ name (Just (TFun ts ty)) =
-    emit $ "-spec " <> runAtom name <> "(" <> (T.intercalate "," $ printTy <$> ts) <> ") -> " <> printTy ty
+    emit $ "%-spec " <> runAtom name <> "(" <> (T.intercalate "," $ printTy <$> ts) <> ") -> " <> printTy ty
   printFunTy (Just numArgs) name Nothing =
-    emit $ "-spec " <> runAtom name <> "(" <> (T.intercalate "," $ replicate numArgs "any()") <> ") -> any()"
+    emit $ "%-spec " <> runAtom name <> "(" <> (T.intercalate "," $ replicate numArgs "any()") <> ") -> any()"
   printFunTy _ _ _ = internalError "Can't print spec for function with unknown arg length"
 
   printTypeDef name args (Just ty) =
-    emit $ "-type " <> runAtom name <> "(" <> (T.intercalate "," args)  <>  ") :: " <> printTy ty
+    emit $ "%-type " <> runAtom name <> "(" <> (T.intercalate "," args)  <>  ") :: " <> printTy ty
   printTypeDef _ _ _ = internalError "Empty typedef"
 
 
