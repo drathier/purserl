@@ -131,22 +131,38 @@ inlineCommonValues :: (Erl -> Erl) -> Erl -> Erl
 inlineCommonValues expander = everywhereOnErl convert
   where
     convert :: Erl -> Erl
-    convert (expander -> EApp _ fn [dict])
-      | isDict semiringInt dict && isUncurriedFn fnZero fn = ENumericLiteral (Left 0)
-      | isDict semiringNumber dict && isUncurriedFn fnZero fn = ENumericLiteral (Right 0.0)
-      | isDict semiringInt dict && isUncurriedFn fnOne fn = ENumericLiteral (Left 1)
-      | isDict semiringNumber dict && isUncurriedFn fnOne fn = ENumericLiteral (Right 1.0)
-      | isDict boundedBoolean dict && isUncurriedFn fnBottom fn = EAtomLiteral $ Atom Nothing "false"
-      | isDict boundedBoolean dict && isUncurriedFn fnTop fn = EAtomLiteral $ Atom Nothing "true"
+    convert expr =
+      case expander expr of
+        EApp _ fn [dict]
+          | isDict semiringInt dict && isUncurriedFn fnZero fn -> ENumericLiteral (Left 0)
+          | isDict semiringNumber dict && isUncurriedFn fnZero fn -> ENumericLiteral (Right 0.0)
+          | isDict semiringInt dict && isUncurriedFn fnOne fn -> ENumericLiteral (Left 1)
+          | isDict semiringNumber dict && isUncurriedFn fnOne fn -> ENumericLiteral (Right 1.0)
+          | isDict boundedBoolean dict && isUncurriedFn fnBottom fn -> EAtomLiteral $ Atom Nothing "false"
+          | isDict boundedBoolean dict && isUncurriedFn fnTop fn -> EAtomLiteral $ Atom Nothing "true"
 
-      -- drathier added, functions rather than dicts
-      | isFnName (EC.effect, snd $ C.P_effectPureE) fn = EFun0 Nothing dict
+        -- drathier added, functions rather than dicts
+        EApp _ fn [a]
+          | isFnName (EC.effect, snd $ C.P_effectPureE) fn -> EFun0 Nothing a
 
-    convert fn
-      | isFn (EC.dataUnit, EC.unit) fn = EAtomLiteral $ Atom Nothing "unit"
-      | isFn (EC.erlDataMap, EC.empty) fn = EMapLiteral []
-      | isFn (EC.erlDataListTypes, EC.nil) fn = EListLiteral []
-    convert other = other
+        EApp _ fn [a, f]
+          | isFnName (EC.effect, snd $ C.P_effectBindE) fn ->
+            EFun0 Nothing
+              (EApp RegularApp
+                (EApp RegularApp f
+                  [ EApp RegularApp a []
+                  ]
+                )
+                []
+              )
+
+        fn
+          | isFn (EC.dataUnit, EC.unit) fn -> EAtomLiteral $ Atom Nothing "unit"
+          | isFn (EC.erlDataMap, EC.empty) fn -> EMapLiteral []
+          | isFn (EC.erlDataListTypes, EC.nil) fn -> EListLiteral []
+
+        other -> other
+
 
     fnZero = (EC.dataSemiring, snd $ C.P_zero)
     fnOne = (EC.dataSemiring, snd $ C.P_one)
