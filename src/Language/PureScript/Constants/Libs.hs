@@ -201,9 +201,10 @@ $(TH.declare do
     TH.asIdent do TH.asString do TH.var "bindEffect"
     TH.asIdent do TH.asString do TH.var "applicativeEffect"
     TH.prefixWith "effect" do
-      TH.asIdent do
-        TH.var "bindE"
-        TH.var "pureE"
+      TH.asPair do
+        TH.asIdent do
+          TH.var "bindE"
+          TH.var "pureE"
 
   TH.mod "Effect.Uncurried" do
     TH.asPair do TH.vars ["mkEffectFn", "runEffectFn"]
@@ -289,6 +290,7 @@ $(TH.declare do
         TH.var "map"
         TH.var "bind"
         TH.var "pure"
+        TH.var "discard"
 
   -- TH.mod "Effect" do
   --   -- TH.prefixWith "effect" do
