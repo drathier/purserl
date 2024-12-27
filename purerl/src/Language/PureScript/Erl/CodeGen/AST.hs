@@ -100,6 +100,7 @@ data Erl
 
   deriving (Show, Eq)
 
+-- | [drathier]: I think this is annotating if a particular App is applying something compiler-generated like a type class dict (SyntheticApp), or is just a normal function call (RegularApp).
 data AppAnnotation 
   = RegularApp
   | SyntheticApp
