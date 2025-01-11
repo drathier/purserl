@@ -24,7 +24,8 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
       etaConvert,
       evaluateIifes,
       inlineCommonOperators,
-      inlineCommonValues,
+      inlineCommonValuesTopDown,
+      inlineCommonValuesBottomUp,
       singleBegin, collectLists, replaceAppliedFunRefs, inlineCommonFnsM )
 import Language.PureScript.Erl.CodeGen.Optimizer.Guards
     ( inlineSimpleGuards )
@@ -34,26 +35,39 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Unused (removeUnusedFuns)
 import Data.Map (Map)
 import Language.PureScript.Erl.CodeGen.Optimizer.Memoize (addMemoizeAnnotations)
 import Control.Monad ((<=<))
+import Language.PureScript.Erl.CodeGen.Inliner qualified as Inliner
 
 -- |
 -- Apply a series of optimizer passes to simplified Javascript code
 --
 optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
-optimize exports es = removeUnusedFuns exports <$>
-  traverse go es
+-- optimize exports es = pure es
+optimize exports es = removeUnusedFuns exports <$> do
+  es2 <- traverse go es
+  let es3 = Inliner.inline es2
+  es4 <- untilFixedPoint (traverse go) es3
+  pure es4
+
   where
   go erl =
    do
-    erl' <- untilFixedPoint (tidyUp <=< inlineCommonFnsM expander . applyAll
-      [ 
-        inlineCommonValues expander
-      , inlineCommonOperators EC.effect EC.effectDictionaries expander
+    erl' <-  (pure . applyAll
+      [ inlineCommonOperators EC.effect EC.effectDictionaries expander
+      , inlineCommonValuesTopDown expander
+      , inlineCommonValuesBottomUp expander
       ]
       ) erl
-    erl'' <- untilFixedPoint tidyUp
-      =<< untilFixedPoint (return . magicDo expander) 
-      erl'
+    erl'' <- untilFixedPoint tidyUp erl'
+    -- erl'' <- pure erl'
+
+    -- erl2 <- Inliner.inline erl
+
+    -- erl'' <- untilFixedPoint tidyUp
+    --   =<< untilFixedPoint (return . magicDo expander)
+    --   erl'
+    -- pure $ addMemoizeAnnotations erl''
     pure $ addMemoizeAnnotations erl''
+    -- pure $ addMemoizeAnnotations erl2
 
   expander = buildExpander es
 

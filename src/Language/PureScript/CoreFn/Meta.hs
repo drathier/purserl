@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 -- |
 -- Metadata annotations for core functional representation
 --
@@ -6,6 +7,10 @@ module Language.PureScript.CoreFn.Meta where
 import Prelude
 
 import Language.PureScript.Names (Ident)
+
+import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
+
 
 -- |
 -- Metadata annotations
@@ -35,7 +40,7 @@ data Meta
   -- The contained function application was synthesized by the compiler
   --
   | IsSyntheticApp
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, NFData)
 
 -- |
 -- Data constructor metadata
@@ -48,4 +53,4 @@ data ConstructorType
   -- |
   -- The constructor is for a type with multiple constructors
   --
-  | SumType deriving (Show, Eq, Ord)
+  | SumType deriving (Show, Eq, Ord, Generic, NFData)

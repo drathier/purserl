@@ -59,8 +59,9 @@ literals = mkPattern' match
     es' <- mapM prettyPrintErl' es
     return $ emit "{ " <> intercalate (emit ", ") es' <> emit " }"
 
-  match (EVarBind x e) = mconcat <$> sequence
-    [ return $ emit $ x <> " = "
+  match (EBind x e) = mconcat <$> sequence
+    [ prettyPrintErl' x
+    , return $ emit $ " = "
     , prettyPrintErl' e
     ]
 
@@ -75,7 +76,8 @@ literals = mkPattern' match
     <>
     [ return $ printFunTy (Just $ length xs) x t, return $ emit ".\n" ]
     <>
-    [ return $ emit $ runAtom x <> "(" <> intercalate "," xs <> ") -> " ]
+    -- [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> erlang:display({drathier_call3, ?MODULE, ?FUNCTION_NAME, ?LINE})," ]
+    [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> " ]
     <> case e of
         EBlock es ->
           [ return $ emit "\n"
@@ -85,7 +87,7 @@ literals = mkPattern' match
         _ -> [prettyPrintErl' e]
     )
     
-  match (EVar x) = return $ emit x
+  match (EVar x) = return $ emit (escapeQuotedVar x)
 
   match (EMapLiteral elts) = do
     elts' <- traverse (\(x,e) -> ((emit (runAtom x) <> emit "=>") <>) <$> prettyPrintErl' e) elts
@@ -150,7 +152,8 @@ literals = mkPattern' match
 
   match (EFunRef x n) = return $ emit $ "fun " <> runAtom x <> "/" <> T.pack (show n)
   match (EFun1 name x e) = mconcat <$> sequence
-    [ return $ emit $ "fun " <> fromMaybe "" name <> "(" <> x <> ") ->\n"
+    -- [ return $ emit $ "fun " <> fromMaybe "" name <> "(" <> escapeQuotedVar x <> ") -> erlang:display({drathier_call1, ?MODULE, ?FUNCTION_NAME, ?LINE}),\n"
+    [ return $ emit $ "fun " <> fromMaybe "" name <> "(" <> escapeQuotedVar x <> ") -> \n"
     , withIndent $ matchBody e
     , return $ emit "\n"
     , currentIndent
@@ -185,6 +188,7 @@ literals = mkPattern' match
             Just (Guard g) -> (emit " when " <>) <$> prettyPrintErl' g
             Nothing -> return $ emit ""
           indentStr <- currentIndent
+          -- return $ indentStr <> emit (fromMaybe "" name) <> parensPos b' <> g' <> emit " -> erlang:display({drathier_call2, ?MODULE, ?FUNCTION_NAME, ?LINE}), \n" <> v --parensPos b' <> g' <> emit " -> " <> v
           return $ indentStr <> emit (fromMaybe "" name) <> parensPos b' <> g' <> emit " -> \n" <> v --parensPos b' <> g' <> emit " -> " <> v
 
   match (ECaseOf e binders) =
@@ -206,12 +210,14 @@ literals = mkPattern' match
       c <- prettyPrintErl' eb
       v <- prettyPrintErl' e'
       i <- currentIndent 
+      -- return $ i <> parensPos c <> emit " -> erlang:display({drathier_case4, ?MODULE, ?FUNCTION_NAME, ?LINE})," <> v
       return $ i <> parensPos c <> emit " -> " <> v
     prettyPrintBinder (EGuardedBinder eb (Guard eg), e') = do
       c <- prettyPrintErl' eb
       v <- prettyPrintErl' e'
       g <- prettyPrintErl' eg
       i <- currentIndent 
+      -- return $ i <> parensPos c <> emit " when "  <> g <> emit " -> erlang:display({drathier_case5, ?MODULE, ?FUNCTION_NAME, ?LINE})," <> v
       return $ i <> parensPos c <> emit " when "  <> g <> emit " -> " <> v
 
   match (EAttribute name text) = case (decodeString name, decodeString text) of
@@ -264,6 +270,10 @@ literals = mkPattern' match
   
   printTy (TRemote tymod tyname  tys) = tymod <> ":" <> tyname <> "(" <> T.intercalate "," (printTy <$> tys) <> ")"
 
+escapeQuotedVar x =
+  case "\"" `T.isInfixOf` x of
+    False -> x
+    True -> "'" <> x <> "'"
 
 fromChar :: Char -> Word16
 fromChar = toEnum . fromEnum
@@ -273,6 +283,7 @@ prettyPrintBlockBody es = do
   es' <- mapM prettyPrintErl' es
   indentStr <- currentIndent
   let lns = intercalate (emit ",\n" <> indentStr) es'
+  -- let lns = intercalate (emit ", erlang:display({drathier_block6, ?MODULE, ?FUNCTION_NAME, ?LINE}),\n" <> indentStr) es'
   pure $ indentStr <> lns
 
 -- |

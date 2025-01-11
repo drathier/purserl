@@ -49,7 +49,7 @@ data Erl
   --
   | EFunctionDef (Maybe EType) (Maybe SourceSpan) Atom [Text] Erl
   -- TODO not really a separate form. and misused
-  | EVarBind Text Erl
+  | EBind Erl Erl
   -- |
   -- A variable
   --
@@ -105,6 +105,10 @@ data AppAnnotation
   = RegularApp
   | SyntheticApp
   deriving (Show, Eq)
+
+-- | EVarBind as defined before drathier expanded it to allow more than simple var lhs's
+pattern EVarBind :: Text -> Erl -> Erl
+pattern EVarBind name e = EBind (EVar name) e
 
 -- | Simple 0-arity version of EFun1
 pattern EFun0 :: Maybe Text -> Erl -> Erl
@@ -325,7 +329,7 @@ everywhereOnErl f = go
   go (EUnary op e) = f $ EUnary op (go e)
   go (EBinary op e1 e2) = f $ EBinary op (go e1) (go e2)
   go (EFunctionDef t ssann a ss e) = f $ EFunctionDef t ssann a ss (go e)
-  go (EVarBind x e) = f $ EVarBind x (go e)
+  go (EBind x e) = f $ EBind (go x) (go e)
   go (EFunFull fname args) = f $ EFunFull fname $ map (second go) args
   go (EApp meta e es) = f $ EApp meta (go e) (map go es)
   go (EBlock es) = f $ EBlock (map go es)
@@ -354,7 +358,7 @@ everywhereOnErlTopDownM f = f >=> go
   go (EUnary op e) = EUnary op <$> f' e
   go (EBinary op e1 e2) = EBinary op <$> f' e1 <*> f' e2
   go (EFunctionDef t ssann a ss e) = EFunctionDef t ssann a ss <$> f' e
-  go (EVarBind x e) = EVarBind x <$> f' e
+  go (EBind x e) = EBind <$> f' x <*> f' e
   go (EFunFull fname args) = EFunFull fname <$> fargs args
   go (EApp meta e es) = EApp meta <$> f' e <*> traverse f' es
   go (EBlock es) = EBlock <$> traverse f' es
@@ -383,7 +387,7 @@ everywhereOnErlTopDownMThen f = f'
   go (EUnary op e) = EUnary op <$> f' e
   go (EBinary op e1 e2) = EBinary op <$> f' e1 <*> f' e2
   go (EFunctionDef t ssann a ss e) = EFunctionDef t ssann a ss <$> f' e
-  go (EVarBind x e) = EVarBind x <$> f' e
+  go (EBind x e) = EBind <$> f' x <*> f' e
   go (EFunFull fname args) = EFunFull fname <$> fargs args
   go (EApp meta e es) = EApp meta <$> f' e <*> traverse f' es
   go (EBlock es) = EBlock <$> traverse f' es
@@ -404,7 +408,7 @@ everything (<>.) f = go
   go e0@(EUnary _ e) = f e0 <>. go e
   go e0@(EBinary _ e1 e2) = f e0 <>. go e1 <>. go e2
   go e0@(EFunctionDef _ _ _ _ e) = f e0 <>. go e
-  go e0@(EVarBind _ e) = f e0 <>. go e
+  go e0@(EBind x e) = f e0 <>. go x <>. go e
   go e0@(EFunFull _ args) = foldl (<>.) (f e0) (map (go . snd) args)
   go e0@(EApp _ e es) = foldl (<>.) (f e0 <>. go e) (map go es)
   go e0@(EBlock es) = foldl (<>.) (f e0) (map go es)

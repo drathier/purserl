@@ -14,18 +14,18 @@ import Data.Text qualified as T
 import Data.List (nub, concatMap)
 
 addMemoizeAnnotations :: Erl -> Erl
--- addMemoizeAnnotations _memoizable = id
-addMemoizeAnnotations = everywhereOnErl go
-  where
-  go e = case e of
-    EApp SyntheticApp _ _
-      -> memoizeAnnotation e
-    -- without using the annotation, but inferring things that seem to have fully applied tc args
-    -- EApp' _ (EAtomLiteral f) args
-    --   | Just n <- Map.lookup f memoizable
-    --   , length args == n
-    --   -> memoizeAnnotation e
-    other -> other
+addMemoizeAnnotations = id
+-- addMemoizeAnnotations = everywhereOnErl go
+--   where
+--   go e = case e of
+--     EApp SyntheticApp _ _
+--       -> memoizeAnnotation e
+--     -- without using the annotation, but inferring things that seem to have fully applied tc args
+--     -- EApp' _ (EAtomLiteral f) args
+--     --   | Just n <- Map.lookup f memoizable
+--     --   , length args == n
+--     --   -> memoizeAnnotation e
+--     other -> other
 
 memoizeAnnotation :: Erl -> Erl
 -- memoizeAnnotation emem = EApp RegularApp (EVar "?MEMOIZE") [emem]

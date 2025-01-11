@@ -413,6 +413,7 @@ library
     Language.PureScript.Erl.CodeGen.Common
     Language.PureScript.Erl.CodeGen.Constants
     Language.PureScript.Erl.CodeGen.Constants.PureScriptModules
+    Language.PureScript.Erl.CodeGen.Inliner
     Language.PureScript.Erl.CodeGen.Optimizer
     Language.PureScript.Erl.CodeGen.Optimizer.Blocks
     Language.PureScript.Erl.CodeGen.Optimizer.Common

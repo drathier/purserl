@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 -- |
 -- The core functional representation for binders
 --
@@ -7,6 +8,8 @@ import Prelude
 
 import Language.PureScript.AST.Literals (Literal)
 import Language.PureScript.Names (Ident, ProperName, ProperNameType(..), Qualified)
+import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
 
 -- |
 -- Data type for binders
@@ -31,7 +34,8 @@ data Binder a
   -- |
   -- A binder which binds its input to an identifier
   --
-  | NamedBinder a Ident (Binder a) deriving (Eq, Ord, Show, Functor)
+  | NamedBinder a Ident (Binder a)
+  deriving (Eq, Ord, Show, Functor, Generic, NFData)
 
 
 extractBinderAnn :: Binder a -> a

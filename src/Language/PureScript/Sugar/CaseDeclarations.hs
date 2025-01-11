@@ -22,7 +22,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (NameKind(..))
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors(..), SimpleErrorMessage(..), addHint, errorMessage', parU, rethrow, withPosition)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, Qualified(..), freshIdent')
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, Qualified(..), freshIdent', freshIdent)
 import Language.PureScript.TypeChecker.Monad (guardWith)
 
 -- |
@@ -63,7 +63,7 @@ desugarGuardedExprs ss (Case scrut alternatives)
     -- we may evaluate the scrutinee more than once when a guard occurs.
     -- We bind the scrutinee to Vars here to mitigate this case.
     (scrut', scrut_decls) <- unzip <$> forM scrut (\e -> do
-      scrut_id <- freshIdent'
+      scrut_id <- freshIdent "GUARD"
       pure ( Var ss (Qualified ByNullSourcePos scrut_id)
            , ValueDecl (ss, []) scrut_id Private [] [MkUnguarded e]
            )
@@ -380,7 +380,7 @@ makeCaseDeclaration ss ident alternatives = do
       argNames = foldl1 resolveNames namedArgs
   args <- if allUnique (catMaybes argNames)
             then mapM argName argNames
-            else replicateM (length argNames) ((nullSourceSpan, ) <$> freshIdent')
+            else replicateM (length argNames) ((nullSourceSpan, ) <$> freshIdent "MCASE")
   let vars = map (Var ss . Qualified ByNullSourcePos . snd) args
       binders = [ CaseAlternative bs result | (bs, result) <- alternatives ]
   let value = foldr (Abs . uncurry VarBinder) (Case vars binders) args

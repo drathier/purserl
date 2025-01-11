@@ -1,7 +1,8 @@
 -- |
 -- This module provides basic inlining capabilities
 module Language.PureScript.Erl.CodeGen.Optimizer.Inliner
-  ( inlineCommonValues,
+  ( inlineCommonValuesTopDown,
+    inlineCommonValuesBottomUp,
     inlineCommonOperators,
     inlineCommonFnsM,
     evaluateIifes,
@@ -28,6 +29,7 @@ import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Common
 import Language.PureScript.PSString (PSString, mkString)
 import Prelude.Compat
+import Debug.Trace (trace, traceM)
 
 isEVar :: Erl -> Bool
 isEVar (EVar _) = True
@@ -127,8 +129,8 @@ replaceAppliedFunRefs = everywhereOnErl go
         EApp meta (EAtomLiteral name) args
     go other = other
 
-inlineCommonValues :: (Erl -> Erl) -> Erl -> Erl
-inlineCommonValues expander = everywhereOnErl convert
+inlineCommonValuesBottomUp :: (Erl -> Erl) -> Erl -> Erl
+inlineCommonValuesBottomUp expander = everywhereOnErl convert
   where
     convert :: Erl -> Erl
     convert expr =
@@ -156,6 +158,16 @@ inlineCommonValues expander = everywhereOnErl convert
                 []
               )
 
+        ECaseOf cond [(EBinder (EVar var), rhs)] ->
+          replaceIdents [(var, cond)] rhs
+
+        ECaseOf cond [(EBinder pat, rhs)] | [] <- varsInExpr pat ->
+          rhs
+
+        -- TODO[drathier]: untested
+        -- ECaseOf (ETupleLiteral conds) [(EBinder (ETupleLiteral vars), rhs)] | evars <- [var | EVar var <- vars], length conds == length vars ->
+        --   replaceIdents (zip evars conds) rhs
+
         fn
           | isFn (EC.dataUnit, EC.unit) fn -> EAtomLiteral $ Atom Nothing "unit"
           | isFn (EC.erlDataMap, EC.empty) fn -> EMapLiteral []
@@ -168,6 +180,118 @@ inlineCommonValues expander = everywhereOnErl convert
     fnOne = (EC.dataSemiring, snd $ C.P_one)
     fnBottom = (EC.dataBounded, snd $ C.P_bottom)
     fnTop = (EC.dataBounded, snd $ C.P_top)
+
+inlineCommonValuesTopDown :: (Erl -> Erl) -> Erl -> Erl
+inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
+  where
+    convert :: Erl -> Erl
+    convert expr =
+      case expander expr of
+
+--        EApp _ (EFun1 Nothing var1 (EApp _ (EFun1 Nothing var2 (EApp _ (EFun1 Nothing var3 (EApp _ (EFun1 Nothing var4 (EApp _ (EFun1 Nothing var5 body) [arg5])) [arg4])) [arg3])) [arg2])) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, EVarBind var5 arg5, convert body]
+--        EApp _ (EFun1 Nothing var1 (EApp _ (EFun1 Nothing var2 (EApp _ (EFun1 Nothing var3 (EApp _ (EFun1 Nothing var4 body) [arg4])) [arg3])) [arg2])) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, convert body]
+--        EApp _ (EFun1 Nothing var1 (EApp _ (EFun1 Nothing var2 (EApp _ (EFun1 Nothing var3 body) [arg3])) [arg2])) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, convert body]
+--        EApp _ (EFun1 Nothing var1 (EApp _ (EFun1 Nothing var2 body) [arg2])) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, convert body]
+--        EApp _ (EFun1 Nothing var1 body) [arg1] -> EBlock [EVarBind var1 arg1, convert body]
+
+--        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 (EFun1 Nothing var5 body))))) [arg5]) [arg4]) [arg3]) [arg2]) [arg1] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] (convert body)
+--        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 body)))) [arg4]) [arg3]) [arg2]) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, convert body]
+--        EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 body))) [arg3]) [arg2]) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, convert body]
+--        EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 body)) [arg2]) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, convert body]
+--        EApp _ (EFun1 Nothing var1 body) [arg1] -> EBlock [EVarBind var1 arg1, convert body]
+
+        EApp _ (EFun0 _ body) [] -> body
+
+        -- [drathier]: needlessly _@123-wrapped top-level functions, take the inner var and use that instead of the _@123 var.
+        -- TODO[drathier]: perf: these only ever apply at top-level, so no need to check for them while recursing. They won't apply for let-bound functions either, as EFunctionDef is only valid at top-level. Otherwise it's an EFunFull.
+        EFunctionDef mType mSS name [var1a, var2a, var3a, var4a, var5a] (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i (EFun1 Nothing var4i (EFun1 Nothing var5i body))))) [EVar var1b]) [EVar var2b]) [EVar var3b]) [EVar var4b]) [EVar var5b]) | var1a == var1b, var2a == var2b, var3a == var3b, var4a == var4b, var5a == var5b -> EFunctionDef mType mSS name [var1i, var2i, var3i, var4i, var5i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i), (var4a, EVar var4i), (var4b, EVar var4i), (var5a, EVar var5i), (var5b, EVar var5i)] body) -- TODO[drathier]: this clause is untested, only tested 1-3 args
+        EFunctionDef mType mSS name [var1a, var2a, var3a, var4a] (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i (EFun1 Nothing var4i body)))) [EVar var1b]) [EVar var2b]) [EVar var3b]) [EVar var4b]) | var1a == var1b, var2a == var2b, var3a == var3b, var4a == var4b -> EFunctionDef mType mSS name [var1i, var2i, var3i, var4i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i), (var4a, EVar var4i), (var4b, EVar var4i)] body) -- TODO[drathier]: this clause is untested, only tested 1-3 args
+        EFunctionDef mType mSS name [var1a, var2a, var3a] (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i body))) [EVar var1b]) [EVar var2b]) [EVar var3b]) | var1a == var1b, var2a == var2b, var3a == var3b -> EFunctionDef mType mSS name [var1i, var2i, var3i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i)] body)
+        EFunctionDef mType mSS name [var1a, var2a] (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i body)) [EVar var1b]) [EVar var2b]) | var1a == var1b, var2a == var2b -> EFunctionDef mType mSS name [var1i, var2i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i)] body)
+        EFunctionDef mType mSS name [var1a] (EApp _ (EFun1 Nothing var1i body) [EVar var1b]) | var1a == var1b -> EFunctionDef mType mSS name [var1i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i)] body)
+
+
+        -- [drathier]: immediately called funs, inline their vars
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
+        EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
+        EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> replaceIdents [(var1, arg1), (var2, arg2)] body
+        EApp _ (EFun1 _ var1 body) [arg1] -> replaceIdents [(var1, arg1)] body
+        -- [drathier]: technically the `Just _` version might not be safe, but at time of writing that the function name is never used. TODO[drathier]: change guard code gen to generate anonymous functions instead of functions named `GUARD`.
+--        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 (EFun1 Nothing var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
+--        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
+--        EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 body))) [arg1]) [arg2]) [arg3] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
+--        EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 body)) [arg1]) [arg2] -> replaceIdents [(var1, arg1), (var2, arg2)] body
+--        EApp _ (EFun1 Nothing var1 body) [arg1] -> replaceIdents [(var1, arg1)] body
+
+
+        -- TODO[drathier]: occours check needed here or not? yes
+        -- EFunctionDef _ _ _ vars (EApp _ body args) | map EVar vars == args -> body
+        EFunFull _ [(EFunBinder vars _, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
+
+        EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> v
+        EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs
+
+
+        -- EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EApp RegularApp (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")) [EVar "_@251"])]
+        -- (EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EVar "_@251")])
+
+        -- EFunctionDef Nothing (Just ss) (Atom Nothing "eqNewtypeRep_156") [] (EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EVar "_@251")]),
+        -- EFunctionDef Nothing (Just ss) (Atom Nothing "eqNewtypeRep_156") [] (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")),
+
+-- TODO[drathier]: replace this pattern match with pattern unwrapping? i.e. replace EFun1 EVar with FunDef EBind?
+--        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 (EFun1 Nothing var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, EVarBind var5 arg5, body]
+--        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, body]
+--        EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 body))) [arg1]) [arg2]) [arg3] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, body]
+--        EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 body)) [arg1]) [arg2] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, body]
+--        EApp _ (EFun1 Nothing var1 body) [arg1] -> EBlock [EVarBind var1 arg1, body]
+
+
+        -- EApp _ (EFunFull Nothing [(EFunBinder [pat1] Nothing, body)]) [arg1] -> EBlock [EBind pat1 arg1, convert body]
+
+        other -> other
+
+isEAtomLiteral a =
+  case a of
+    EAtomLiteral _ -> True
+    _ -> False
+
+findKey k fields =
+  case fields of
+    [] -> Nothing
+    (k2,v):_ | k == runAtom k2 -> Just v
+    _:rest -> findKey k rest
+
+allFieldsAreMapGetSame :: Maybe Erl -> [(Atom, Erl)] -> Maybe Erl
+allFieldsAreMapGetSame mrhs fields =
+  case fields of
+    [] -> mrhs
+    (key1,EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key2, rhs]):rest | key1 == key2 ->
+      case mrhs of
+        Nothing -> allFieldsAreMapGetSame (Just rhs) rest
+        Just oldRhs ->
+          case oldRhs == rhs of
+            True -> allFieldsAreMapGetSame (Just rhs) rest
+            False -> Nothing
+    (_:rest) -> Nothing
+
+varsInExpr e =
+  everything (<>)
+    (\erl ->
+      case erl of
+        EVar var -> [var]
+        _ -> []
+    ) e
+
+
+isAnyMentioned :: [Text] -> [Text] -> Bool
+isAnyMentioned needles hay =
+  case needles of
+    (n:ns) ->
+      case elem n hay of
+        True -> True
+        False -> isAnyMentioned ns hay
+    [] -> False
 
 data Binary
   = Binary (Text, PSString) (Text, PSString) BinaryOperator
