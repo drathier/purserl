@@ -883,8 +883,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       ds2 <- mapM bindToErl3 ds
       ret <- valueToErl val
       let ds3 = foldr ($) ret ds2
-      -- pure ds3
-      pure $ iife1 (ds3)
+      pure ds3
 
     -- valueToErl' _ (Let _ ds val) = do
     --   ret <- valueToErl val
@@ -900,8 +899,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
              in foldr (EFun1 Nothing . identToVar) body fields
        in pure createFn
 
-    iife exprs = EApp RegularApp (EFun0 Nothing (EBlock exprs)) []
-    iife1 expr = EApp RegularApp (EFun0 Nothing expr) []
+    -- iife exprs = EApp RegularApp (EFun0 Nothing (EBlock exprs)) []
+    -- iife1 expr = EApp RegularApp (EFun0 Nothing expr) []
 
     constructorLiteral name args = ETupleLiteral (EAtomLiteral (Atom Nothing (toAtomName name)) : args)
 
