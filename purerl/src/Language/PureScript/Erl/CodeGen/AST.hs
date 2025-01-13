@@ -71,6 +71,15 @@ data Erl
   --
   | EBlock [Erl] -- Array should be nonempty
   -- |
+  -- An effectful variable bind, separate from EBlock to keep track of which function calls are effectful
+  --
+  | EAndThen Erl Erl
+  -- |
+  -- One line in an EBlock, separate from EBlock to avoid having to flatten blocks
+  --
+  | ELet Erl Erl
+
+  -- |
   -- Tuple literal {a, 1, "C"}
   --
   | ETupleLiteral [Erl]
@@ -342,6 +351,9 @@ everywhereOnErl f = go
   go (EListCons es e) = f $ EListCons (map go es) (go e)
   go (ETryAnyAny e1 e2) = f $ ETryAnyAny (go e1) (go e2)
 
+  go (EAndThen a b) = f $ EAndThen (go a) (go b)
+  go (ELet a b) = f $ ELet (go a) (go b)
+
   go other = f other
 
 everywhereOnErlTopDown :: (Erl -> Erl) -> Erl -> Erl
@@ -370,6 +382,10 @@ everywhereOnErlTopDownM f = f >=> go
   go (EListLiteral es) = EListLiteral <$> traverse f' es
   go (EListCons es e) = EListCons <$> traverse f' es <*> f' e
   go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
+
+  go (EAndThen a b) = EAndThen <$> f' a <*> f' b
+  go (ELet a b) = ELet <$> f' a <*> f' b
+
   go other = f other
 
 -- Sorry. Really want a type that allows "child context" under binders etc
@@ -399,6 +415,8 @@ everywhereOnErlTopDownMThen f = f'
   go (EListLiteral es) = EListLiteral <$> traverse f' es
   go (EListCons es e) = EListCons <$> traverse f' es <*> f' e
   go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
+  go (EAndThen a b) = EAndThen <$> f' a <*> f' b
+  go (ELet a b) = ELet <$> f' a <*> f' b
   go other = fst <$> f other
   
 everything :: forall r. (r -> r -> r) -> (Erl -> r) -> Erl -> r
@@ -420,4 +438,5 @@ everything (<>.) f = go
   go e0@(EListLiteral es) = foldl (<>.) (f e0) (map go es)
   go e0@(EListCons es e) = foldl (<>.) (f e0) (map go $ es <> [e])
   go e0@(ETryAnyAny e1 e2) = f e0 <>. go e1 <>. go e2
+  go e0@(EAndThen a b) = f e0 <>. f a <>. f b
   go other = f other

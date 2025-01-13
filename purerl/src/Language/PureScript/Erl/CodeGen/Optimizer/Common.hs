@@ -81,8 +81,9 @@ isRebound x =
 
 -- TODO figure this into generic traversal with context pattern
 replaceIdents :: [(Text, Erl)] -> Erl -> Erl
-replaceIdents vars = go
+replaceIdents unfilteredVars = go
   where
+    vars = filter (\(k,v) -> k /= "_") unfilteredVars
     -- Placeholder
     f :: Erl -> Erl
     f = id

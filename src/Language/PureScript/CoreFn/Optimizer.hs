@@ -123,7 +123,7 @@ optimizeDataFunctionApply e =
     -- -- (control_bind@ps:bind((either@ps:bindEither())))
     -- (App a (Var b fn) (Var c impl)) | C.I_bind <- fn, C.I_bindEither <- impl -> Var a C.I_eitherBind
     -- (control_bind@ps:bind((effect@ps:bindEffect())))
-    (App a (Var b fn) (Var c impl)) | C.I_bind <- fn, C.I_bindEffect <- impl -> Var a C.I_effectBindE
+    -- (App a (Var b fn) (Var c impl)) | C.I_bind <- fn, C.I_bindEffect <- impl -> Var a C.I_effectBindE
     -- (App a (Var b fn) (Var c impl)) | C.I_eBind <- fn, C.I_bindEffect <- impl -> Var a C.I_effectBindE
 
 
@@ -137,9 +137,9 @@ optimizeDataFunctionApply e =
 
     -- ASSUMPTION[drathier]: all discard instances are implemented as `discard = bind`
     -- (control_bind@ps:discard((control_bind@ps:discardUnit()), (effect@ps:bindEffect())))
-    (App a (App b (Var c fn) (Var d _discardImpl)) (Var e bindImpl)) | C.I_discard <- fn, C.I_bindEffect <- bindImpl -> Var a C.I_effectBindE
+    -- (App a (App b (Var c fn) (Var d _discardImpl)) (Var e bindImpl)) | C.I_discard <- fn, C.I_bindEffect <- bindImpl -> Var a C.I_effectBindE
     -- (e@ps:discard((control_bind@ps:discardUnit()))) -- wrong discard
-    (App a (Var b fn) (Var c _discardImpl)) | C.I_eDiscard <- fn -> Var a C.I_effectBindE
+    -- (App a (Var b fn) (Var c _discardImpl)) | C.I_eDiscard <- fn -> Var a C.I_effectBindE
     -- (App a (Var b fn) (Var c impl)) | C.I_discard <- fn, C.I_eDiscard <- impl -> Var a C.I_effectBindE
 -- -}
     _ -> e

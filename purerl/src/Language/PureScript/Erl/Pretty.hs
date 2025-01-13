@@ -78,12 +78,17 @@ literals = mkPattern' match
     <>
     -- [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> erlang:display({drathier_call3, ?MODULE, ?FUNCTION_NAME, ?LINE})," ]
     [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> " ]
-    <> case e of
-        EBlock es ->
+    <>
+    let f body =
           [ return $ emit "\n"
-          , withIndent $ prettyPrintBlockBody es
+          , withIndent body
           , return $ emit "\n"
           ]
+    in case e of
+        EAndThen a b -> f $ runLetAndThen prettyPrintBlockBody a b
+        ELet a b -> f $ runLetAndThen prettyPrintBlockBody a b
+        EBlock es -> f (prettyPrintBlockBody es)
+
         _ -> [prettyPrintErl' e]
     )
     
@@ -134,6 +139,9 @@ literals = mkPattern' match
     , return $ emit "end"
     ]
 
+  match (EAndThen a b) = runLetAndThen (match . EBlock) a b
+  match (ELet a b) = runLetAndThen (match . EBlock) a b
+
   match (EBlock es) =
     mconcat <$> sequence
       [ return $ emit "begin\n"
@@ -160,6 +168,8 @@ literals = mkPattern' match
     , return $ emit "end"
     ]
     where
+      matchBody (EAndThen a b) = runLetAndThen prettyPrintBlockBody a b
+      matchBody (ELet a b) = runLetAndThen prettyPrintBlockBody a b
       matchBody (EBlock es) = prettyPrintBlockBody es
       matchBody _ = mconcat <$> sequence
           [ currentIndent
@@ -175,6 +185,8 @@ literals = mkPattern' match
         prettyPrintBinders :: (Emit gen) => [(EFunBinder, Erl)] -> StateT PrinterState Maybe gen
         prettyPrintBinders bs = intercalate (emit ";\n") <$> mapM prettyPrintBinder bs
 
+        matchBody (EAndThen a b) = runLetAndThen prettyPrintBlockBody a b
+        matchBody (ELet a b) = runLetAndThen prettyPrintBlockBody a b
         matchBody (EBlock es) = prettyPrintBlockBody es
         matchBody e = mconcat <$> sequence
             [ currentIndent
@@ -277,6 +289,17 @@ escapeQuotedVar x =
 
 fromChar :: Char -> Word16
 fromChar = toEnum . fromEnum
+
+runLetAndThen :: (Emit gen) => ([Erl] -> StateT PrinterState Maybe gen) -> Erl -> Erl -> StateT PrinterState Maybe gen
+runLetAndThen runBlock arg1 arg2 =
+  let
+      f e acc =
+        case e of
+          EAndThen a b -> f b (a:acc)
+          ELet a b -> f b (a:acc)
+          _ -> reverse (e:acc)
+  in
+  runBlock $ f (EAndThen arg1 arg2) []
 
 prettyPrintBlockBody :: (Emit gen) => [Erl] -> StateT PrinterState Maybe gen
 prettyPrintBlockBody es = do

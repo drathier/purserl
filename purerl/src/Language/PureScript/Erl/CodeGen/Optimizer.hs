@@ -41,7 +41,8 @@ import Language.PureScript.Erl.CodeGen.Inliner qualified as Inliner
 -- Apply a series of optimizer passes to simplified Javascript code
 --
 optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
--- optimize exports es = pure es
+optimize exports es = pure es
+-- optimize exports es = removeUnusedFuns exports <$> pure (Inliner.inline es)
 optimize exports es = removeUnusedFuns exports <$> do
   es2 <- traverse go es
   let es3 = Inliner.inline es2
@@ -49,6 +50,26 @@ optimize exports es = removeUnusedFuns exports <$> do
   pure es4
 
   where
+--  go2 erl =
+--   do
+--    erl' <-  (pure . applyAll
+--      [ inlineCommonOperators EC.effect EC.effectDictionaries expander
+--      -- , inlineCommonValuesTopDown expander
+--      , inlineCommonValuesBottomUp expander
+--      ]
+--      ) erl
+--    -- erl'' <- untilFixedPoint tidyUp erl'
+--    erl'' <- pure erl'
+--
+--    -- erl2 <- Inliner.inline erl
+--
+--    -- erl'' <- untilFixedPoint tidyUp
+--    --   =<< untilFixedPoint (return . magicDo expander)
+--    --   erl'
+--    -- pure $ addMemoizeAnnotations erl''
+--    pure $ addMemoizeAnnotations erl''
+--    -- pure $ addMemoizeAnnotations erl2
+
   go erl =
    do
     erl' <-  (pure . applyAll
@@ -57,8 +78,8 @@ optimize exports es = removeUnusedFuns exports <$> do
       , inlineCommonValuesBottomUp expander
       ]
       ) erl
-    erl'' <- untilFixedPoint tidyUp erl'
-    -- erl'' <- pure erl'
+    -- erl'' <- untilFixedPoint tidyUp erl'
+    erl'' <- pure erl'
 
     -- erl2 <- Inliner.inline erl
 
