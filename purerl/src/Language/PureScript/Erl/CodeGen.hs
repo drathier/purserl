@@ -435,8 +435,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           fun = curriedLambda body' args
       fident <- fmap (Ident . ("f" <>) . T.pack . show) fresh
       let var = Qualified P.ByNullSourcePos fident
-          wrap e = EBlock [EVarBind (identToVar fident) fun, e]
-          -- wrap e = ELet (EVarBind (identToVar fident) fun) e
+          -- wrap e = EBlock [EVarBind (identToVar fident) fun, e]
+          wrap e = ELet (EVarBind (identToVar fident) fun) e
       (idents, erl, env) <- generateFunctionOverloads Nothing True Nothing (ssAnn nullSourceSpan) ident (Atom Nothing $ runIdent' ident) (Var (ssAnn nullSourceSpan) var) wrap
       let combinedTEnv = M.union env (maybe M.empty snd ffiTyEnv)
       pure (idents, erl, (ident,) . fst <$> ffiTyEnv, combinedTEnv)
@@ -515,7 +515,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       (maybeVarName, wrapper) <- if inLazyRecGroup then
         do
           lazyVarName <- freshNameErl' "LazyCtxRef"
-          pure (Just lazyVarName, \e -> EBlock [ EVarBind lazyVarName $ litAtom "top_level", e ])
+          pure (Just lazyVarName, \e -> ELet (EVarBind lazyVarName $ litAtom "top_level") e)
         else
           pure (Nothing, id)
       generateFunctionOverloads maybeVarName False (Just ss) eann ident ident' val' wrapper
