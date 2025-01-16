@@ -119,11 +119,14 @@ data ProgressMessage
   -- = CompilingModule ModuleName (Maybe (Int, Int)) String
   = CompilingModule ModuleName (Maybe (Int, Int))
   -- ^ Compilation started for the specified module
+  | CompileMeta T.Text
+  -- ^ [drathier]: Various stuff we want to print to describe to purerlex where we are in the compilation flow
   deriving (Show, Eq, Ord)
 
 -- | Render a progress message
 renderProgressMessage :: T.Text -> ProgressMessage -> T.Text
 --renderProgressMessage infx (CompilingModule mn mi ms) =
+renderProgressMessage infx (CompileMeta t) = t
 renderProgressMessage infx (CompilingModule mn mi) =
   T.concat
     [ renderProgressIndex mi

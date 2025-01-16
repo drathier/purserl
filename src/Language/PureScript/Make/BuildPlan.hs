@@ -102,11 +102,11 @@ markComplete
 markComplete buildPlan moduleName result = do
   liftBase $ putStrLn $ case result of
       BuildJobSucceeded _ _ ->
-        "### BuildJobSucceeded:" <> T.unpack (runModuleName moduleName)
-      BuildJobFailed _ -> 
-        "### BuildJobFailed:" <> T.unpack (runModuleName moduleName)
+        "### CS.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
+      BuildJobFailed _ ->
+        "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
       BuildJobSkipped ->
-        "### BuildJobSkipped:" <> T.unpack (runModuleName moduleName)
+        "### CS.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
   let BuildJob rVar = fromMaybe (internalError "make: markComplete no barrier") $ M.lookup moduleName (bpBuildJobs buildPlan)
   putMVar rVar result
 

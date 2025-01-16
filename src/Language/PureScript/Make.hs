@@ -58,7 +58,8 @@ import System.Environment (lookupEnv)
 import Debug.Trace
 import System.IO.Unsafe (unsafePerformIO)
 import PrettyPrint
-
+import Data.Text qualified as T
+import Data.Text.IO qualified as T
 
 -- purserl
 import Control.Applicative ((<|>))
@@ -106,13 +107,16 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
       withPrim = importPrim m
   lint withPrim
 
+  progress $ CompileMeta ("### CS.goDesugar1[" <> runModuleName moduleName <> "]")
   ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
     -- lift $ progress $ CompilingModule moduleName moduleIndex "2"
     (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty)
+    lift $ progress $ CompileMeta ("### CS.goTypeCheck2[" <> runModuleName moduleName <> "]")
     -- lift $ progress $ CompilingModule moduleName moduleIndex "3"
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
     -- lift $ progress $ CompilingModule moduleName moduleIndex "4"
     (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
+    lift $ progress $ CompileMeta ("### CS.goLintImports3[" <> runModuleName moduleName <> "]")
     -- lift $ progress $ CompilingModule moduleName moduleIndex "5"
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
           M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
@@ -120,6 +124,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     -- known which newtype constructors are used to solve Coercible
     -- constraints in order to not report them as unused.
     censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
+    lift $ progress $ CompileMeta ("### CS.goDesugarCaseGuards4[" <> runModuleName moduleName <> "]")
     return (checked, checkEnv)
 
   -- progress $ CompilingModule moduleName moduleIndex "6"
@@ -129,16 +134,19 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   -- reports as not-exhaustive.
   (deguarded, nextVar') <- runSupplyT nextVar $ do
     desugarCaseGuards elaborated
+  progress $ CompileMeta ("### CS.goCreateBindingGroups5[" <> runModuleName moduleName <> "]")
 
   let upstreamDBs = M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
 
   regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
+  progress $ CompileMeta ("### CS.goFfiCodegen6[" <> runModuleName moduleName <> "]")
   let mod' = Module ss coms moduleName regrouped exps
       corefn = CF.moduleToCoreFn env' mod'
       (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
       (renamedIdents, renamed) = renameInModule optimized
       exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
   ffiCodegen renamed
+  progress $ CompileMeta ("### CS.goCodegen7[" <> runModuleName moduleName <> "]")
 
   -- progress $ CompilingModule moduleName moduleIndex "7"
   -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
@@ -168,14 +176,19 @@ make :: forall m. (MonadBaseControl IO m, MonadError MultipleErrors m, MonadWrit
      -> [CST.PartialResult Module]
      -> m [ExternsFile]
 make ma@MakeActions{..} ms = do
+  progress $ CompileMeta ("### CS.goReadCacheDb8")
+
   checkModuleNames
   cacheDb <- readCacheDb
+  progress $ CompileMeta ("### CS.goSortModules9")
 
   -- let !_ = unsafePerformIO $ putStrLn (show ("cacheDb", cacheDb))
 
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
+  progress $ CompileMeta ("### CS.goConstructBuildPlan10")
 
   (buildPlan, newCacheDb) <- BuildPlan.construct ma cacheDb (sorted, graph)
+  progress $ CompileMeta ("### CS.goFork11")
 
   -- Limit concurrent module builds to the number of capabilities as
   -- (by default) inferred from `+RTS -N -RTS` or set explicitly like `-N4`.
@@ -278,6 +291,8 @@ make ma@MakeActions{..} ms = do
 
   buildModule :: QSem -> BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
   buildModule lock buildPlan moduleName cnt fp pwarnings mres deps = do
+    progress $ CompileMeta ("### CS.goWaitForDepsMvars12[" <> runModuleName moduleName <> "]")
+
     -- NOTE[drathier]: catchError here only ever fires if there's an error in a module we're building; it does not fire if a module is skipped because upstream modules failed to build.
     result <- flip catchError (return . BuildJobFailed) $ do
       let pwarnings' = CST.toMultipleWarnings fp pwarnings
@@ -287,6 +302,7 @@ make ma@MakeActions{..} ms = do
       -- module should be rebuilt, so the first thing to do is to wait on the
       -- MVars for the module's dependencies.
       mexterns <- fmap unzip . sequence <$> traverse (getResult buildPlan) deps
+      progress $ CompileMeta ("### CS.goBuildEnv13[" <> runModuleName moduleName <> "]")
 
       case mexterns of
         Just (_, externs) -> do
