@@ -15,6 +15,7 @@ import Control.Arrow (second)
 
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.AST.SourcePos
+import Debug.Trace (traceM, trace)
 
 -- |
 -- Data type for simplified Erlang expressions
@@ -337,7 +338,7 @@ everywhereOnErl f = go
   go :: Erl -> Erl
   go (EUnary op e) = f $ EUnary op (go e)
   go (EBinary op e1 e2) = f $ EBinary op (go e1) (go e2)
-  go (EFunctionDef t ssann a ss e) = f $ EFunctionDef t ssann a ss (go e)
+  go (EFunctionDef t ssann a vs e) = f $ EFunctionDef t ssann a vs (go e)
   go (EBind x e) = f $ EBind (go x) (go e)
   go (EFunFull fname args) = f $ EFunFull fname $ map (second go) args
   go (EApp meta e es) = f $ EApp meta (go e) (map go es)
@@ -350,11 +351,280 @@ everywhereOnErl f = go
   go (EListLiteral es) = f $ EListLiteral (map go es)
   go (EListCons es e) = f $ EListCons (map go es) (go e)
   go (ETryAnyAny e1 e2) = f $ ETryAnyAny (go e1) (go e2)
-
   go (EAndThen a b) = f $ EAndThen (go a) (go b)
   go (ELet a b) = f $ ELet (go a) (go b)
 
   go other = f other
+
+everywhereOnErlBottomUpM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
+everywhereOnErlBottomUpM f expr =
+  let go ex =
+        case ex of
+          EVar {} -> f ex
+          EAtomLiteral {} -> f ex
+          ENumericLiteral {} -> f ex
+          EStringLiteral {} -> f ex
+          ECharLiteral {} -> f ex
+          EFunRef {} -> f ex
+          EComment {} -> f ex
+          EAttribute {} -> f ex
+          ESpec {} -> f ex
+          EType {} -> f ex
+
+          EUnary op e -> f =<< EUnary op <$> go e
+          EBinary op e1 e2 -> f =<< EBinary op <$> go e1 <*> go e2
+          EFunctionDef t ssann a ss e -> f =<< EFunctionDef t ssann a ss <$> go e
+          EBind x e -> f =<< EBind <$> go x <*> go e
+          EFunFull fname args -> f =<< EFunFull fname <$> traverse (traverse go) args
+          EApp meta e es -> f =<< EApp meta <$> go e <*> traverse go es
+          EBlock es -> f =<< EBlock <$> traverse go es
+          ETupleLiteral es -> f =<< ETupleLiteral <$> traverse go es
+          EMapLiteral binds -> f =<< EMapLiteral <$> traverse (traverse go) binds
+          EMapPattern binds -> f =<< EMapPattern <$> traverse (traverse go) binds
+          EMapUpdate e binds -> f =<< EMapUpdate <$> go e <*> traverse (traverse go) binds
+          ECaseOf e binds -> f =<< ECaseOf <$> go e <*> traverse (traverse go) binds
+          EListLiteral es -> f =<< EListLiteral <$> traverse go es
+          EListCons es e -> f =<< EListCons <$> traverse go es <*> go e
+          ETryAnyAny e1 e2 -> f =<< ETryAnyAny <$> go e1 <*> go e2
+          EAndThen a b -> f =<< EAndThen <$> go a <*> go b
+          ELet a b -> f =<< ELet <$> go a <*> go b
+  in go expr
+
+everywhereOnErlBottomUpLeftToRightM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
+everywhereOnErlBottomUpLeftToRightM f expr =
+  let go ex =
+        case ex of
+          EVar {} -> f ex
+          EAtomLiteral {} -> f ex
+          ENumericLiteral {} -> f ex
+          EStringLiteral {} -> f ex
+          ECharLiteral {} -> f ex
+          EFunRef {} -> f ex
+          EComment {} -> f ex
+          EAttribute {} -> f ex
+          ESpec {} -> f ex
+          EType {} -> f ex
+
+          EUnary op e -> do
+            e' <- go e
+            f (EUnary op e')
+          EBinary op e1 e2 -> do
+            e1' <- go e1
+            e2' <- go e2
+            f (EBinary op e1' e2')
+          EFunctionDef t ssann a ss e -> do
+            e' <- go e
+            f (EFunctionDef t ssann a ss e')
+          EBind x e -> do
+            x' <- go x
+            e' <- go e
+            f (EBind x' e')
+          EFunFull fname args -> do
+            args' <- traverse (traverse go) args
+            f (EFunFull fname args')
+          EApp meta e es -> do
+            e' <- go e
+            es' <- traverse go es
+            f (EApp meta e' es')
+          EBlock es -> do
+            es' <- traverse go es
+            f (EBlock es')
+          ETupleLiteral es -> do
+            es' <- traverse go es
+            f (ETupleLiteral es')
+          EMapLiteral binds -> do
+            binds' <- traverse (traverse go) binds
+            f (EMapLiteral binds')
+          EMapPattern binds -> do
+            binds' <- traverse (traverse go) binds
+            f (EMapPattern binds')
+          EMapUpdate e binds -> do
+            e' <- go e
+            binds' <- traverse (traverse go) binds
+            f (EMapUpdate e' binds')
+          ECaseOf e binds -> do
+            e' <- go e
+            binds' <- traverse (traverse go) binds
+            f (ECaseOf e' binds')
+          EListLiteral es -> do
+            es' <- traverse go es
+            f (EListLiteral es')
+          EListCons es e -> do
+            es' <- traverse go es
+            e' <- go e
+            f (EListCons es' e')
+          ETryAnyAny e1 e2 -> do
+            e1' <- go e1
+            e2' <- go e2
+            f (ETryAnyAny e1' e2')
+          EAndThen a b -> do
+            a' <- go a
+            b' <- go b
+            f (EAndThen a' b')
+          ELet a b -> do
+            a' <- go a
+            b' <- go b
+            f (ELet a' b')
+  in go expr
+
+everywhereOnErlTopDownLeftToRightM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
+everywhereOnErlTopDownLeftToRightM f expr =
+  let go exInput = do
+        ex <- f exInput
+        case ex of
+          EVar {} -> pure ex
+          EAtomLiteral {} -> pure ex
+          ENumericLiteral {} -> pure ex
+          EStringLiteral {} -> pure ex
+          ECharLiteral {} -> pure ex
+          EFunRef {} -> pure ex
+          EComment {} -> pure ex
+          EAttribute {} -> pure ex
+          ESpec {} -> pure ex
+          EType {} -> pure ex
+
+          EUnary op e -> do
+            e' <- go e
+            pure (EUnary op e')
+          EBinary op e1 e2 -> do
+            e1' <- go e1
+            e2' <- go e2
+            pure (EBinary op e1' e2')
+          EFunctionDef t ssann a ss e -> do
+            e' <- go e
+            pure (EFunctionDef t ssann a ss e')
+          EBind x e -> do
+            x' <- go x
+            e' <- go e
+            pure (EBind x' e')
+          EFunFull fname args -> do
+            args' <- traverse (traverse go) args
+            pure (EFunFull fname args')
+          EApp meta e es -> do
+            e' <- go e
+            es' <- traverse go es
+            pure (EApp meta e' es')
+          EBlock es -> do
+            es' <- traverse go es
+            pure (EBlock es')
+          ETupleLiteral es -> do
+            es' <- traverse go es
+            pure (ETupleLiteral es')
+          EMapLiteral binds -> do
+            binds' <- traverse (traverse go) binds
+            pure (EMapLiteral binds')
+          EMapPattern binds -> do
+            binds' <- traverse (traverse go) binds
+            pure (EMapPattern binds')
+          EMapUpdate e binds -> do
+            e' <- go e
+            binds' <- traverse (traverse go) binds
+            pure (EMapUpdate e' binds')
+          ECaseOf e binds -> do
+            e' <- go e
+            binds' <- traverse (traverse go) binds
+            pure (ECaseOf e' binds')
+          EListLiteral es -> do
+            es' <- traverse go es
+            pure (EListLiteral es')
+          EListCons es e -> do
+            es' <- traverse go es
+            e' <- go e
+            pure (EListCons es' e')
+          ETryAnyAny e1 e2 -> do
+            e1' <- go e1
+            e2' <- go e2
+            pure (ETryAnyAny e1' e2')
+          EAndThen a b -> do
+            a' <- go a
+            b' <- go b
+            pure (EAndThen a' b')
+          ELet a b -> do
+            a' <- go a
+            b' <- go b
+            pure (ELet a' b')
+  in go expr
+
+everywhereOnErlTopDownLeftToRightWithoutEBindPatM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
+everywhereOnErlTopDownLeftToRightWithoutEBindPatM f expr =
+  -- NOTE[drathier]: previous hard-to-spot bug here. Removing an ELet in the body of another ELet makes it really hard to remember to recurse into that newly added thing, and not just its children. Starting a new recursive call in f outside of this function will likely cause double traversals of children. Thus, we return a Maybe to signify if anything changed.
+  let go exInput = do
+        ex <- f exInput
+
+        case ex of
+          EVar {} -> pure ex
+          EAtomLiteral {} -> pure ex
+          ENumericLiteral {} -> pure ex
+          EStringLiteral {} -> pure ex
+          ECharLiteral {} -> pure ex
+          EFunRef {} -> pure ex
+          EComment {} -> pure ex
+          EAttribute {} -> pure ex
+          ESpec {} -> pure ex
+          EType {} -> pure ex
+
+          EUnary op e -> do
+            e' <- go e
+            pure (EUnary op e')
+          EBinary op e1 e2 -> do
+            e1' <- go e1
+            e2' <- go e2
+            pure (EBinary op e1' e2')
+          EFunctionDef t ssann a ss e -> do
+            e' <- go e
+            pure (EFunctionDef t ssann a ss e')
+          EBind x e -> do
+            x' <- pure x
+            e' <- go e
+            pure (EBind x' e')
+          EFunFull fname args -> do
+            args' <- traverse (traverse go) args
+            pure (EFunFull fname args')
+          EApp meta e es -> do
+            e' <- go e
+            es' <- traverse go es
+            pure (EApp meta e' es')
+          EBlock es -> do
+            es' <- traverse go es
+            pure (EBlock es')
+          ETupleLiteral es -> do
+            es' <- traverse go es
+            pure (ETupleLiteral es')
+          EMapLiteral binds -> do
+            binds' <- traverse (traverse go) binds
+            pure (EMapLiteral binds')
+          EMapPattern binds -> do
+            binds' <- traverse (traverse go) binds
+            pure (EMapPattern binds')
+          EMapUpdate e binds -> do
+            e' <- go e
+            binds' <- traverse (traverse go) binds
+            pure (EMapUpdate e' binds')
+          ECaseOf e binds -> do
+            e' <- go e
+            binds' <- traverse (traverse go) binds
+            pure (ECaseOf e' binds')
+          EListLiteral es -> do
+            es' <- traverse go es
+            pure (EListLiteral es')
+          EListCons es e -> do
+            es' <- traverse go es
+            e' <- go e
+            pure (EListCons es' e')
+          ETryAnyAny e1 e2 -> do
+            e1' <- go e1
+            e2' <- go e2
+            pure (ETryAnyAny e1' e2')
+          EAndThen a b -> do
+            a' <- go a
+            b' <- go b
+            pure (EAndThen a' b')
+          ELet a b -> do
+            a' <- go a
+            b' <- go b
+            pure (ELet a' b')
+  in go expr
+
 
 everywhereOnErlTopDown :: (Erl -> Erl) -> Erl -> Erl
 everywhereOnErlTopDown f = runIdentity . everywhereOnErlTopDownM (Identity . f)
@@ -382,7 +652,6 @@ everywhereOnErlTopDownM f = f >=> go
   go (EListLiteral es) = EListLiteral <$> traverse f' es
   go (EListCons es e) = EListCons <$> traverse f' es <*> f' e
   go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
-
   go (EAndThen a b) = EAndThen <$> f' a <*> f' b
   go (ELet a b) = ELet <$> f' a <*> f' b
 
@@ -439,4 +708,5 @@ everything (<>.) f = go
   go e0@(EListCons es e) = foldl (<>.) (f e0) (map go $ es <> [e])
   go e0@(ETryAnyAny e1 e2) = f e0 <>. go e1 <>. go e2
   go e0@(EAndThen a b) = f e0 <>. f a <>. f b
+  go e0@(ELet a b) = f e0 <>. f a <>. f b
   go other = f other

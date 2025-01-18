@@ -13,7 +13,7 @@ import Control.Monad.Supply.Class (MonadSupply)
 
 import Language.PureScript.Erl.CodeGen.Common (runAtom)
 import Language.PureScript.Erl.CodeGen.AST
-    ( everywhereOnErl, Erl(..), EFunBinder(..), EBinder(..), Guard(..), pattern EApp, Atom(..), everywhereOnErlTopDownM, everything )
+    ( everywhereOnErl, Erl(..), EFunBinder(..), EBinder(..), Guard(..), pattern EApp, Atom(..), everywhereOnErlTopDownM, everywhereOnErlBottomUpM, everything )
 import Language.PureScript.Erl.CodeGen.Optimizer.MagicDo
     ( magicDo )
 import Language.PureScript.Erl.CodeGen.Optimizer.Blocks
@@ -43,6 +43,8 @@ import Control.Monad.State (MonadState(..), State(..), gets, modify, runState)
 import Debug.Trace (traceM, trace)
 import Data.List qualified as List
 
+forbiddenInlineFunctions = Atom Nothing <$> ["@runtime_lazy"]
+
 data DB = DB
   { inlineableLocal :: Map (Atom, Int) Erl
   , inlineCounter :: Int
@@ -59,15 +61,15 @@ inline erls =
   let
       initialDB = DB Map.empty 0
 
-      runOneDef :: [Text] -> Erl -> State DB Erl
-      runOneDef fargvars e = do
+      runOneDef :: Erl -> [Text] -> Erl -> State DB Erl
+      runOneDef whereami fargvars e = do
         --traceM (show ("runOneDef", e))
         db <- get
         case e of
           EApp _ (EAtomLiteral atom) args | Just (EFunctionDef _ _ _ fargvars fbody) <- Map.lookup (atom, length args) (inlineableLocal db) -> do
-            traceM (show ("runOneDef-inlining", (atom, length args)))
             -- pure (replaceIdents (zip fargvars args) fbody)
             suffix <- freshInlineSuffix
+            -- traceM (show ("runOneDef-inlining", (atom, length args, suffix, whereami)))
             pure (replaceOrSuffixIdents suffix (zip fargvars args) fbody)
           -- EApp _ (EAtomLiteral atom) args | Just v <- Map.lookup (atom, length args) (inlineableLocal db) -> pure v
           _ -> pure e
@@ -76,8 +78,9 @@ inline erls =
       run [] = pure []
       run (def@(EFunctionDef _ _ name fargvars fbody):defs) = do
         let nameString = runAtom name
-        -- traceM (show ("run", name, length fargvars))
-        resDef <- everywhereOnErlTopDownM (runOneDef fargvars) def
+        db <- get
+        -- traceM (show ("run", name, length fargvars, Map.keys (inlineableLocal db)))
+        resDef <- everywhereOnErlTopDownM (runOneDef def fargvars) def
 
         let mentionsSelf =
               everything (||)
@@ -88,29 +91,36 @@ inline erls =
                     EApp _ (EAtomLiteral atom) _ ->
                       let atomString = runAtom atom
                       in atomString == nameString
+                    EFunRef atom _ ->
+                      let atomString = runAtom atom
+                      in atomString == nameString
                     _ -> False
                 ) resDef
-        case mentionsSelf of
+        case mentionsSelf || elem name forbiddenInlineFunctions of
           False -> do
             db <- get
             put (db {inlineableLocal = Map.insert (name, length fargvars) def (inlineableLocal db)})
           True -> pure ()
         (resDef:) <$> run defs
       run (def:defs) = do
-        traceM (show ("top-level not FunctionDef", def))
+        -- traceM (show ("top-level not FunctionDef", def))
         (def:) <$> run defs
 
   in
+  -- trace (show ("erls", [name, EFunctionDef _ _ name fargvars])) $
   fst $ runState (run erls) initialDB
 
 replaceOrSuffixIdents :: Text -> [(Text, Erl)] -> Erl -> Erl
 replaceOrSuffixIdents suffix replacements erl =
-  trace (show ("replaceOrSuffixIdents", suffix, replacements, "erl", erl)) $
+  -- trace (show ("replaceOrSuffixIdents", suffix, replacements, "erl", erl)) $
   let
-    rec e = replaceOrSuffixIdents suffix replacements e
-    recWithout fields e = replaceOrSuffixIdents suffix (filter (\v -> elem fields v == False) replacements) e
+    rec e =
+      -- trace (show ("rec", e)) $
+      replaceOrSuffixIdents suffix replacements e
+    -- recWithout fields e = replaceOrSuffixIdents suffix (filter (\v -> elem fields v == False) replacements) e
 
     replace v =
+      -- trace (show ("replace", v)) $
       case v of
         "_" -> EVar v
         _ ->
@@ -119,15 +129,18 @@ replaceOrSuffixIdents suffix replacements erl =
             Just replacement -> replacement
 
     onVar v =
+      -- trace (show ("onVar", v)) $
       case v of
         "_" -> v
         _ -> v <> suffix
 
     onBinder (EFunBinder erl mguard, rhs) =
+      -- trace (show ("onBinder", erl, mguard, rhs)) $
       -- we also have to recurse into funbinders explicitly here, not just apply one level of rewrites
       (EFunBinder (map rec erl) (onGuard <$> mguard), rhs)
 
     onCaseBinder (b,c) =
+      -- trace (show ("onCaseBinder", b, c)) $
       (case b of
         EBinder rhs -> EBinder (rec rhs)
         EGuardedBinder rhs guard -> EGuardedBinder (rec rhs) (onGuard guard)
@@ -135,11 +148,13 @@ replaceOrSuffixIdents suffix replacements erl =
       )
 
     onGuard (Guard erl) =
+      -- trace (show ("onGuard", Guard erl)) $
       -- guards are not recursed into either
       Guard (rec erl)
 
     rewrite :: Erl -> Erl
     rewrite e =
+      -- trace (show ("rewrite", e)) $
       case e of
         EFunctionDef mt mss atom args rhs ->
           EFunctionDef mt mss atom (map onVar args) rhs
@@ -153,4 +168,5 @@ replaceOrSuffixIdents suffix replacements erl =
         EVar v -> replace v
         other -> other
   in
+  -- trace (show ("everywhereOnErl", erl)) $
   everywhereOnErl rewrite erl

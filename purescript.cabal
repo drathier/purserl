@@ -215,7 +215,8 @@ common defaults
     optparse-applicative,
     unordered-containers >=0.2.19.1,
     -- drathier
-    hashable
+    hashable,
+    union-find
 
 library
   import: defaults
@@ -414,6 +415,7 @@ library
     Language.PureScript.Erl.CodeGen.Constants
     Language.PureScript.Erl.CodeGen.Constants.PureScriptModules
     Language.PureScript.Erl.CodeGen.Inliner
+    Language.PureScript.Erl.CodeGen.InlineLocal
     Language.PureScript.Erl.CodeGen.Optimizer
     Language.PureScript.Erl.CodeGen.Optimizer.Blocks
     Language.PureScript.Erl.CodeGen.Optimizer.Common

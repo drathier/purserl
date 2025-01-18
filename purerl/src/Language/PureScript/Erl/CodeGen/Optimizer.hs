@@ -36,43 +36,30 @@ import Data.Map (Map)
 import Language.PureScript.Erl.CodeGen.Optimizer.Memoize (addMemoizeAnnotations)
 import Control.Monad ((<=<))
 import Language.PureScript.Erl.CodeGen.Inliner qualified as Inliner
+import Language.PureScript.Erl.CodeGen.InlineLocal qualified as InlineLocal
 
 -- |
 -- Apply a series of optimizer passes to simplified Javascript code
 --
 optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
-optimize exports es = pure es
+-- optimize exports es = pure es
+-- optimize exports es = pure (Inliner.inline es)
 -- optimize exports es = removeUnusedFuns exports <$> pure (Inliner.inline es)
-optimize exports es = removeUnusedFuns exports <$> do
+optimize exports es = do -- removeUnusedFuns exports <$> do
   es2 <- traverse go es
   let es3 = Inliner.inline es2
   es4 <- untilFixedPoint (traverse go) es3
-  pure es4
+  let es5 = InlineLocal.inlineVarBinds es4
+  es6 <- untilFixedPoint (traverse go) es5
+  let es7 = InlineLocal.inlineVarBinds es6
+  es8 <- untilFixedPoint (traverse go) es7
+  pure es8
 
   where
---  go2 erl =
---   do
---    erl' <-  (pure . applyAll
---      [ inlineCommonOperators EC.effect EC.effectDictionaries expander
---      -- , inlineCommonValuesTopDown expander
---      , inlineCommonValuesBottomUp expander
---      ]
---      ) erl
---    -- erl'' <- untilFixedPoint tidyUp erl'
---    erl'' <- pure erl'
---
---    -- erl2 <- Inliner.inline erl
---
---    -- erl'' <- untilFixedPoint tidyUp
---    --   =<< untilFixedPoint (return . magicDo expander)
---    --   erl'
---    -- pure $ addMemoizeAnnotations erl''
---    pure $ addMemoizeAnnotations erl''
---    -- pure $ addMemoizeAnnotations erl2
-
   go erl =
    do
     erl' <-  (pure . applyAll
+      -- INVARIANT[drathier]: these transforms must never duplicate expressions, or they might duplicate bound variables without renaming the copies. We could (and probably should) rewrite them to actually inline variables, but we could also implement that step later, which we have already done in the inliner module.
       [ inlineCommonOperators EC.effect EC.effectDictionaries expander
       , inlineCommonValuesTopDown expander
       , inlineCommonValuesBottomUp expander

@@ -158,15 +158,17 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
                 []
               )
 
-        ECaseOf cond [(EBinder (EVar var), rhs)] ->
-          replaceIdents [(var, cond)] rhs
+        ECaseOf cond [(EBinder pat, rhs)] | pat == rhs ->
+          cond
+
+        ECaseOf cond [(EBinder pat, rhs)] | pat == cond ->
+          rhs
 
         ECaseOf cond [(EBinder pat, rhs)] | [] <- varsInExpr pat ->
           rhs
 
-        -- TODO[drathier]: untested
-        -- ECaseOf (ETupleLiteral conds) [(EBinder (ETupleLiteral vars), rhs)] | evars <- [var | EVar var <- vars], length conds == length vars ->
-        --   replaceIdents (zip evars conds) rhs
+        ECaseOf cond [(EBinder pat, rhs)] ->
+          ELet (EBind pat cond) rhs
 
         fn
           | isFn (EC.dataUnit, EC.unit) fn -> EAtomLiteral $ Atom Nothing "unit"
@@ -211,12 +213,22 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
         EFunctionDef mType mSS name [var1a] (EApp _ (EFun1 Nothing var1i body) [EVar var1b]) | var1a == var1b -> EFunctionDef mType mSS name [var1i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i)] body)
 
 
-        -- [drathier]: immediately called funs, inline their vars
-        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
-        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
-        EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
-        EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> replaceIdents [(var1, arg1), (var2, arg2)] body
-        EApp _ (EFun1 _ var1 body) [arg1] -> replaceIdents [(var1, arg1)] body
+        -- [drathier]: immediately called funs, let-bind their vars
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 (EFun1 _ var8 body)))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] ) [arg8] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7), (var8, arg8)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 body))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 body)))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
+        EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
+        EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> letBindIdents [(var1, arg1), (var2, arg2)] body
+        EApp _ (EFun1 _ var1 body) [arg1] -> letBindIdents [(var1, arg1)] body
+
+--        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
+--        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
+--        EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
+--        EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> replaceIdents [(var1, arg1), (var2, arg2)] body
+--        EApp _ (EFun1 _ var1 body) [arg1] -> replaceIdents [(var1, arg1)] body
+
         -- [drathier]: technically the `Just _` version might not be safe, but at time of writing that the function name is never used. TODO[drathier]: change guard code gen to generate anonymous functions instead of functions named `GUARD`.
 --        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 (EFun1 Nothing var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
 --        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 (EFun1 Nothing var3 (EFun1 Nothing var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
@@ -232,6 +244,7 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
         EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> v
         EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs
 
+        EApp appKind (ELet bind body) args -> ELet bind (EApp appKind body args)
 
         -- EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EApp RegularApp (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")) [EVar "_@251"])]
         -- (EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EVar "_@251")])
@@ -250,6 +263,12 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
         -- EApp _ (EFunFull Nothing [(EFunBinder [pat1] Nothing, body)]) [arg1] -> EBlock [EBind pat1 arg1, convert body]
 
         other -> other
+
+letBindIdents :: [(Text, Erl)] -> Erl -> Erl
+letBindIdents vars body =
+  case vars of
+    (a,b):rest -> ELet (EBind (EVar a) b) (letBindIdents rest body)
+    [] -> body
 
 isEAtomLiteral a =
   case a of
