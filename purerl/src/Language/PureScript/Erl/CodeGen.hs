@@ -57,7 +57,7 @@ import Language.PureScript.Erl.CodeGen.Common
     freshNameErl,
     freshNameErl',
     identToVar,
-    toAtomName, identToAtomName, runIdent'
+    toAtomName, identToAtomName, runIdent', runAtom
   )
 import Language.PureScript.Erl.CodeGen.Constants.PureScriptModules
   ( dataFunctionUncurried,
@@ -115,6 +115,7 @@ import qualified Language.PureScript.Types as P
 -- import Language.PureScript (internalError)
 import Language.PureScript.Crash (internalError)
 --
+import Language.PureScript.CoreFn.Expr qualified as E
 
 
 identToTypeclassCtor :: Ident -> Atom
@@ -855,23 +856,144 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         unApp :: Expr Ann -> [Expr Ann] -> (Expr Ann, [Expr Ann])
         unApp (App _ val arg) args = unApp val (arg : args)
         unApp other args = (other, args)
+
+
+--    valueToErl' _ (Case _ values binders) = do
+--      vals <- mapM valueToErl values
+--      (exprs, binders', newvals) <- bindersToErl vals binders
+--      -- let ret = EApp (EFunFull (Just "Case") binders') (vals++newvals)
+--      let funBinderToBinder = \case
+--            (EFunBinder [e] Nothing, ee) -> (EBinder e, ee)
+--            (EFunBinder [e] (Just g), ee) -> (EGuardedBinder e g, ee)
+--            (EFunBinder es Nothing, ee) -> (EBinder (ETupleLiteral es), ee)
+--            (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
+--      let ret = case (binders', vals, newvals) of
+--            (binders'', [val'], []) -> ECaseOf val' (map funBinderToBinder binders'')
+--            (binders'', _, []) -> ECaseOf (ETupleLiteral vals) (map funBinderToBinder binders'')
+--            _ -> EApp RegularApp (EFunFull Nothing binders') (vals ++ newvals)
+--      -- pure $ case exprs of
+--      --   [] -> ret
+--      --   _ -> EBlock (exprs ++ [ret])
+--      pure $ letbind ELet exprs ret
+
+    -- TODO[drathier]: first arg (Maybe Ident) is passed in sometimes, but never used. Remove it from the function args.
     valueToErl' _ (Case _ values binders) = do
+      let
+          bindersToErl2 :: Erl -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m Erl
+          bindersToErl2 vals branches = do
+            eatBranches' <- eatBranches vals branches
+            pure $ ECaseOf vals eatBranches'
+
+          toEBinder :: [Erl] -> EBinder
+          toEBinder erls = EBinder $ ETupleLiteral erls
+
+          eatBranches :: Erl -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m [(EBinder, Erl)]
+          eatBranches vals branches =
+            case branches of
+              [] -> pure []
+              (lhs, Right rhs):rest -> do
+                (lhs', lhsK) <- mapMK onBinder id lhs
+                rhs' <- valueToErl rhs
+                rest' <- eatBranches vals rest
+                pure $ (EBinder $ ETupleLiteral $ lhs', lhsK rhs') : rest'
+              (lhs, Left guards):rest -> do
+                (lhs', lhsK) <- mapMK onBinder id lhs
+                guards' <- mapM onGuard guards
+                withGuards' <- withGuards vals lhs' guards' rest
+                pure [(toEBinder $ lhs', lhsK withGuards')]
+
+          withGuards :: Erl -> [Erl] -> [(Erl, Erl)] -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m Erl
+          withGuards vals lhs guards rest =
+            case (guards, rest) of
+              ([], _) -> bindersToErl2 vals rest
+              ([(g,rhs)], []) -> pure $ ECaseOf g [(toEBinder [boolToAtom True], rhs)]
+              ((g,rhs):restGuards,_) -> do
+                restGuards' <- withGuards vals lhs restGuards rest
+                withGuard g rhs restGuards'
+
+          withGuard :: Erl -> Erl -> Erl -> m Erl
+          withGuard g rhs rest = pure $
+            case g == boolToAtom True of
+              True -> rhs
+              False ->
+                ECaseOf g
+                  [ ( toEBinder [boolToAtom True]
+                    , rhs
+                    )
+                  , ( toEBinder [boolToAtom False]
+                    , rest
+                    )
+                  ]
+
+          onGuard :: (E.Guard Ann, Expr Ann) -> m (Erl, Erl)
+          onGuard (g, e) = do
+            g' <- valueToErl g
+            e' <- valueToErl e
+            pure (g', e')
+
+          onBinder :: (Erl -> Erl) -> Binder Ann -> m (Erl, Erl -> Erl)
+          onBinder k lhs =
+            let
+                rec = onBinder k
+                pureK :: Erl -> m (Erl, Erl -> Erl)
+                pureK erl = pure (erl, k)
+            in case lhs of
+              -- TODO[drathier]: ignoring/dropping annotations here, do we want to keep them?
+              NullBinder _ -> pureK $ EVar "_"
+              VarBinder _ name -> pureK $ EVar (identToVar name)
+              ConstructorBinder _ _typeName (Qualified _ (ProperName ctorName)) binders -> do
+                (binders', k2) <- mapMK (\kInner v -> onBinder kInner v) k binders
+                pure (constructorLiteral ctorName binders', k2)
+              NamedBinder _ alias binder -> do
+                (binder', k2) <- rec binder
+                pure (EBind (EVar (identToVar alias)) binder', k2)
+              LiteralBinder _ lit ->
+                case lit of
+                  NumericLiteral (Left int) -> pureK $ ENumericLiteral (Left int)
+                  NumericLiteral (Right double) -> pureK $ ENumericLiteral (Right double)
+                  StringLiteral psString -> pureK $ EStringLiteral psString
+                  CharLiteral char -> pureK $ ECharLiteral char
+                  BooleanLiteral bool -> pureK $ boolToAtom bool
+                  ObjectLiteral kvPairs -> do
+                    (vs, recK) <-
+                      mapMK (\kInner (key,v) -> do
+                        (v', k') <- onBinder kInner v
+                        pure ((AtomPS Nothing key,v'), k')
+                        ) k kvPairs
+                    pure (EMapPattern vs, recK)
+                  ArrayLiteral items -> do
+                    arrayPattern <- freshNameErl' "ArrayPattern"
+                    arraySize <- freshNameErl' "ArraySize"
+                    (items', k2) <- mapMK onBinder k items
+
+                    let getAt :: Int -> Erl
+                        getAt idx = EApp RegularApp (EFunRef (AtomPS (Just "array") "get") 2) [ENumericLiteral (Left (toInteger idx)), EVar arrayPattern]
+
+                    pure
+                      ( EVar arrayPattern
+                      , \nextStep ->
+                          ELet (EBind (EVar arraySize) (EApp RegularApp (EFunRef (AtomPS (Just "array@foreign") "size") 1) [EVar arrayPattern])) $
+                          ECaseOf (EBinary LessThanOrEqualTo (ENumericLiteral (Left (toInteger (length items')))) (EVar arraySize))
+                            [ ( EBinder (boolToAtom True)
+                              , ECaseOf
+                                  (ETupleLiteral $ map getAt [0..length(items')-1])
+                                  [(EBinder $ ETupleLiteral items', k nextStep)]
+                              )
+                            , ( EBinder (boolToAtom False)
+                              , k nextStep
+                              )
+                            ]
+                      )
+
       vals <- mapM valueToErl values
-      (exprs, binders', newvals) <- bindersToErl vals binders
-      -- let ret = EApp (EFunFull (Just "Case") binders') (vals++newvals)
-      let funBinderToBinder = \case
-            (EFunBinder [e] Nothing, ee) -> (EBinder e, ee)
-            (EFunBinder [e] (Just g), ee) -> (EGuardedBinder e g, ee)
-            (EFunBinder es Nothing, ee) -> (EBinder (ETupleLiteral es), ee)
-            (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
-      let ret = case (binders', vals, newvals) of
-            (binders'', [val'], []) -> ECaseOf val' (map funBinderToBinder binders'')
-            (binders'', _, []) -> ECaseOf (ETupleLiteral vals) (map funBinderToBinder binders'')
-            _ -> EApp RegularApp (EFunFull (Just "Case") binders') (vals ++ newvals)
-      -- pure $ case exprs of
-      --   [] -> ret
-      --   _ -> EBlock (exprs ++ [ret])
-      pure $ letbind ELet exprs ret
+      -- bindersToErl2 vals (zipWith (\(CaseAlternative binders possiblyGuardedResults) -> zip binders possiblyGuardedResults) binders)
+
+      pat <- freshNameErl' "CasePattern"
+      ELet (EBind (EVar pat) (ETupleLiteral vals)) <$>
+        bindersToErl2 (EVar pat) (map (\(CaseAlternative binders possiblyGuardedResults) -> (binders, possiblyGuardedResults)) binders)
+      -- _zipWith :: [CaseAlternative Ann] -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))]
+
+
 
 
 --    valueToErl' _ (Let _ ds val) = do
@@ -1122,6 +1244,17 @@ letbind elet exprs innermost =
   case exprs of
     [] -> innermost
     e:es -> elet e (letbind elet es innermost)
+
+
+mapMK :: Monad m => ((Erl -> Erl) -> a -> m (b, Erl -> Erl)) -> (Erl -> Erl) -> [a] -> m ([b], Erl -> Erl)
+mapMK f kont values =
+  case values of
+    [] -> pure ([], kont)
+    v:vs -> do
+      (v', kont') <- f kont v
+      (res, kont3) <- mapMK f kont' vs
+      pure (v':res, kont3)
+
 
 --letbindM :: (Erl -> Bind Ann -> m Erl) -> [Bind Ann] -> Erl -> m Erl
 --letbindM runBind binds innermost =
