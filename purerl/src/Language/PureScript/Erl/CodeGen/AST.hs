@@ -707,6 +707,18 @@ everything (<>.) f = go
   go e0@(EListLiteral es) = foldl (<>.) (f e0) (map go es)
   go e0@(EListCons es e) = foldl (<>.) (f e0) (map go $ es <> [e])
   go e0@(ETryAnyAny e1 e2) = f e0 <>. go e1 <>. go e2
-  go e0@(EAndThen a b) = f e0 <>. f a <>. f b
-  go e0@(ELet a b) = f e0 <>. f a <>. f b
-  go other = f other
+  go e0@(EAndThen a b) = f e0 <>. go a <>. go b
+  go e0@(ELet a b) = f e0 <>. go a <>. go b
+  -- go other = f other
+
+  go e0@(EVar {}) = f e0
+  go e0@(EAtomLiteral {}) = f e0
+  go e0@(ENumericLiteral {}) = f e0
+  go e0@(EStringLiteral {}) = f e0
+  go e0@(ECharLiteral {}) = f e0
+  go e0@(EFunRef {}) = f e0
+  go e0@(EComment {}) = f e0
+  go e0@(EAttribute {}) = f e0
+  go e0@(ESpec {}) = f e0
+  go e0@(EType {}) = f e0
+

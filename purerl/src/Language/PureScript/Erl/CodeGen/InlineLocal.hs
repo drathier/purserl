@@ -177,7 +177,7 @@ inlineVarBinds erls =
   map inlineVarBindsImpl erls
 
 inlineVarBindsImpl :: Erl -> Erl
-inlineVarBindsImpl erl@(EFunctionDef _ _ name args _) | runAtom name /= "match" || length args /= 2 = erl
+-- inlineVarBindsImpl erl@(EFunctionDef _ _ name args _) | runAtom name /= "match" || length args /= 2 = erl
 inlineVarBindsImpl erl =
   let (res,state) = runState (collectErl erl) initialDB
       (res2,state2) = runState (replaceErl erl) (processStack (_stack state))
@@ -191,7 +191,7 @@ collectOnErl :: Erl -> State DB Erl
 collectOnErl e = do
   case e of
     EFunctionDef _ _ _ vs _ -> mapM_ (track e . SDef) vs >> pure e
-    EFunFull mFunName binders -> mapM_ (\(b,_) -> collectBinder b) binders >> pure e
+    EFunFull mFunName binders -> mapM_ (track e . SDef) mFunName >> mapM_ (\(b,_) -> collectBinder b) binders >> pure e
 
     EVar v -> track e (SRead v) >> pure e
     ELet (EBind (EVar v) (EVar v2)) _ -> track e (SAlias v v2) >> pure e
