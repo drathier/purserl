@@ -880,33 +880,38 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     valueToErl' _ (Case _ values binders) = do
       let
           bindersToErl2 :: Erl -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m Erl
+          bindersToErl2 vals [] = pure vals
           bindersToErl2 vals branches = do
             eatBranches' <- eatBranches vals branches
             pure $ ECaseOf vals eatBranches'
 
           toEBinder :: [Erl] -> EBinder
-          toEBinder erls = EBinder $ ETupleLiteral erls
+          toEBinder erls =
+            case erls of
+              [e] -> EBinder e
+              _ -> EBinder $ ETupleLiteral erls
 
           eatBranches :: Erl -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m [(EBinder, Erl)]
           eatBranches vals branches =
             case branches of
               [] -> pure []
               (lhs, Right rhs):rest -> do
-                (lhs', lhsK) <- mapMK onBinder id lhs
+                (lhs', lhsK) <- mapMK (onBinder vals rest) id lhs
                 rhs' <- valueToErl rhs
                 rest' <- eatBranches vals rest
-                pure $ (EBinder $ ETupleLiteral $ lhs', lhsK rhs') : rest'
+                pure $ (toEBinder lhs', lhsK rhs') : rest'
               (lhs, Left guards):rest -> do
-                (lhs', lhsK) <- mapMK onBinder id lhs
+                (lhs', lhsK) <- mapMK (onBinder vals rest) id lhs
                 guards' <- mapM onGuard guards
+                rest' <- eatBranches vals rest
                 withGuards' <- withGuards vals lhs' guards' rest
-                pure [(toEBinder $ lhs', lhsK withGuards')]
+                pure $ (toEBinder lhs', lhsK withGuards') : rest'
 
           withGuards :: Erl -> [Erl] -> [(Erl, Erl)] -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m Erl
           withGuards vals lhs guards rest =
             case (guards, rest) of
               ([], _) -> bindersToErl2 vals rest
-              ([(g,rhs)], []) -> pure $ ECaseOf g [(toEBinder [boolToAtom True], rhs)]
+              ([(g,rhs)], []) -> pure $ ECaseOf g [(EBinder (boolToAtom True), rhs)]
               ((g,rhs):restGuards,_) -> do
                 restGuards' <- withGuards vals lhs restGuards rest
                 withGuard g rhs restGuards'
@@ -917,10 +922,10 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
               True -> rhs
               False ->
                 ECaseOf g
-                  [ ( toEBinder [boolToAtom True]
+                  [ ( EBinder (boolToAtom True)
                     , rhs
                     )
-                  , ( toEBinder [boolToAtom False]
+                  , ( EBinder (boolToAtom False)
                     , rest
                     )
                   ]
@@ -931,18 +936,19 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             e' <- valueToErl e
             pure (g', e')
 
-          onBinder :: (Erl -> Erl) -> Binder Ann -> m (Erl, Erl -> Erl)
-          onBinder k lhs =
+          onBinder :: Erl -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> (Erl -> Erl) -> Binder Ann -> m (Erl, Erl -> Erl)
+          onBinder vals rest k lhs =
             let
-                rec = onBinder k
+                rec = onBinder vals rest k
                 pureK :: Erl -> m (Erl, Erl -> Erl)
                 pureK erl = pure (erl, k)
             in case lhs of
               -- TODO[drathier]: ignoring/dropping annotations here, do we want to keep them?
               NullBinder _ -> pureK $ EVar "_"
               VarBinder _ name -> pureK $ EVar (identToVar name)
+              ConstructorBinder (_, _, Just IsNewtype) _ _ [binder] -> onBinder vals rest k binder
               ConstructorBinder _ _typeName (Qualified _ (ProperName ctorName)) binders -> do
-                (binders', k2) <- mapMK (\kInner v -> onBinder kInner v) k binders
+                (binders', k2) <- mapMK (\kInner v -> onBinder vals rest kInner v) k binders
                 pure (constructorLiteral ctorName binders', k2)
               NamedBinder _ alias binder -> do
                 (binder', k2) <- rec binder
@@ -957,30 +963,32 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   ObjectLiteral kvPairs -> do
                     (vs, recK) <-
                       mapMK (\kInner (key,v) -> do
-                        (v', k') <- onBinder kInner v
+                        (v', k') <- onBinder vals rest kInner v
                         pure ((AtomPS Nothing key,v'), k')
                         ) k kvPairs
                     pure (EMapPattern vs, recK)
                   ArrayLiteral items -> do
                     arrayPattern <- freshNameErl' "ArrayPattern"
                     arraySize <- freshNameErl' "ArraySize"
-                    (items', k2) <- mapMK onBinder k items
+                    (items', k2) <- mapMK (onBinder vals rest) k items
 
                     let getAt :: Int -> Erl
                         getAt idx = EApp RegularApp (EFunRef (AtomPS (Just "array") "get") 2) [ENumericLiteral (Left (toInteger idx)), EVar arrayPattern]
+
+                    binders' <- bindersToErl2 vals rest
 
                     pure
                       ( EVar arrayPattern
                       , \nextStep ->
                           ELet (EBind (EVar arraySize) (EApp RegularApp (EFunRef (AtomPS (Just "array@foreign") "size") 1) [EVar arrayPattern])) $
-                          ECaseOf (EBinary LessThanOrEqualTo (ENumericLiteral (Left (toInteger (length items')))) (EVar arraySize))
+                          ECaseOf (EBinary EqualTo (ENumericLiteral (Left (toInteger (length items')))) (EVar arraySize))
                             [ ( EBinder (boolToAtom True)
                               , ECaseOf
                                   (ETupleLiteral $ map getAt [0..length(items')-1])
                                   [(EBinder $ ETupleLiteral items', k nextStep)]
                               )
                             , ( EBinder (boolToAtom False)
-                              , k nextStep
+                              , k binders'
                               )
                             ]
                       )
@@ -989,7 +997,13 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       -- bindersToErl2 vals (zipWith (\(CaseAlternative binders possiblyGuardedResults) -> zip binders possiblyGuardedResults) binders)
 
       pat <- freshNameErl' "CasePattern"
-      ELet (EBind (EVar pat) (ETupleLiteral vals)) <$>
+      ELet
+        (EBind (EVar pat)
+          (case vals of
+            [v] -> v
+            _ -> ETupleLiteral vals
+          )
+        ) <$>
         bindersToErl2 (EVar pat) (map (\(CaseAlternative binders possiblyGuardedResults) -> (binders, possiblyGuardedResults)) binders)
       -- _zipWith :: [CaseAlternative Ann] -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))]
 
