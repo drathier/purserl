@@ -792,16 +792,23 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     -- TODO[drathier]: first arg (Maybe Ident) is passed in sometimes, but never used. Remove it from the function args.
 
     valueToErl' _ (Case _ values branches) = do
-      renamedValues <- mapM (\v -> (,) <$> freshNameErl' "CaseOf" <*> valueToErl v) values
+      renamedValues <-
+        mapM
+          (\v -> do
+            v2 <- valueToErl v
+            case v2 of
+              EVar v2n -> pure (v2n, v2)
+              _ -> (,) <$> freshNameErl' "CaseOf" <*> pure v2
+          )
+          values
       (res, resDB) <-
         runStateT
-        (caseToErlImpl (map fst renamedValues) branches)
-        (DB M.empty [] (map fst renamedValues))
+          (caseToErlImpl (map fst renamedValues) branches)
+          (DB M.empty [] (map fst renamedValues))
       pure
         ( letbindVars ELet renamedValues $
-          letbind (\(k,v) rest -> ELet (EBind (EVar k) (EFun0 (Just k) v)) rest) (contImpls resDB) $
+          letbind (\(k,v) rest -> ELet (EBind (EVar k) (EFun0 (Just k) v)) rest) (reverse (contImpls resDB)) $
           res
-
         )
         where
           -- NOTE[drathier]: hash continuations and bind them as local funs, so we don't duplicate code on deeply nested branches
@@ -824,13 +831,13 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             case M.lookup branches (conts db) of
               Just contName -> pure contName
               Nothing -> do
+                -- [drathier]: insert name before generating the branch, to avoid duplicate work, if that's even an issue
                 contName <- lift (freshNameErl' "Cont")
+                put ( db { conts = M.insert branches contName (conts db) } )
 
                 rest <- caseToErlImpl (topmostValues db) branches
-                put (db
-                  { conts = M.insert branches contName (conts db)
-                  , contImpls = (contName, rest) : contImpls db
-                  })
+                db <- get
+                put ( db { contImpls = (contName, rest) : contImpls db } )
                 pure contName
 
 
@@ -848,9 +855,13 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                     ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
                   Left guardedExprs -> do
                     -- either we walk down a nested path of cases, or we continue down
+                    binders2 <- mapM binderToErl binders
                     onGuardFailureCont <- buildCont restBranches
                     guardsToErl2 <- guardsToErl onGuardFailureCont guardedExprs
-                    pure [(EBinder (EVar "_"),guardsToErl2)]
+                    pure
+                      [ (EBinder (tupleWrap binders2), guardsToErl2)
+                      , (EBinder (EVar "_"), EApp RegularApp (EVar onGuardFailureCont) [])
+                      ]
 
           guardsToErl :: T.Text -> [(E.Guard Ann, Expr Ann)] -> StateT DB m Erl
           guardsToErl onGuardFailureCont [] = pure $ EVar "drathier-unreachble-empty-guards"
@@ -1273,7 +1284,10 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 letbindVars elet exprs innermost =
   case exprs of
     [] -> innermost
-    (name,e):es -> elet (EBind (EVar name) e) (letbindVars elet es innermost)
+    (name,e):es ->
+      case EVar name == e of
+        True -> letbindVars elet es innermost
+        False -> elet (EBind (EVar name) e) (letbindVars elet es innermost)
 
 letbind elet exprs innermost =
   case exprs of
