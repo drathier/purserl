@@ -27,7 +27,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Traversable (forM)
-import Debug.Trace (traceM)
+import Debug.Trace (trace, traceM)
 -- import qualified Language.PureScript as P
 import Language.PureScript.AST (SourceSpan, nullSourceSpan)
 import qualified Language.PureScript.Constants.Libs as C
@@ -116,7 +116,7 @@ import qualified Language.PureScript.Types as P
 import Language.PureScript.Crash (internalError)
 --
 import Language.PureScript.CoreFn.Expr qualified as E
-
+import Control.Monad.State (StateT(..), runStateT, mapStateT, lift, get, put)
 
 identToTypeclassCtor :: Ident -> Atom
 identToTypeclassCtor a = Atom Nothing (runIdent' a)
@@ -631,45 +631,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           then (res1, res2, etypeEnv)
           else ([], res2, etypeEnv)
 
-    bindToErl :: Bind Ann -> m [Erl]
-    bindToErl (NonRec _ ident val) =
-      pure . EVarBind (identToVar ident) <$> valueToErl' (Just ident) val
-    -- For recursive bindings F(X) = E1, G(X) = E2, ... we have a problem as the variables are not
-    -- in scope until each expression is defined. To avoid lifting to the top level first generate
-    -- funs which take a tuple of such funs F'({F', G'}) -> (X) -> E1 etc.
-    -- with occurences of F, G replaced in E1, E2 with F'({F',G'})
-    -- and then bind these F = F'({F',G'})
-    -- TODO: Only do this if there are multiple mutually recursive bindings! Else a named fun works.
-    bindToErl (Rec origVals) = do
-      let (vals, needRuntimeLazy@(Any needLazyRef)) = applyLazinessTransform mn origVals
-      tell (mempty, needRuntimeLazy)
-      lazyVarName <- freshNameErl' "LazyCtxRef"
-      let vars = identToVar . snd . fst <$> vals
-          varTupInner = ETupleLiteral $ EVar . (<> "@fi") <$> vars
-          varTupOuter = ETupleLiteral $ EVar . (<> "@f") <$> vars
-
-          replaceFun fvar = everywhereOnErl go
-            where
-              go (EVar f) | f == fvar = EApp RegularApp (EVar $ f <> "@fi") [varTupInner]
-              go (EApp RegularApp lazyFactory [ ])
-               | lazyFactory == EAtomLiteral (Atom Nothing $ identToAtomName $ InternalIdent RuntimeLazyFactory)
-               , needLazyRef
-               = EApp RegularApp lazyFactory [ EVar lazyVarName ]
-              go e = e
-
-      funs <- forM vals $ \((_, ident), val) -> do
-        erl <- valueToErl' Nothing val
-        let erl' = foldr replaceFun erl vars
-        let fun = EFunFull (Just "Reccase") [(EFunBinder [varTupInner] Nothing, erl')]
-        pure $ EVarBind (identToVar ident <> "@f") fun
-      let rebinds = map (\var -> EVarBind var (EApp RegularApp (EVar $ var <> "@f") [varTupOuter])) vars
-          -- TODO this is not unique in the case of multiple recursive binding groups in same scope
-          -- And deduplicating would also be incorrect for overridden idents
-          ctxRef = [ EVarBind lazyVarName $ qualFunCall "erlang" "make_ref" [] | needLazyRef ]
-      pure $ ctxRef ++ funs ++ rebinds
-
-    bindToErl3 :: Bind Ann -> m (Erl -> Erl)
-    bindToErl3 bind =
+    bindToErl :: Bind Ann -> m (Erl -> Erl)
+    bindToErl bind =
       case bind of
         NonRec _ ident val -> do
           b <- EVarBind (identToVar ident) <$> valueToErl' (Just ident) val
@@ -700,7 +663,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           (funs :: [Erl]) <- forM vals $ \((_, ident), val) -> do
             erl <- valueToErl' Nothing val
             let erl' = foldr replaceFun erl vars
-            let fun = EFunFull (Just "Reccase") [(EFunBinder [varTupInner] Nothing, erl')]
+            let fun = EFunFull Nothing [(EFunBinder [varTupInner] Nothing, erl')]
             pure $ EVarBind (identToVar ident <> "@f") fun
           let rebinds = map (\var -> EVarBind var (EApp RegularApp (EVar $ var <> "@f") [varTupOuter])) vars
               -- TODO this is not unique in the case of multiple recursive binding groups in same scope
@@ -714,53 +677,6 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                 [c] -> ELet c innermost
 
           pure $ \innermost -> s3 (s1 (s2 innermost))
-          -- pure $ ctxRef ++ funs ++ map EAndThen rebinds
-
-
---
---    bindToErl2 :: Bind Ann -> m (Erl -> Erl)
---    bindToErl2 bind =
---      case bind of
---        NonRec _ ident val -> do
---          bindBody <- valueToErl' (Just ident) val
---          pure $ ELet (EVarBind (identToVar ident) bindBody)
---        Rec origVals -> do
---          -- For recursive bindings F(X) = E1, G(X) = E2, ... we have a problem as the variables are not
---          -- in scope until each expression is defined. To avoid lifting to the top level first generate
---          -- funs which take a tuple of such funs F'({F', G'}) -> (X) -> E1 etc.
---          -- with occurences of F, G replaced in E1, E2 with F'({F',G'})
---          -- and then bind these F = F'({F',G'})
---          -- TODO: Only do this if there are multiple mutually recursive bindings! Else a named fun works.
---          let (vals, needRuntimeLazy@(Any needLazyRef)) = applyLazinessTransform mn origVals
---          tell (mempty, needRuntimeLazy)
---          lazyVarName <- freshNameErl' "LazyCtxRef"
---          let vars = identToVar . snd . fst <$> vals
---              varTup = ETupleLiteral $ EVar . (<> "@f") <$> vars
---
---              replaceFun fvar = everywhereOnErl go
---                where
---                  go (EVar f) | f == fvar = EApp RegularApp (EVar $ f <> "@f") [varTup]
---                  go (EApp RegularApp lazyFactory [ ])
---                   | lazyFactory == EAtomLiteral (Atom Nothing $ identToAtomName $ InternalIdent RuntimeLazyFactory)
---                   , needLazyRef
---                   = EApp RegularApp lazyFactory [ EVar lazyVarName ]
---                  go e = e
---
---          let ctxRef =
---                case needLazyRef of
---                  False -> id
---                  True -> EAndThen (EVarBind lazyVarName $ qualFunCall "erlang" "make_ref" []) id
---          let runFuns rhs vals = \innermost -> do
---
---          let runFun rhs ((_, ident), val) =
---                do
---                  erl <- valueToErl' Nothing val
---                  let erl' = foldr replaceFun erl vars
---                  let fun = EFunFull (Just "Reccase") [(EFunBinder [varTup] Nothing, erl')]
---                  pure $ ELet (EVarBind (identToVar ident <> "@f") fun) rhs
---          funs <- runFuns ctxRef vals
---          let rebinds innermost = foldr (\var rhs -> ELet (EVarBind var (EApp RegularApp (EVar $ var <> "@f") [varTup])) rhs) (funs innermost) vars
---          pure $ rebinds
 
 
     qualifiedToVar (Qualified _ ident) = identToVar ident
@@ -867,17 +783,122 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 --            (EFunBinder [e] (Just g), ee) -> (EGuardedBinder e g, ee)
 --            (EFunBinder es Nothing, ee) -> (EBinder (ETupleLiteral es), ee)
 --            (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
---      let ret = case (binders', vals, newvals) of
---            (binders'', [val'], []) -> ECaseOf val' (map funBinderToBinder binders'')
---            (binders'', _, []) -> ECaseOf (ETupleLiteral vals) (map funBinderToBinder binders'')
+--      let ret = case (vals, newvals) of
+--            ([val'], []) -> ECaseOf val' (map funBinderToBinder binders')
+--            (_, []) -> ECaseOf (ETupleLiteral vals) (map funBinderToBinder binders')
 --            _ -> EApp RegularApp (EFunFull Nothing binders') (vals ++ newvals)
---      -- pure $ case exprs of
---      --   [] -> ret
---      --   _ -> EBlock (exprs ++ [ret])
 --      pure $ letbind ELet exprs ret
 
     -- TODO[drathier]: first arg (Maybe Ident) is passed in sometimes, but never used. Remove it from the function args.
-    valueToErl' _ (Case _ values binders) = do
+
+    valueToErl' _ (Case _ values branches) = do
+      renamedValues <- mapM (\v -> (,) <$> freshNameErl' "CaseOf" <*> valueToErl v) values
+      (res, resDB) <-
+        runStateT
+        (caseToErlImpl (map fst renamedValues) branches)
+        (DB M.empty [] (map fst renamedValues))
+      pure
+        ( letbindVars ELet renamedValues $
+          letbind (\(k,v) rest -> ELet (EBind (EVar k) (EFun0 (Just k) v)) rest) (contImpls resDB) $
+          res
+
+        )
+        where
+          -- NOTE[drathier]: hash continuations and bind them as local funs, so we don't duplicate code on deeply nested branches
+          caseToErlImpl
+            :: [T.Text]
+            -> [CaseAlternative Ann]
+            -> StateT DB m Erl
+          caseToErlImpl values branches = do
+            branches2 <- branchesToErl branches
+            pure $ ECaseOf (tupleWrap (map EVar values)) branches2
+
+          tupleWrap things =
+            case things of
+              [a] -> a
+              _ -> ETupleLiteral things
+
+          buildCont :: [CaseAlternative Ann] -> StateT DB m T.Text
+          buildCont branches = do
+            db <- get
+            case M.lookup branches (conts db) of
+              Just contName -> pure contName
+              Nothing -> do
+                contName <- lift (freshNameErl' "Cont")
+
+                rest <- caseToErlImpl (topmostValues db) branches
+                put (db
+                  { conts = M.insert branches contName (conts db)
+                  , contImpls = (contName, rest) : contImpls db
+                  })
+                pure contName
+
+
+          branchesToErl :: [CaseAlternative Ann] -> StateT DB m [(EBinder, Erl)]
+          branchesToErl branches =
+            case branches of
+              [] -> do
+                unreachable <- freshNameErl' "Unreachable"
+                pure [(EBinder (EVar unreachable), EVar unreachable)]
+              (CaseAlternative binders mguard):restBranches ->
+                case mguard of
+                  Right rhs -> do
+                    binders2 <- mapM binderToErl binders
+                    rhs2 <- lift $ valueToErl rhs
+                    ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
+                  Left guardedExprs -> do
+                    -- either we walk down a nested path of cases, or we continue down
+                    onGuardFailureCont <- buildCont restBranches
+                    guardsToErl2 <- guardsToErl onGuardFailureCont guardedExprs
+                    pure [(EBinder (EVar "_"),guardsToErl2)]
+
+          guardsToErl :: T.Text -> [(E.Guard Ann, Expr Ann)] -> StateT DB m Erl
+          guardsToErl onGuardFailureCont [] = pure $ EVar "drathier-unreachble-empty-guards"
+          guardsToErl onGuardFailureCont ((guard, happy):restGuards) = do
+            guard2 <- lift $ valueToErl guard
+            happy2 <- lift $ valueToErl happy
+            restGuards2 <- guardsToErl onGuardFailureCont restGuards
+            pure $
+              case guard2 == boolToAtom True of
+                True -> happy2
+                False ->
+                  ECaseOf guard2
+                    [ ( EBinder (boolToAtom True)
+                      , case restGuards of
+                          [] -> happy2
+                          _ -> restGuards2
+                      )
+                    , ( EBinder (boolToAtom False)
+                      , EApp RegularApp (EVar onGuardFailureCont) []
+                      )
+                    ]
+
+          binderToErl :: Binder Ann -> StateT DB m Erl
+          binderToErl binder =
+            case binder of
+              NullBinder _ -> pure $ EVar "_"
+              VarBinder _ name -> pure $ EVar (identToVar name)
+              ConstructorBinder (_, _, Just IsNewtype) _ _ [binder] -> binderToErl binder
+              ConstructorBinder _ _typeName (Qualified _ (ProperName ctorName)) binders -> do
+                binders2 <- mapM binderToErl binders
+                pure (constructorLiteral ctorName binders2)
+              NamedBinder _ alias binder -> do
+                binder2 <- binderToErl binder
+                pure (EBind (EVar (identToVar alias)) binder2)
+              LiteralBinder _ lit ->
+                case lit of
+                  NumericLiteral (Left int) -> pure $ ENumericLiteral (Left int)
+                  NumericLiteral (Right double) -> pure $ ENumericLiteral (Right double)
+                  StringLiteral psString -> pure $ EStringLiteral psString
+                  CharLiteral char -> pure $ ECharLiteral char
+                  BooleanLiteral bool -> pure $ boolToAtom bool
+                  ObjectLiteral kvPairs ->
+                    EMapPattern <$> mapM (\(k,v) -> (AtomPS Nothing k,) <$> binderToErl v) kvPairs
+                  ArrayLiteral items -> do
+                    -- arrayVar <- freshNameErl' "ArrayLiteral"
+                    EListLiteral <$> mapM binderToErl items
+
+    valueToErl' _ (Case _ values binders) | False = do
       let
           bindersToErl2 :: Erl -> [([Binder Ann], Either [(E.Guard Ann, Expr Ann)] (Expr Ann))] -> m Erl
           bindersToErl2 vals [] = pure vals
@@ -1010,23 +1031,11 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
 
 
---    valueToErl' _ (Let _ ds val) = do
---      ds' <- concat <$> mapM bindToErl ds
---      ret <- valueToErl val
---      return $ iife (ds' ++ [ret])
-
     valueToErl' _ (Let _ ds val) = do
-      ds2 <- mapM bindToErl3 ds
+      ds2 <- mapM bindToErl ds
       ret <- valueToErl val
       let ds3 = foldr ($) ret ds2
       pure ds3
-
-    -- valueToErl' _ (Let _ ds val) = do
-    --   ret <- valueToErl val
-    --   ds'2 <- letbindM bindToErl2 ds ret
-    --   -- TODO:  variables rather than creating temporary scope just for this
-    --   -- TODO: This scope doesn't really work probably if we actually want to shadow parent scope (avoiding siblings is fine)
-    --   return $ iife1 (ds'2) -- (ds' ++ [ret])
 
     valueToErl' _ (Constructor (_, _, Just IsNewtype) _ _ _) = error "newtype ctor"
     valueToErl' _ (Constructor _ _ (ProperName ctor) fields) =
@@ -1035,17 +1044,12 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
              in foldr (EFun1 Nothing . identToVar) body fields
        in pure createFn
 
-    -- iife exprs = EApp RegularApp (EFun0 Nothing (EBlock exprs)) []
-    -- iife1 expr = EApp RegularApp (EFun0 Nothing expr) []
-
     constructorLiteral name args = ETupleLiteral (EAtomLiteral (Atom Nothing (toAtomName name)) : args)
-
-
 
     literalToValueErl :: Literal (Expr Ann) -> m Erl
     literalToValueErl = fmap fst . literalToValueErl' EMapLiteral (\x -> (,[]) <$> valueToErl x)
 
-    literalToValueErl' :: ([(Atom, Erl)] -> Erl) -> (a -> m (Erl, [b])) -> Literal a -> m (Erl, [b])
+    literalToValueErl' :: Show a => ([(Atom, Erl)] -> Erl) -> (a -> m (Erl, [b])) -> Literal a -> m (Erl, [b])
     literalToValueErl' _ _ (NumericLiteral n) = pure (ENumericLiteral n, [])
     literalToValueErl' _ _ (StringLiteral s) = pure (EStringLiteral s, [])
     literalToValueErl' _ _ (CharLiteral c) = pure (ECharLiteral c , [])
@@ -1086,12 +1090,12 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           let binders' = binders ++ replicate (numBinders - length binders) (NullBinder (nullSourceSpan, [], Nothing))
               vars = nub $ concatMap binderVars binders'
 
-          newVars <- map Ident <$> replicateM (length vars) freshNameErl
+          newVars <- map Ident <$> replicateM (length vars) (freshNameErl' "CaseToErl")
 
           -- TODO we replace because case expressions do not introduce a scope for the binders, but to preserve identifier
           -- names we could do so only for those identifiers which are not already fresh here
           -- but we currently don't have a parent scope available
-          let (_, replaceExpVars, replaceBinderVars) = everywhereOnValues id (replaceEVars (zip vars newVars)) (replaceBVars (zip vars newVars))
+          let (_, replaceExpVars, replaceBinderVars) = everywhereOnValues id id id -- (replaceEVars (zip vars newVars)) (replaceBVars (zip vars newVars))
 
           let binders'' = map replaceBinderVars binders'
               alt' = case replaceExpVars (Case (nullSourceSpan, [], Nothing) [] [CaseAlternative [] alt]) of
@@ -1117,14 +1121,17 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
           pure (es ++ binderBinds, res, binderVars)
 
+        mapMIndex :: Monad m => (Int -> a -> m b) -> [a] -> m [b]
+        mapMIndex f xs = sequence $ zipWith f [0..] xs
+
         guardToErl :: [Erl] -> (Expr Ann, Expr Ann) -> m ([Erl], (EFunBinder, Erl))
         guardToErl bs (ge, e) = do
-          var <- freshNameErl
+          var <- freshNameErl' "GuardVar"
           ge' <- valueToErl ge
           let binder = EFunBinder bs Nothing
               fun =
                 EFunFull
-                  (Just "Guard")
+                  Nothing
                   ( (binder, ge') :
                       [(EFunBinder (replicate (length bs) (EVar "_")) Nothing, boolToAtom False) | not (irrefutable binder)]
                   )
@@ -1154,20 +1161,26 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     binderToErl' (NullBinder _) = pure (EVar "_", [])
     binderToErl' (VarBinder _ ident) = pure (EVar $ identToVar ident, [])
     binderToErl' (LiteralBinder _ (ArrayLiteral es)) = do
-      x <- freshNameErl
+      x <- freshNameErl' "ArrayLiteralBinderX"
       args' <- mapM binderToErl' es
 
-      let arrayToList = EAtomLiteral $ Atom (Just "array") "to_list"
+      let arraySize = EAtomLiteral $ Atom (Just "array") "size"
+          arrayToList = EAtomLiteral $ Atom (Just "array") "to_list"
           cas (binder, vals) =
             EApp RegularApp
               ( EFunFull
                   Nothing
-                  ( (binder, EApp RegularApp arrayToList [EVar x]) :
+                  ( (binder
+                  , ECaseOf (EApp RegularApp arraySize [EVar x])
+                      [ (EBinder (ENumericLiteral (Left (toInteger (length es)))), EApp RegularApp arrayToList [EVar x])
+                      , (EBinder (EVar "_"), EAtomLiteral (Atom Nothing "array_was_wrong_size"))
+                      ]
+                  ) :
                       [(EFunBinder (replicate (length vals) (EVar "_")) Nothing, EAtomLiteral $ Atom Nothing "fail") | not (irrefutable binder)]
                   )
               )
               vals
-      var <- freshNameErl
+      var <- freshNameErl' "ArrayLiteralBinderVar"
 
       let arr = EListLiteral (map fst args')
       pure (EVar x, (EVarBind var . cas, (var, arr)) : concatMap snd args')
@@ -1184,6 +1197,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       where
         isOk (EVarBind _ e) = isOk e
         isOk (EVar _) = True
+        -- NOTE[drathier]: the below patterns are irrefutable iff the typechecker has checked this case, and perhaps it might not have here.
+        -- isOk (EMapLiteral fields) = all isOk (map snd fields)
+        -- isOk (ETupleLiteral fields) = all isOk fields
         isOk _ = False
     irrefutable _ = False
 
@@ -1254,6 +1270,11 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           CaseAlternative ann . Left
             <$> traverse (traverse go) ges
 
+letbindVars elet exprs innermost =
+  case exprs of
+    [] -> innermost
+    (name,e):es -> elet (EBind (EVar name) e) (letbindVars elet es innermost)
+
 letbind elet exprs innermost =
   case exprs of
     [] -> innermost
@@ -1269,7 +1290,20 @@ mapMK f kont values =
       (res, kont3) <- mapMK f kont' vs
       pure (v':res, kont3)
 
+funBinderToBinder = \case
+  (EFunBinder [e] Nothing, ee) -> (EBinder e, ee)
+  (EFunBinder [e] (Just g), ee) -> (EGuardedBinder e g, ee)
+  (EFunBinder es Nothing, ee) -> (EBinder (ETupleLiteral es), ee)
+  (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
 
+
+--letbindM :: (Erl -> Bind Ann -> m Erl) -> [Bind Ann] -> Erl -> m Erl
+--letbindM runBind binds innermost =
+--  case binds of
+--    [] -> pure innermost
+--    e:es -> do
+--      b <- runBind e b
+--      rest <- letbind elet es innermost
 --letbindM :: (Erl -> Bind Ann -> m Erl) -> [Bind Ann] -> Erl -> m Erl
 --letbindM runBind binds innermost =
 --  case binds of
@@ -1284,3 +1318,12 @@ mapMK f kont values =
 --    e:es -> do
 --      elet2 <- elet e
 --      rest <- letbind elet es innermost
+
+
+-- NOTE[drathier]: hash continuations and bind them as local funs, so we don't duplicate code on deeply nested branches
+data DB
+  = DB
+    { conts :: M.Map [CaseAlternative Ann] T.Text
+    , contImpls :: [(T.Text, Erl)]
+    , topmostValues :: [T.Text]
+    }
