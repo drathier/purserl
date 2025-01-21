@@ -27,8 +27,6 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
       inlineCommonValuesTopDown,
       inlineCommonValuesBottomUp,
       singleBegin, collectLists, replaceAppliedFunRefs, inlineCommonFnsM )
-import Language.PureScript.Erl.CodeGen.Optimizer.Guards
-    ( inlineSimpleGuards )
 
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Unused (removeUnusedFuns)
@@ -209,12 +207,12 @@ collectOnPat e = do
 collectBinder :: EFunBinder -> State DB ()
 collectBinder binder =
   case binder of
-    EFunBinder pats mGuard -> do
+    EFunBinder pats -> do
       mapM_ collectPat pats
-      mapM_ collectGuard mGuard
+      -- mapM_ collectGuard mGuard
 
-collectGuard :: Guard -> State DB Guard
-collectGuard (Guard g) = Guard <$> collectErl g
+-- collectGuard :: Guard -> State DB Guard
+-- collectGuard (Guard g) = Guard <$> collectErl g
 
 ----
 
@@ -253,10 +251,10 @@ replaceOnErl e = do
       replaceBinder :: EFunBinder -> State Replacements EFunBinder
       replaceBinder binder =
         case binder of
-          EFunBinder pats mGuard -> do
+          EFunBinder pats -> do
             pats' <- mapM replacePat pats
-            mGuard' <- mapM replaceGuard mGuard
-            pure (EFunBinder pats' mGuard')
+            -- mGuard' <- mapM replaceGuard mGuard
+            pure (EFunBinder pats')-- mGuard')
 
       replaceGuard :: Guard -> State Replacements Guard
       replaceGuard (Guard g) = Guard <$> replaceErl g

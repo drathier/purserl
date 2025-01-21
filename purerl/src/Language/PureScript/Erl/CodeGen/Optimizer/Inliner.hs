@@ -239,17 +239,17 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 
         -- TODO[drathier]: occours check needed here or not? yes
         -- EFunctionDef _ _ _ vars (EApp _ body args) | map EVar vars == args -> body
-        EFunFull _ [(EFunBinder vars _, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
+        EFunFull _ [(EFunBinder vars, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
 
         EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> v
         EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs
 
         EApp appKind (ELet bind body) args -> ELet bind (EApp appKind body args)
 
-        -- EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EApp RegularApp (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")) [EVar "_@251"])]
-        -- (EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EVar "_@251")])
+        -- EFunFull Nothing [(EFunBinder [EVar "_@251"],EApp RegularApp (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")) [EVar "_@251"])]
+        -- (EFunFull Nothing [(EFunBinder [EVar "_@251"],EVar "_@251")])
 
-        -- EFunctionDef Nothing (Just ss) (Atom Nothing "eqNewtypeRep_156") [] (EFunFull Nothing [(EFunBinder [EVar "_@251"] Nothing,EVar "_@251")]),
+        -- EFunctionDef Nothing (Just ss) (Atom Nothing "eqNewtypeRep_156") [] (EFunFull Nothing [(EFunBinder [EVar "_@251"],EVar "_@251")]),
         -- EFunctionDef Nothing (Just ss) (Atom Nothing "eqNewtypeRep_156") [] (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")),
 
 -- TODO[drathier]: replace this pattern match with pattern unwrapping? i.e. replace EFun1 EVar with FunDef EBind?
@@ -260,7 +260,7 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 --        EApp _ (EFun1 Nothing var1 body) [arg1] -> EBlock [EVarBind var1 arg1, body]
 
 
-        -- EApp _ (EFunFull Nothing [(EFunBinder [pat1] Nothing, body)]) [arg1] -> EBlock [EBind pat1 arg1, convert body]
+        -- EApp _ (EFunFull Nothing [(EFunBinder [pat1], body)]) [arg1] -> EBlock [EBind pat1 arg1, convert body]
 
         other -> other
 

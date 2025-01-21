@@ -28,8 +28,6 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
       inlineCommonValuesTopDown,
       inlineCommonValuesBottomUp,
       singleBegin, collectLists, replaceAppliedFunRefs, inlineCommonFnsM )
-import Language.PureScript.Erl.CodeGen.Optimizer.Guards
-    ( inlineSimpleGuards )
 
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Unused (removeUnusedFuns)
@@ -194,23 +192,23 @@ replaceOrSuffixIdents suffix replacements erl =
         "_" -> v
         _ -> v <> suffix
 
-    onBinder (EFunBinder erl mguard, rhs) =
+    onBinder (EFunBinder erl, rhs) =
       -- trace (show ("onBinder", erl, mguard, rhs)) $
       -- we also have to recurse into funbinders explicitly here, not just apply one level of rewrites
-      (EFunBinder (map rec erl) (onGuard <$> mguard), rhs)
+      (EFunBinder (map rec erl), rhs)
 
     onCaseBinder (b,c) =
       -- trace (show ("onCaseBinder", b, c)) $
       (case b of
         EBinder rhs -> EBinder (rec rhs)
-        EGuardedBinder rhs guard -> EGuardedBinder (rec rhs) (onGuard guard)
+        -- EGuardedBinder rhs guard -> EGuardedBinder (rec rhs) (onGuard guard)
       , c
       )
 
-    onGuard (Guard erl) =
-      -- trace (show ("onGuard", Guard erl)) $
-      -- guards are not recursed into either
-      Guard (rec erl)
+    -- onGuard (Guard erl) =
+    --   -- trace (show ("onGuard", Guard erl)) $
+    --   -- guards are not recursed into either
+    --   Guard (rec erl)
 
     rewrite :: Erl -> Erl
     rewrite e =

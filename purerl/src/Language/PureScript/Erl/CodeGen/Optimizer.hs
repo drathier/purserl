@@ -27,8 +27,8 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
       inlineCommonValuesTopDown,
       inlineCommonValuesBottomUp,
       singleBegin, collectLists, replaceAppliedFunRefs, inlineCommonFnsM )
-import Language.PureScript.Erl.CodeGen.Optimizer.Guards
-    ( inlineSimpleGuards )
+-- import Language.PureScript.Erl.CodeGen.Optimizer.Guards
+--     ( inlineSimpleGuards )
 
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Unused (removeUnusedFuns)
@@ -91,7 +91,7 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
   tidyUp :: MonadSupply m => Erl -> m Erl
   tidyUp = applyAllM
     [ pure . collapseNestedBlocks
-    , pure . inlineSimpleGuards
+    -- , pure . inlineSimpleGuards
     , pure . beginBinds
     , pure . evaluateIifes -- NOTE[drathier]: skipping this step doesn't change the resulting output/ folder contents at all; presumably it's handled by the etaConvert step
     , pure . singleBegin

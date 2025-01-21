@@ -303,7 +303,7 @@ moduleToErl codegenEnv m@(Module _ _ mn _ _ _ _ _ _) foreignExports =
   -- TODO I don't want to need this
   runtimeLazyCurried :: Erl
   runtimeLazyCurried = EFunctionDef Nothing Nothing (Atom Nothing $ identToAtomName $ InternalIdent RuntimeLazyFactory) [ "CtxRef" ] $
-    EFunFull Nothing [(EFunBinder [EVar "Name", EVar "ModuleName", EVar "Init"] Nothing, runtimeLazyBody)]
+    EFunFull Nothing [(EFunBinder [EVar "Name", EVar "ModuleName", EVar "Init"], runtimeLazyBody)]
 
   runtimeLazyBody :: Erl
   runtimeLazyBody =
@@ -663,7 +663,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           (funs :: [Erl]) <- forM vals $ \((_, ident), val) -> do
             erl <- valueToErl' Nothing val
             let erl' = foldr replaceFun erl vars
-            let fun = EFunFull Nothing [(EFunBinder [varTupInner] Nothing, erl')]
+            let fun = EFunFull Nothing [(EFunBinder [varTupInner], erl')]
             pure $ EVarBind (identToVar ident <> "@f") fun
           let rebinds = map (\var -> EVarBind var (EApp RegularApp (EVar $ var <> "@f") [varTupOuter])) vars
               -- TODO this is not unique in the case of multiple recursive binding groups in same scope
@@ -1156,7 +1156,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     boolToAtom :: Bool -> Erl
     boolToAtom True = EAtomLiteral $ Atom Nothing "true"
     boolToAtom False = EAtomLiteral $ Atom Nothing "false"
-
+{-
     bindersToErl :: [Erl] -> [CaseAlternative Ann] -> m ([Erl], [(EFunBinder, Erl)], [Erl])
     bindersToErl vals cases = do
       let binderLengths = map (length . caseAlternativeBinders) cases
@@ -1169,7 +1169,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           convBinder (count, binds) (_, binders, arrayMatches) =
             (count + length arrayMatches, binds ++ map go binders)
             where
-              go (EFunBinder bs z, e) = (EFunBinder (bs ++ padBinds count arrayMatches) z, e)
+              go (EFunBinder bs, e) = (EFunBinder (bs ++ padBinds count arrayMatches), e)
           padBinds n binds = replicate n (EVar "_") ++ map snd binds ++ replicate (length arrayVars - n - length binds) (EVar "_")
           binders' = snd $ foldl convBinder (0, []) res
 
@@ -1199,14 +1199,14 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           -- let (binderBinds, binderVars) = map ($ EFunBinder bs Nothing) *** map (first EVar) $ unzip binderContext
 
           let contextStep (binds, bindVars) (mkBind, otherContext) =
-                (binds <> [ mkBind (EFunBinder (bs <> map snd bindVars) Nothing, vals ++ map fst bindVars) ], bindVars <> [ first EVar otherContext ])
+                (binds <> [ mkBind (EFunBinder (bs <> map snd bindVars), vals ++ map fst bindVars) ], bindVars <> [ first EVar otherContext ])
               (binderBinds, binderVars) = foldl' contextStep ([], []) binderContext
 
 
           (es, res) <- case alt' of
             Right e -> do
               e' <- valueToErl e
-              pure ([], [(EFunBinder bs Nothing, e')])
+              pure ([], [(EFunBinder bs, e')])
             Left guards -> first concat . unzip <$> mapM (guardToErl bs) guards
 
           pure (es ++ binderBinds, res, binderVars)
@@ -1218,17 +1218,17 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         guardToErl bs (ge, e) = do
           var <- freshNameErl' "GuardVar"
           ge' <- valueToErl ge
-          let binder = EFunBinder bs Nothing
+          let binder = EFunBinder bs
               fun =
                 EFunFull
                   Nothing
                   ( (binder, ge') :
-                      [(EFunBinder (replicate (length bs) (EVar "_")) Nothing, boolToAtom False) | not (irrefutable binder)]
+                      [(EFunBinder (replicate (length bs) (EVar "_")), boolToAtom False) | not (irrefutable binder)]
                   )
               cas = EApp RegularApp fun vals
           e' <- valueToErl e
           pure ([EVarBind var cas], (EFunBinder bs (Just $ Guard $ EVar var), e'))
-
+-}
     binderVars :: Binder Ann -> [Ident]
     binderVars (VarBinder _ ident) = [ident]
     binderVars (NamedBinder _ ident binder) = ident : binderVars binder
@@ -1266,7 +1266,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                       , (EBinder (EVar "_"), EAtomLiteral (Atom Nothing "array_was_wrong_size"))
                       ]
                   ) :
-                      [(EFunBinder (replicate (length vals) (EVar "_")) Nothing, EAtomLiteral $ Atom Nothing "fail") | not (irrefutable binder)]
+                      [(EFunBinder (replicate (length vals) (EVar "_")), EAtomLiteral $ Atom Nothing "fail") | not (irrefutable binder)]
                   )
               )
               vals
@@ -1283,7 +1283,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       (e, xs) <- binderToErl' binder
       pure (EVarBind (identToVar ident) e, xs)
 
-    irrefutable (EFunBinder bindEs Nothing) = all isOk bindEs
+    irrefutable (EFunBinder bindEs) = all isOk bindEs
       where
         isOk (EVarBind _ e) = isOk e
         isOk (EVar _) = True
@@ -1291,7 +1291,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         -- isOk (EMapLiteral fields) = all isOk (map snd fields)
         -- isOk (ETupleLiteral fields) = all isOk fields
         isOk _ = False
-    irrefutable _ = False
+    -- irrefutable _ = False
 
     ensureFreshVars_ = ensureFreshVars Set.empty M.empty
 
@@ -1384,10 +1384,10 @@ mapMK f kont values =
       pure (v':res, kont3)
 
 funBinderToBinder = \case
-  (EFunBinder [e] Nothing, ee) -> (EBinder e, ee)
-  (EFunBinder [e] (Just g), ee) -> (EGuardedBinder e g, ee)
-  (EFunBinder es Nothing, ee) -> (EBinder (ETupleLiteral es), ee)
-  (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
+  (EFunBinder [e], ee) -> (EBinder e, ee)
+  -- (EFunBinder [e] (Just g), ee) -> (EGuardedBinder e g, ee)
+  (EFunBinder es, ee) -> (EBinder (ETupleLiteral es), ee)
+  -- (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
 
 
 --letbindM :: (Erl -> Bind Ann -> m Erl) -> [Bind Ann] -> Erl -> m Erl

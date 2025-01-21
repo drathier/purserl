@@ -77,7 +77,7 @@ isRebound x =
     -- matchBinder (EFunBinder es _, _) = any (occurs x) es
 
     matchCaseBinder (EBinder e) = occurs x e
-    matchCaseBinder (EGuardedBinder e _) = occurs x e
+    -- matchCaseBinder (EGuardedBinder e _) = occurs x e
 
 -- TODO figure this into generic traversal with context pattern
 replaceIdents :: [(Text, Erl)] -> Erl -> Erl
@@ -112,13 +112,18 @@ replaceIdents unfilteredVars = go
     -- -- Vars are *not* fresh inf case binders
     goCase :: (EBinder, Erl) -> (EBinder, Erl)
     goCase (EBinder e, e') = (EBinder (go e), go e')
-    goCase (EGuardedBinder e (Guard eg), e') = (EGuardedBinder (go e) (Guard $ go eg), go e')
+    -- goCase (EGuardedBinder e (Guard eg), e') = (EGuardedBinder (go e) (Guard $ go eg), go e')
 
     goFunHead :: (EFunBinder, Erl) -> (EFunBinder, Erl)
+    goFunHead (EFunBinder es, e) = (EFunBinder es, replaceIdents vars' e)
+      where
+        vars' = filter (\(var, _) -> not $ any (occurs var) es) vars
+{-
     goFunHead (EFunBinder es g, e) = (EFunBinder es g', replaceIdents vars' e)
       where
         vars' = filter (\(var, _) -> not $ any (occurs var) es) vars
         g' = (\(Guard eg) -> Just $ Guard $ replaceIdents vars' eg) =<< g
+-}
 
 -- Rename bound vars in preparation for hoisting expression into a parent scope when the expression may bind same variables as a sibling
 -- Super restricted, only renames top level X = e bindings (possibly in a begin/end block) as this is what we generate

@@ -193,6 +193,13 @@ literals = mkPattern' match
             , prettyPrintErl' e ]
 
         prettyPrintBinder :: (Emit gen) => (EFunBinder, Erl) -> StateT PrinterState Maybe gen
+        prettyPrintBinder (EFunBinder binds, e') = do
+          b' <- intercalate (emit ", ") <$> mapM prettyPrintErl' binds
+          v <- matchBody e'
+          indentStr <- currentIndent
+          -- return $ indentStr <> emit (fromMaybe "" name) <> parensPos b' <> g' <> emit " -> erlang:display({drathier_call2, ?MODULE, ?FUNCTION_NAME, ?LINE}), \n" <> v --parensPos b' <> g' <> emit " -> " <> v
+          return $ indentStr <> emit (fromMaybe "" name) <> parensPos b' <> emit " -> \n" <> v --parensPos b' <> g' <> emit " -> " <> v
+{-
         prettyPrintBinder (EFunBinder binds ge, e') = do
           b' <- intercalate (emit ", ") <$> mapM prettyPrintErl' binds
           v <- matchBody e'
@@ -202,6 +209,7 @@ literals = mkPattern' match
           indentStr <- currentIndent
           -- return $ indentStr <> emit (fromMaybe "" name) <> parensPos b' <> g' <> emit " -> erlang:display({drathier_call2, ?MODULE, ?FUNCTION_NAME, ?LINE}), \n" <> v --parensPos b' <> g' <> emit " -> " <> v
           return $ indentStr <> emit (fromMaybe "" name) <> parensPos b' <> g' <> emit " -> \n" <> v --parensPos b' <> g' <> emit " -> " <> v
+-}
 
   match (ECaseOf e binders) =
     mconcat <$> sequence
@@ -220,17 +228,18 @@ literals = mkPattern' match
     prettyPrintBinder :: (Emit gen) => (EBinder, Erl) -> StateT PrinterState Maybe gen
     prettyPrintBinder (EBinder eb, e') = do
       c <- prettyPrintErl' eb
-      v <- prettyPrintErl' e'
-      i <- currentIndent 
+      v <- withIndent (prettyPrintErl' e')
+      i <- currentIndent
+      i2 <- currentIndent' 2
       -- return $ i <> parensPos c <> emit " -> erlang:display({drathier_case4, ?MODULE, ?FUNCTION_NAME, ?LINE})," <> v
-      return $ i <> parensPos c <> emit " -> " <> v
-    prettyPrintBinder (EGuardedBinder eb (Guard eg), e') = do
-      c <- prettyPrintErl' eb
-      v <- prettyPrintErl' e'
-      g <- prettyPrintErl' eg
-      i <- currentIndent 
-      -- return $ i <> parensPos c <> emit " when "  <> g <> emit " -> erlang:display({drathier_case5, ?MODULE, ?FUNCTION_NAME, ?LINE})," <> v
-      return $ i <> parensPos c <> emit " when "  <> g <> emit " -> " <> v
+      return $ i <> parensPos c <> emit " ->\n" <> i2 <> v
+    -- prettyPrintBinder (EGuardedBinder eb (Guard eg), e') = do
+    --   c <- prettyPrintErl' eb
+    --   v <- prettyPrintErl' e'
+    --   g <- prettyPrintErl' eg
+    --   i <- currentIndent
+    --   -- return $ i <> parensPos c <> emit " when "  <> g <> emit " -> erlang:display({drathier_case5, ?MODULE, ?FUNCTION_NAME, ?LINE})," <> v
+    --   return $ i <> parensPos c <> emit " when "  <> g <> emit " -> " <> v
 
   match (EAttribute name text) = case (decodeString name, decodeString text) of
     (Just name', Just text') ->

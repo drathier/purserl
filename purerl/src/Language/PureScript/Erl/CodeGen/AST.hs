@@ -122,11 +122,11 @@ pattern EVarBind name e = EBind (EVar name) e
 
 -- | Simple 0-arity version of EFun1
 pattern EFun0 :: Maybe Text -> Erl -> Erl
-pattern EFun0 name e = EFunFull name [(EFunBinder [] Nothing, e)]
+pattern EFun0 name e = EFunFull name [(EFunBinder [], e)]
 
 -- | Simple fun definition fun f(X) -> e end (arity 1 with single head with simple variable pattern, name optional)
 pattern EFun1 :: Maybe Text -> Text -> Erl -> Erl
-pattern EFun1 name var e = EFunFull name [(EFunBinder [EVar var] Nothing, e)]
+pattern EFun1 name var e = EFunFull name [(EFunBinder [EVar var], e)]
 
 extractVars :: [Erl] -> Maybe [Text]
 extractVars = traverse var
@@ -135,8 +135,8 @@ extractVars = traverse var
 
 -- | Simple arity-N version of EFun1
 pattern EFunN :: Maybe Text -> [Text] -> Erl -> Erl
-pattern EFunN name vars e <- EFunFull name [(EFunBinder (extractVars -> Just vars) Nothing, e)] where
-  EFunN name vars e = EFunFull name [(EFunBinder (map EVar vars) Nothing, e)]
+pattern EFunN name vars e <- EFunFull name [(EFunBinder (extractVars -> Just vars), e)] where
+  EFunN name vars e = EFunFull name [(EFunBinder (map EVar vars), e)]
 
 
 curriedLambda :: Erl -> [Text] -> Erl
@@ -152,13 +152,16 @@ qualFunCall q t = EApp RegularApp (EAtomLiteral $ Atom (Just q) t)
 
 
 data EFunBinder
- = EFunBinder [Erl] (Maybe Guard)
+ = EFunBinder [Erl]
+ -- [drathier]: using ECaseOf instead of EFunBinder _ (Just _)
+ -- = EFunBinder [Erl] (Maybe Guard)
 
    deriving (Show, Eq)
 
 data EBinder
   = EBinder Erl -- TODO split out literals?
-  | EGuardedBinder Erl Guard
+  -- [drathier]: using ECaseOf instead of EGuardedBinder
+  -- | EGuardedBinder Erl Guard
 
   deriving (Show, Eq)
 

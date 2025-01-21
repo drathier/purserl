@@ -1,7 +1,7 @@
 -- |
 -- This module provides collapsing of simple guard expressions
 module Language.PureScript.Erl.CodeGen.Optimizer.Guards where
-
+{-
 import Language.PureScript.Erl.CodeGen.AST
 import Prelude.Compat
 
@@ -47,3 +47,4 @@ inlineSimpleGuards = everywhereOnErl convert
     guardExpr (EBinary _ e1 e2) = guardExpr e1 && guardExpr e2
     guardExpr (EVar _) = True
     guardExpr _ = False
+-}
