@@ -47,6 +47,7 @@ import qualified Language.PureScript.Names as P
 -- import qualified Paths_purerl as Paths
 import qualified Paths_purescript as Paths
 --
+import Debug.Trace
 
 data MakeActions m = MakeActions
   { codegen :: CodegenEnvironment -> CF.Module CF.Ann -> SupplyT m ()
@@ -83,7 +84,7 @@ buildActions outputDir foreigns usePrefix generateChecked =
 
     (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl) <- moduleToErl env m foreignExports
 
-    optimized <- optimize exports rawErl
+    optimized <- optimize exports (trace (show ("optimize", CF.moduleName m)) rawErl)
     checked <- optimize checkedExports checkedRawErl
 
     dir <- lift $ makeIO "get file info: ." getCurrentDirectory

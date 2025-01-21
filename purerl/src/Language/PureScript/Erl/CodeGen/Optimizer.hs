@@ -37,23 +37,32 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Memoize (addMemoizeAnnotations)
 import Control.Monad ((<=<))
 import Language.PureScript.Erl.CodeGen.Inliner qualified as Inliner
 import Language.PureScript.Erl.CodeGen.InlineLocal qualified as InlineLocal
+import Debug.Trace
 
 -- |
 -- Apply a series of optimizer passes to simplified Javascript code
 --
 optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
--- optimize exports es = pure es
+optimize exports es = pure es
 -- optimize exports es = pure (Inliner.inline es)
 -- optimize exports es = removeUnusedFuns exports <$> pure (Inliner.inline es)
 optimize exports es = do -- removeUnusedFuns exports <$> do
+  traceM (show ("woop", "optimize1"))
   es2 <- traverse go es
-  let es3 = Inliner.inline es2
-  es4 <- untilFixedPoint (traverse go) es3
-  let es5 = InlineLocal.inlineVarBinds es4
-  es6 <- untilFixedPoint (traverse go) es5
-  let es7 = InlineLocal.inlineVarBinds es6
-  es8 <- untilFixedPoint (traverse go) es7
-  pure es8
+  -- traceM (show ("woop", "optimize2"))
+  -- let es3 = Inliner.inline es2
+  -- traceM (show ("woop", "optimize3"))
+  -- es4 <- untilFixedPoint (traverse go) es3
+  -- traceM (show ("woop", "optimize4"))
+  -- let es5 = InlineLocal.inlineVarBinds es4
+  -- traceM (show ("woop", "optimize5"))
+  -- es6 <- untilFixedPoint (traverse go) es5
+  -- traceM (show ("woop", "optimize6"))
+  -- let es7 = InlineLocal.inlineVarBinds es6
+  -- traceM (show ("woop", "optimize7"))
+  -- es8 <- untilFixedPoint (traverse go) es7
+  -- traceM (show ("woop", "optimize8"))
+  pure es2
 
   where
   go erl =
@@ -92,12 +101,13 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
     ]
 
 
-untilFixedPoint :: (Monad m, Eq a) => (a -> m a) -> a -> m a
-untilFixedPoint f = go
+untilFixedPoint :: Show a => (Monad m, Eq a) => (a -> m a) -> a -> m a
+untilFixedPoint f = go 10
   where
-  go a = do
+  go 0 a = trace (show ("untilFixedPoint bailed out", a)) $ pure a
+  go n a = do
    a' <- f a
-   if a' == a then return a' else go a'
+   if a' == a then return a' else go (n-1) a'
 
 
 -- |

@@ -24,6 +24,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Language.PureScript.CoreFn.Binders (Binder(..))
 import Data.Text qualified as T
+import Debug.Trace qualified as Debug
 
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.CoreFn.Binders (Binder(..))
@@ -35,10 +36,14 @@ import Language.PureScript.Names (Ident, ProperName, ProperNameType(..), Qualifi
 -- CoreFn optimization pass.
 --
 optimizeCoreFn :: Module Ann -> Supply (Module Ann)
+-- optimizeCoreFn m = pure m
 optimizeCoreFn m =
   fmap (\md -> m {moduleDecls = md}) $
+  -- Debug.trace (show ("optimizeCoreFn1", "dummy")) $
   optimizeCommonSubexpressions (moduleName m) $
+  -- Debug.trace (show ("optimizeCoreFn2", "dummy")) $
   optimizeModuleDecls (moduleName m) (moduleForeign m) $
+  -- Debug.trace (show ("optimizeCoreFn3", "dummy")) $
   moduleDecls m
 
 optimizeModuleDecls :: ModuleName -> [Ident] -> [Bind Ann] -> [Bind Ann]
@@ -47,7 +52,7 @@ optimizeModuleDecls modu foreignIdents binds =
     force $
       map (
        renameIdentsAndVars modu
-        (
+        ( -- Debug.trace (show ("renameIdentsAndVars-pre", modu)) $
           Map.fromList $
             map (\v -> (v,())) $
             (concatMap bindIdents binds <>
@@ -164,7 +169,7 @@ lookupIdent ident = do
       v
     Nothing ->
       -- TODO[drathier]: we'll likely have to either stop returning idents here and only rely on recursion schemes to translate idents after registering them here, or add identity mappings for already translated idents
-      Debug.trace (show ("CoreFn.Optimizer.lookupIdent Map.lookup Nothing", prefix, ident, env)) $
+      -- Debug.trace (show ("CoreFn.Optimizer.lookupIdent Map.lookup Nothing", prefix, ident, env)) $
       ident
   -- pure ident
 
@@ -380,7 +385,7 @@ renameIdentsAndVars modu topLevelFunctions bind =
     goIdent :: Ident -> State RenameState Ident
     goIdent = onIdent
   in
-  force $ evalState (goBind bind)
+  force $ evalState (goBind bind)--(Debug.trace (show ("renameIdentsAndVars-startbind", modu, bind)) $ bind))
     ( 0
     , Map.empty
     , topLevelFunctions <> Map.fromList (map (\v -> (v,())) (bindIdents bind)) <> unusedVar

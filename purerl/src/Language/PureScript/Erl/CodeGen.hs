@@ -804,7 +804,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       (res, resDB) <-
         runStateT
           (caseToErlImpl (map fst renamedValues) branches)
-          (DB M.empty [] (map fst renamedValues))
+          (DB M.empty [] [] (map fst renamedValues))
       pure
         ( letbindVars ELet renamedValues $
           letbind (\(k,v) rest -> ELet (EBind (EVar k) (EFun0 (Just k) v)) rest) (reverse (contImpls resDB)) $
@@ -825,11 +825,12 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
               [a] -> a
               _ -> ETupleLiteral things
 
-          buildCont :: [CaseAlternative Ann] -> StateT DB m T.Text
+          buildCont :: [CaseAlternative Ann] -> StateT DB m (Maybe T.Text)
+          buildCont [] = pure Nothing
           buildCont branches = do
             db <- get
             case M.lookup branches (conts db) of
-              Just contName -> pure contName
+              Just contName -> pure (Just contName)
               Nothing -> do
                 -- [drathier]: insert name before generating the branch, to avoid duplicate work, if that's even an issue
                 contName <- lift (freshNameErl' "Cont")
@@ -838,51 +839,128 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                 rest <- caseToErlImpl (topmostValues db) branches
                 db <- get
                 put ( db { contImpls = (contName, rest) : contImpls db } )
-                pure contName
+                pure (Just contName)
 
+          pushArrayCont :: P.Text -> [Binder Ann] -> StateT DB m ()
+          pushArrayCont var binders = do
+            db <- get
+            put (db {arrayConts = (var,binders):arrayConts db})
+            pure ()
+
+          popArrayCont :: P.Text -> [Binder Ann] -> StateT DB m (Maybe (T.Text, [Binder Ann]))
+          popArrayCont var binders = do
+            db <- get
+            case arrayConts db of
+              [] -> pure Nothing
+              (var, binders):rest -> do
+                put (db {arrayConts = rest})
+                pure (Just (var, binders))
+
+          takeArrayConts :: StateT DB m [(T.Text, [Binder Ann])]
+          takeArrayConts = do
+            db <- get
+            put (db {arrayConts = []})
+            pure (arrayConts db)
 
           branchesToErl :: [CaseAlternative Ann] -> StateT DB m [(EBinder, Erl)]
           branchesToErl branches =
             case branches of
               [] -> do
-                unreachable <- freshNameErl' "Unreachable"
-                pure [(EBinder (EVar unreachable), EVar unreachable)]
+                pure []
               (CaseAlternative binders mguard):restBranches ->
                 case mguard of
                   Right rhs -> do
                     binders2 <- mapM binderToErl binders
+                    arrayConts <- takeArrayConts
                     rhs2 <- lift $ valueToErl rhs
-                    ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
-                  Left guardedExprs -> do
-                    -- either we walk down a nested path of cases, or we continue down
-                    binders2 <- mapM binderToErl binders
-                    onGuardFailureCont <- buildCont restBranches
-                    guardsToErl2 <- guardsToErl onGuardFailureCont guardedExprs
-                    pure
-                      [ (EBinder (tupleWrap binders2), guardsToErl2)
-                      , (EBinder (EVar "_"), EApp RegularApp (EVar onGuardFailureCont) [])
-                      ]
+                    case arrayConts of
+                      [] ->
+                        ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
+                      _ -> do
+                        monGuardFailureCont <- buildCont restBranches
+                        guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts [(boolToAtom True, rhs2)]
+                        pure $
+                          [ (EBinder (tupleWrap binders2), guardsToErl2) ]
+                          <>
+                          case monGuardFailureCont of
+                            Just onGuardFailureCont ->
+                              [ (EBinder (EVar "_"), EApp RegularApp (EVar onGuardFailureCont) []) ]
+                            Nothing ->
+                              []
 
-          guardsToErl :: T.Text -> [(E.Guard Ann, Expr Ann)] -> StateT DB m Erl
-          guardsToErl onGuardFailureCont [] = pure $ EVar "drathier-unreachble-empty-guards"
-          guardsToErl onGuardFailureCont ((guard, happy):restGuards) = do
-            guard2 <- lift $ valueToErl guard
-            happy2 <- lift $ valueToErl happy
-            restGuards2 <- guardsToErl onGuardFailureCont restGuards
-            pure $
-              case guard2 == boolToAtom True of
-                True -> happy2
-                False ->
-                  ECaseOf guard2
-                    [ ( EBinder (boolToAtom True)
-                      , case restGuards of
-                          [] -> happy2
-                          _ -> restGuards2
-                      )
-                    , ( EBinder (boolToAtom False)
-                      , EApp RegularApp (EVar onGuardFailureCont) []
+                  Left guardedExprs -> do
+                    -- we either walk down a nested path of cases to evaluate guards, or we continue down to the next branch
+                    binders2 <- mapM binderToErl binders
+                    arrayConts <- takeArrayConts
+                    guardedExprs2 <- mapM (\(g,h) -> (,) <$> lift (valueToErl g) <*> lift (valueToErl h)) guardedExprs
+                    monGuardFailureCont <- buildCont restBranches
+                    guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts guardedExprs2
+                    pure $
+                      [(EBinder (tupleWrap binders2), guardsToErl2)]
+                      <>
+                      case monGuardFailureCont of
+                        Just onGuardFailureCont ->
+                          [ (EBinder (EVar "_"), EApp RegularApp (EVar onGuardFailureCont) [])
+                          ]
+                        Nothing ->
+                          []
+
+
+          arrayGuardsToErl :: Maybe T.Text -> [(T.Text, [Binder Ann])] -> [(Erl, Erl)]-> StateT DB m Erl
+          arrayGuardsToErl monGuardFailureCont arrayGuards normalGuards =
+            case arrayGuards of
+              [] -> guardsToErl monGuardFailureCont normalGuards
+              ((arrayPattern, binders):restGuards) -> do
+                binders2 <- mapM binderToErl binders
+                arrayConts <- takeArrayConts
+                restGuards2 <- arrayGuardsToErl monGuardFailureCont (arrayConts <> restGuards) normalGuards
+                let contBranch =
+                      case monGuardFailureCont of
+                        Just onGuardFailureCont ->
+                          [ ( EBinder (EVar "_")
+                            , EApp RegularApp (EVar onGuardFailureCont) []
+                            )
+                          ]
+                        Nothing ->
+                          []
+                pure $
+                  ECaseOf (EApp RegularApp (EFunRef (AtomPS (Just "array") "size") 1) [EVar arrayPattern])
+                    ([ ( EBinder (ENumericLiteral (Left (toInteger (length binders))))
+                      , ECaseOf
+                          (EApp RegularApp (EFunRef (AtomPS (Just "array") "to_list") 1) [EVar arrayPattern])
+                          ([ ( EBinder $ EListLiteral binders2
+                            , restGuards2
+                            )
+                          ]
+                          <> contBranch
+                          )
                       )
                     ]
+                    <> contBranch
+                    )
+
+          guardsToErl :: Maybe T.Text -> [(Erl, Erl)] -> StateT DB m Erl
+          guardsToErl Nothing [] = pure $ EVar "Unreachable-drathier-unreachble-empty-guards-without-continuation"
+          guardsToErl (Just onGuardFailureCont) [] = pure $ EApp RegularApp (EVar onGuardFailureCont) []
+          guardsToErl monGuardFailureCont ((guard, happy):restGuards) = do
+            restGuards2 <- guardsToErl monGuardFailureCont restGuards
+            pure $
+              case guard == boolToAtom True of
+                True -> happy
+                False ->
+                  ECaseOf guard $
+                    [ ( EBinder (boolToAtom True)
+                      , happy
+                      )
+                    ]
+                    <>
+                    case (restGuards, monGuardFailureCont) of
+                      ([], Nothing) -> []
+                      _ ->
+                        [ ( EBinder (boolToAtom False)
+                          , restGuards2
+                          )
+                        ]
 
           binderToErl :: Binder Ann -> StateT DB m Erl
           binderToErl binder =
@@ -906,8 +984,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   ObjectLiteral kvPairs ->
                     EMapPattern <$> mapM (\(k,v) -> (AtomPS Nothing k,) <$> binderToErl v) kvPairs
                   ArrayLiteral items -> do
-                    -- arrayVar <- freshNameErl' "ArrayLiteral"
-                    EListLiteral <$> mapM binderToErl items
+                    arrayVar <- freshNameErl' "ArrayLiteral"
+                    pushArrayCont arrayVar items
+                    pure (EVar arrayVar)
 
     valueToErl' _ (Case _ values binders) | False = do
       let
@@ -1012,7 +1091,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                     pure
                       ( EVar arrayPattern
                       , \nextStep ->
-                          ELet (EBind (EVar arraySize) (EApp RegularApp (EFunRef (AtomPS (Just "array@foreign") "size") 1) [EVar arrayPattern])) $
+                          ELet (EBind (EVar arraySize) (EApp RegularApp (EFunRef (AtomPS (Just "array") "size") 1) [EVar arrayPattern])) $
                           ECaseOf (EBinary EqualTo (ENumericLiteral (Left (toInteger (length items')))) (EVar arraySize))
                             [ ( EBinder (boolToAtom True)
                               , ECaseOf
@@ -1339,5 +1418,6 @@ data DB
   = DB
     { conts :: M.Map [CaseAlternative Ann] T.Text
     , contImpls :: [(T.Text, Erl)]
+    , arrayConts :: [(T.Text, [Binder Ann])]
     , topmostValues :: [T.Text]
     }
