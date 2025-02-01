@@ -47,7 +47,6 @@ EFunctionDef (Just (TFun [TAlias (Atom Nothing "binary") [],TFun [TAny] (TFun [T
 EFunctionDef Nothing Nothing (Atom Nothing "unsafeCoerce") [] (ELet (EBind (EVar "F27") (EFunFull Nothing [(EFunBinder [EVar "_@26"] Nothing,EApp RegularApp (EAtomLiteral (Atom (Just "data_symbol@foreign") "unsafeCoerce")) [EVar "_@26"])])) (EVar "F27")),
 EFunctionDef Nothing Nothing (Atom Nothing "unsafeCoerce") ["_@29"] (EApp RegularApp (EApp RegularApp (EAtomLiteral (Atom Nothing "unsafeCoerce")) []) [EVar "_@29"])]
 ```
--}
 removeUnusedFuns exps = loop
   where
     expsSet =
@@ -84,3 +83,4 @@ removeUnusedFuns exps = loop
 
     anyFalses :: Bool -> (Any, Bool)
     anyFalses x = (Any (not x), x)
+-}
