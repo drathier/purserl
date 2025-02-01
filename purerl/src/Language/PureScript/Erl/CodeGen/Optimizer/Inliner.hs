@@ -158,6 +158,19 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
                 []
               )
 
+        EApp app (EFunRef atom i) args | i == length args ->
+          EApp app (EAtomLiteral atom) args
+
+        EFunFull Nothing [(EFunBinder vars, EApp RegularApp (EAtomLiteral atom) args)] | vars == args ->
+          EFunRef atom (length vars)
+
+        EListCons xs (EListLiteral ys) -> EListLiteral (xs <> ys)
+        EListCons xs (EListCons ys z) -> EListCons (xs <> ys) z
+        EBinary ListConcat (EListLiteral xs) (EListLiteral ys) -> EListLiteral (xs <> ys)
+        EBinary ListConcat (EListLiteral xs) (EListCons ys z) -> EListCons (xs <> ys) z
+
+        ELet (EBind a b) c | a == c -> b
+
         ECaseOf cond [(EBinder pat, rhs)] | pat == rhs ->
           cond
 
@@ -204,14 +217,15 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 
         EApp _ (EFun0 _ body) [] -> body
 
+{-
         -- [drathier]: needlessly _@123-wrapped top-level functions, take the inner var and use that instead of the _@123 var.
         -- TODO[drathier]: perf: these only ever apply at top-level, so no need to check for them while recursing. They won't apply for let-bound functions either, as EFunctionDef is only valid at top-level. Otherwise it's an EFunFull.
-        EFunctionDef mType mSS name [var1a, var2a, var3a, var4a, var5a] (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i (EFun1 Nothing var4i (EFun1 Nothing var5i body))))) [EVar var1b]) [EVar var2b]) [EVar var3b]) [EVar var4b]) [EVar var5b]) | var1a == var1b, var2a == var2b, var3a == var3b, var4a == var4b, var5a == var5b -> EFunctionDef mType mSS name [var1i, var2i, var3i, var4i, var5i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i), (var4a, EVar var4i), (var4b, EVar var4i), (var5a, EVar var5i), (var5b, EVar var5i)] body) -- TODO[drathier]: this clause is untested, only tested 1-3 args
-        EFunctionDef mType mSS name [var1a, var2a, var3a, var4a] (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i (EFun1 Nothing var4i body)))) [EVar var1b]) [EVar var2b]) [EVar var3b]) [EVar var4b]) | var1a == var1b, var2a == var2b, var3a == var3b, var4a == var4b -> EFunctionDef mType mSS name [var1i, var2i, var3i, var4i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i), (var4a, EVar var4i), (var4b, EVar var4i)] body) -- TODO[drathier]: this clause is untested, only tested 1-3 args
-        EFunctionDef mType mSS name [var1a, var2a, var3a] (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i body))) [EVar var1b]) [EVar var2b]) [EVar var3b]) | var1a == var1b, var2a == var2b, var3a == var3b -> EFunctionDef mType mSS name [var1i, var2i, var3i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i)] body)
-        EFunctionDef mType mSS name [var1a, var2a] (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i body)) [EVar var1b]) [EVar var2b]) | var1a == var1b, var2a == var2b -> EFunctionDef mType mSS name [var1i, var2i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i)] body)
-        EFunctionDef mType mSS name [var1a] (EApp _ (EFun1 Nothing var1i body) [EVar var1b]) | var1a == var1b -> EFunctionDef mType mSS name [var1i] (replaceIdents [(var1a, EVar var1i), (var1b, EVar var1i)] body)
-
+        EFunctionDef mType mSS name [var1a, var2a, var3a, var4a, var5a] (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i (EFun1 Nothing var4i (EFun1 Nothing var5i body))))) [EVar var1b]) [EVar var2b]) [EVar var3b]) [EVar var4b]) [EVar var5b]) | var1a == var1b, var2a == var2b, var3a == var3b, var4a == var4b, var5a == var5b -> EFunctionDef mType mSS name [var1i, var2i, var3i, var4i, var5i] (letBindIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i), (var4a, EVar var4i), (var4b, EVar var4i), (var5a, EVar var5i), (var5b, EVar var5i)] body) -- TODO[drathier]: this clause is untested, only tested 1-3 args
+        EFunctionDef mType mSS name [var1a, var2a, var3a, var4a] (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i (EFun1 Nothing var4i body)))) [EVar var1b]) [EVar var2b]) [EVar var3b]) [EVar var4b]) | var1a == var1b, var2a == var2b, var3a == var3b, var4a == var4b -> EFunctionDef mType mSS name [var1i, var2i, var3i, var4i] (letBindIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i), (var4a, EVar var4i), (var4b, EVar var4i)] body) -- TODO[drathier]: this clause is untested, only tested 1-3 args
+        EFunctionDef mType mSS name [var1a, var2a, var3a] (EApp _ (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i (EFun1 Nothing var3i body))) [EVar var1b]) [EVar var2b]) [EVar var3b]) | var1a == var1b, var2a == var2b, var3a == var3b -> EFunctionDef mType mSS name [var1i, var2i, var3i] (letBindIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i), (var3a, EVar var3i), (var3b, EVar var3i)] body)
+        EFunctionDef mType mSS name [var1a, var2a] (EApp _ (EApp _ (EFun1 Nothing var1i (EFun1 Nothing var2i body)) [EVar var1b]) [EVar var2b]) | var1a == var1b, var2a == var2b -> EFunctionDef mType mSS name [var1i, var2i] (letBindIdents [(var1a, EVar var1i), (var1b, EVar var1i), (var2a, EVar var2i), (var2b, EVar var2i)] body)
+        EFunctionDef mType mSS name [var1a] (EApp _ (EFun1 Nothing var1i body) [EVar var1b]) | var1a == var1b -> EFunctionDef mType mSS name [var1i] (letBindIdents [(var1a, EVar var1i), (var1b, EVar var1i)] body)
+-}
 
         -- [drathier]: immediately called funs, let-bind their vars
         EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 (EFun1 _ var8 body)))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] ) [arg8] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7), (var8, arg8)] body
@@ -239,7 +253,7 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 
         -- TODO[drathier]: occours check needed here or not? yes
         -- EFunctionDef _ _ _ vars (EApp _ body args) | map EVar vars == args -> body
-        EFunFull _ [(EFunBinder vars, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
+        -- [drathier]: Skipping because it traverses body: -- EFunFull _ [(EFunBinder vars, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
 
         EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> v
         EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs
@@ -267,6 +281,8 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 letBindIdents :: [(Text, Erl)] -> Erl -> Erl
 letBindIdents vars body =
   case vars of
+    ("_",b):rest -> letBindIdents rest body
+    (a,EVar "_"):rest -> letBindIdents rest body
     (a,b):rest -> ELet (EBind (EVar a) b) (letBindIdents rest body)
     [] -> body
 
