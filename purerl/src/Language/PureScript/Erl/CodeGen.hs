@@ -924,10 +924,10 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                         Nothing ->
                           []
                 pure $
-                  ECaseOf (EApp RegularApp (EFunRef (AtomPS (Just "array") "size") 1) [EVar arrayPattern])
+                  ECaseOf (EApp RegularApp (EAtomLiteral (AtomPS (Just "array") "size")) [EVar arrayPattern])
                     ([ ( EBinder (ENumericLiteral (Left (toInteger (length binders))))
                       , ECaseOf
-                          (EApp RegularApp (EFunRef (AtomPS (Just "array") "to_list") 1) [EVar arrayPattern])
+                          (EApp RegularApp (EAtomLiteral (AtomPS (Just "array") "to_list")) [EVar arrayPattern])
                           ([ ( EBinder $ EListLiteral binders2
                             , restGuards2
                             )
