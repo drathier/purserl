@@ -11,6 +11,7 @@ import Data.Bitraversable (bitraverse)
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.CoreFn.Binders (Binder(..))
 import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
+import Language.PureScript.Names (Ident, ProperName, ProperNameType(..), Qualified(..))
 
 everywhereOnValues :: (Bind a -> Bind a) ->
                       (Expr a -> Expr a) ->
@@ -70,7 +71,7 @@ traverseCoreFn f g h i = (f', g', h', i')
   g' (Abs ann name e) = Abs ann name <$> g e
   g' (App ann v1 v2) = App ann <$> g v1 <*> g v2
   g' (Case ann vs alts) = Case ann <$> traverse g vs <*> traverse i alts
-  g' (Let ann ds e) = Let ann <$> traverse f ds <*> g' e
+  g' (Let ann ds e) = Let ann <$> traverse f ds <*> g e
   g' e = pure e
 
   h' (LiteralBinder a b) = LiteralBinder a <$> handleLiteral h b
@@ -84,3 +85,138 @@ traverseCoreFn f g h i = (f', g', h', i')
     ArrayLiteral ls -> ArrayLiteral <$> traverse withItem ls
     ObjectLiteral ls -> ObjectLiteral <$> traverse (traverse withItem) ls
     other -> pure other
+
+
+
+--------------------------------------------------------------------------------------------------------
+
+
+
+traverseCoreFnFull
+  :: forall f a
+   . Monad f
+  => (forall b. f b -> f b)
+  -> (Bind a -> f (Bind a))
+  -> (Expr a -> f (Expr a))
+  -> (Binder a -> f (Binder a))
+  -> (CaseAlternative a -> f (CaseAlternative a))
+  -> (Literal (Expr a) -> f (Literal (Expr a)))
+  -> (Literal (Binder a) -> f (Literal (Binder a)))
+  -> (Ident -> f Ident)
+  -> ( Bind a -> f (Bind a)
+     , Expr a -> f (Expr a)
+     , Binder a -> f (Binder a)
+     , CaseAlternative a -> f (CaseAlternative a)
+     , Literal (Expr a) -> f (Literal (Expr a))
+     , Literal (Binder a) -> f (Literal (Binder a))
+     , Ident -> f Ident
+     )
+traverseCoreFnFull isolated bindF exprF binderF caseAltF litExprF litBinderF identF =
+  (goBind, goExpr, goBinder, goCaseAlt, goLitExpr, goLitBinder, goIdent)
+  where
+    qIdentF = pure
+
+    goBind :: Bind a -> f (Bind a)
+    goBind b =
+      bindF b >>=
+      \b -> case b of
+        NonRec ann ident expr ->
+          NonRec <$> pure ann <*> goIdent ident <*> goExpr expr
+        Rec bindings -> do
+          Rec <$>
+            traverse (\((ann, ident), expr) -> do
+              isolated $ (,) <$> ((,) <$> pure ann <*> goIdent ident) <*> goExpr expr
+            ) bindings
+
+    goExpr :: Expr a -> f (Expr a)
+    goExpr expr =
+      exprF expr >>=
+      \expr -> case expr of
+        Literal ann lit ->
+          Literal <$> pure ann <*> goLitExpr lit
+        Constructor ann typeName ctorName fields ->
+          Constructor <$> pure ann <*> pure typeName <*> pure ctorName <*> traverse goIdent fields
+        Accessor ann prop expr ->
+          Accessor <$> pure ann <*> pure prop <*> goExpr expr
+        ObjectUpdate ann obj mCopy fields ->
+          ObjectUpdate <$> pure ann <*> goExpr obj <*> pure mCopy <*> traverse (\(k, v) -> (,) <$> pure k <*> goExpr v) fields
+        Abs ann ident body ->
+          Abs <$> pure ann <*> goIdent ident <*> goExpr body
+        App ann fn arg ->
+          App <$> pure ann <*> goExpr fn <*> goExpr arg
+        Var ann qIdent ->
+          Var <$> pure ann <*> goQIdent goIdent qIdent
+        Case ann cases alts ->
+          Case <$> pure ann <*> traverse goExpr cases <*> traverse goCaseAlt alts
+        Let ann binds body ->
+          Let <$> pure ann <*> traverse goBind binds <*> goExpr body
+
+    goQIdent :: (ident -> f ident) -> Qualified ident -> f (Qualified ident)
+    goQIdent f qi =
+      qIdentF qi >>=
+        \qi -> case qi of
+          Qualified qualifiedBy a ->
+            Qualified <$> pure qualifiedBy <*> f a
+
+    goBinder :: Binder a -> f (Binder a)
+    goBinder b =
+      binderF b >>=
+      \b -> case b of
+        NullBinder ann ->
+          pure $ NullBinder ann
+        LiteralBinder ann lit ->
+          LiteralBinder <$> pure ann <*> goLitBinder lit
+        VarBinder ann ident ->
+          VarBinder <$> pure ann <*> goIdent ident
+        ConstructorBinder ann qType qCtor binders ->
+          ConstructorBinder <$> pure ann <*> pure qType <*> pure qCtor <*> traverse goBinder binders
+        NamedBinder ann ident binder ->
+          NamedBinder <$> pure ann <*> goIdent ident <*> goBinder binder
+
+    goCaseAlt :: CaseAlternative a -> f (CaseAlternative a)
+    goCaseAlt c =
+      isolated $
+      caseAltF c >>=
+      \c -> case c of
+        CaseAlternative binders result ->
+          CaseAlternative <$> traverse goBinder binders <*> goResult result
+            where
+              goResult (Left guards) = Left <$> traverse (\(guard, expr) -> (,) <$> goExpr guard <*> goExpr expr) guards
+              goResult (Right expr) = Right <$> goExpr expr
+
+    goLitExpr :: Literal (Expr a) -> f (Literal (Expr a))
+    goLitExpr le =
+      litExprF le >>=
+      \le -> case le of
+        NumericLiteral n ->
+          pure $ NumericLiteral n
+        StringLiteral s ->
+          pure $ StringLiteral s
+        CharLiteral c ->
+          pure $ CharLiteral c
+        BooleanLiteral b ->
+          pure $ BooleanLiteral b
+        ArrayLiteral xs ->
+          ArrayLiteral <$> traverse goExpr xs
+        ObjectLiteral fields ->
+          ObjectLiteral <$> traverse (\(k, v) -> (,) <$> pure k <*> goExpr v) fields
+
+    goLitBinder :: Literal (Binder a) -> f (Literal (Binder a))
+    goLitBinder lb =
+      litBinderF lb >>=
+      \lb -> case lb of
+        NumericLiteral n ->
+          pure $ NumericLiteral n
+        StringLiteral s ->
+          pure $ StringLiteral s
+        CharLiteral c ->
+          pure $ CharLiteral c
+        BooleanLiteral b ->
+          pure $ BooleanLiteral b
+        ArrayLiteral xs ->
+          ArrayLiteral <$> traverse goBinder xs
+        ObjectLiteral fields ->
+          ObjectLiteral <$> traverse (\(k, v) -> (,) <$> pure k <*> goBinder v) fields
+
+    goIdent :: Ident -> f Ident
+    goIdent = identF

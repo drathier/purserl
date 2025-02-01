@@ -77,12 +77,13 @@ isRebound x =
     -- matchBinder (EFunBinder es _, _) = any (occurs x) es
 
     matchCaseBinder (EBinder e) = occurs x e
-    matchCaseBinder (EGuardedBinder e _) = occurs x e
+    -- matchCaseBinder (EGuardedBinder e _) = occurs x e
 
 -- TODO figure this into generic traversal with context pattern
 replaceIdents :: [(Text, Erl)] -> Erl -> Erl
-replaceIdents vars = go
+replaceIdents unfilteredVars = go
   where
+    vars = filter (\(k,v) -> k /= "_") unfilteredVars
     -- Placeholder
     f :: Erl -> Erl
     f = id
@@ -94,6 +95,7 @@ replaceIdents vars = go
     go (EBinary op e1 e2) = f $ EBinary op (go e1) (go e2)
     go (EFunctionDef t ssann a ss e) = f $ EFunctionDef t ssann a ss (go e)
     go (EVarBind x e) = f $ EVarBind x (go e)
+    go (EBind x e) = f $ EBind (go x) (go e)
     go (EApp meta e es) = f $ EApp meta (go e) (map go es)
     go (EBlock es) = f $ EBlock (map go es)
     go (ETupleLiteral es) = f $ ETupleLiteral (map go es)
@@ -103,19 +105,26 @@ replaceIdents vars = go
     go (EListLiteral es) = f $ EListLiteral (map go es)
     go (EListCons es e) = f $ EListCons (map go es) (go e)
     go (ETryAnyAny e1 e2) = f $ ETryAnyAny (go e1) (go e2)
+    go (EAndThen e1 e2) = f $ EAndThen (go e1) (go e2)
+    go (ELet e1 e2) = f $ ELet (go e1) (go e2)
     go v@(EVar var) = fromMaybe v $ lookup var vars
     go other = other
 
     -- -- Vars are *not* fresh inf case binders
     goCase :: (EBinder, Erl) -> (EBinder, Erl)
     goCase (EBinder e, e') = (EBinder (go e), go e')
-    goCase (EGuardedBinder e (Guard eg), e') = (EGuardedBinder (go e) (Guard $ go eg), go e')
+    -- goCase (EGuardedBinder e (Guard eg), e') = (EGuardedBinder (go e) (Guard $ go eg), go e')
 
     goFunHead :: (EFunBinder, Erl) -> (EFunBinder, Erl)
+    goFunHead (EFunBinder es, e) = (EFunBinder es, replaceIdents vars' e)
+      where
+        vars' = filter (\(var, _) -> not $ any (occurs var) es) vars
+{-
     goFunHead (EFunBinder es g, e) = (EFunBinder es g', replaceIdents vars' e)
       where
         vars' = filter (\(var, _) -> not $ any (occurs var) es) vars
         g' = (\(Guard eg) -> Just $ Guard $ replaceIdents vars' eg) =<< g
+-}
 
 -- Rename bound vars in preparation for hoisting expression into a parent scope when the expression may bind same variables as a sibling
 -- Super restricted, only renames top level X = e bindings (possibly in a begin/end block) as this is what we generate
@@ -124,6 +133,7 @@ renameBoundVars :: MonadSupply m => Erl -> m Erl
 renameBoundVars = (`evalStateT` []) . go
   where
     go :: MonadSupply m => Erl -> StateT [(Text, Erl)] m Erl
+    -- TODO[drathier]: this isn't quite general enough; we might EBind without it being an EVarBind.
     go (EVarBind x e) = do
       n <- fresh
       let x' = x <> "@" <> T.pack (show n)
@@ -131,6 +141,8 @@ renameBoundVars = (`evalStateT` []) . go
       modify ((x, EVar x') :)
       pure res
     go (EBlock es) = EBlock <$> traverse go es
+    go (ELet b es) = ELet <$> go b <*> go es
+    go (EAndThen b es) = ELet <$> go b <*> go es
     go e = gets (`replaceIdents` e)
 
 collect :: Int -> Erl -> Erl

@@ -33,3 +33,14 @@ instance (Monoid w, MonadSupply m) => MonadSupply (RWST r w s m)
 
 freshName :: MonadSupply m => m Text
 freshName = fmap (("$" <> ) . pack . show) fresh
+
+bumpToNextRoundNumber :: Monad m => MonadSupply m => m ()
+bumpToNextRoundNumber =
+  do
+    let stepSize = 10
+    n <- peek
+    case (n `div` stepSize) * stepSize == n of
+      True -> pure ()
+      False -> do
+        _ <- freshName
+        bumpToNextRoundNumber

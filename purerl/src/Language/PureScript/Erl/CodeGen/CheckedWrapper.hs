@@ -1,5 +1,5 @@
 module Language.PureScript.Erl.CodeGen.CheckedWrapper where
-
+{-
 import Control.Monad.Supply.Class (MonadSupply)
 import qualified Data.Text as T
 import Language.PureScript (ModuleName)
@@ -180,3 +180,4 @@ typecheckWrapper mn =
               ]
     _ ->
       pure []
+-}

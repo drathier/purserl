@@ -59,9 +59,13 @@ $(TH.declare do
     TH.asIdent do TH.asString do TH.var "apply"
 
   TH.mod "Control.Applicative" do
+    TH.asIdent do TH.asString do TH.var "applicativeArray"
     TH.asIdent do TH.asPair do TH.asString do TH.var "pure"
 
   TH.mod "Control.Bind" do
+    TH.asIdent do TH.asString do TH.var "bindArray"
+    TH.asIdent do TH.var "bind"
+    TH.asIdent do TH.var "discard"
     TH.asPair do
       TH.asString do
         TH.var "bind"
@@ -110,7 +114,8 @@ $(TH.declare do
       TH.var "flip"
 
   TH.mod "Data.Functor" do
-    TH.cls "Functor" ; TH.asIdent do TH.asString do TH.var "map"
+    TH.cls "Functor"
+    TH.asIdent do TH.asString do TH.vars ["map", "functorArray"]
 
   TH.mod "Data.Generic.Rep" do
     TH.cls "Generic" ; TH.asIdent do TH.vars ["from", "to"]
@@ -192,7 +197,14 @@ $(TH.declare do
 
   -- purescript-effect
 
-  TH.mod "Effect" (P.pure ())
+  TH.mod "Effect" do
+    TH.asIdent do TH.asString do TH.var "bindEffect"
+    TH.asIdent do TH.asString do TH.var "applicativeEffect"
+    TH.prefixWith "effect" do
+      TH.asPair do
+        TH.asIdent do
+          TH.var "bindE"
+          TH.var "pureE"
 
   TH.mod "Effect.Uncurried" do
     TH.asPair do TH.vars ["mkEffectFn", "runEffectFn"]
@@ -260,5 +272,143 @@ $(TH.declare do
 
   TH.mod "Unsafe.Coerce" do
     TH.asPair do TH.var "unsafeCoerce"
+
+  -- [drathier]: purserl-specific modules
+
+  TH.mod "Array" do
+    TH.prefixWith "array" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+        -- TODO: semigroup, monoid
+
+  TH.mod "E" do
+    TH.prefixWith "e" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+        TH.var "discard"
+
+  -- TH.mod "Effect" do
+  --   -- TH.prefixWith "effect" do
+  --     TH.asIdent do
+  --       TH.var "applicativeEffect"
+  --       TH.var "applyEffect"
+  --       TH.var "bindEffect"
+  --       TH.var "functorEffect"
+  --       TH.var "monadEffect"
+  --       TH.var "monoidEffect"
+  --       TH.var "semigroupEffect"
+
+  TH.mod "Either" do
+    TH.asIdent do TH.asString do TH.var "functorEither"
+    TH.asIdent do TH.asString do TH.var "bindEither"
+    TH.asIdent do TH.asString do TH.var "applicativeEither"
+    TH.prefixWith "either" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "Erl.Data.List.Types" do
+    TH.asIdent do
+      TH.asString do
+        TH.var "functorList"
+        TH.var "functorWithIndexIntList"
+        TH.var "functorNonEmptyList"
+        TH.var "functorWithIndexIntNonEmp"
+
+  -- TH.mod "List" do
+  --   TH.prefixWith "list" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Map" do
+  --   TH.prefixWith "map" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  TH.mod "Maybe" do
+    TH.asIdent do TH.asString do TH.var "functorMaybe"
+    TH.asIdent do TH.asString do TH.var "bindMaybe"
+    TH.asIdent do TH.asString do TH.var "applicativeMaybe"
+    TH.prefixWith "maybe" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "Data.Array.NonEmpty.Internal" do
+    TH.var "functorNonEmptyArray"
+
+  TH.mod "NonEmptyArray" do
+    TH.prefixWith "nonEmptyArray" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "NonEmptyList" do
+    TH.prefixWith "nonEmptyList" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  -- TH.mod "Queue" do
+  --   TH.prefixWith "queue" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Set" do
+  --   TH.prefixWith "set" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "String" do
+  --   TH.prefixWith "string" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Tuple" do
+  --   TH.prefixWith "tuple" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  -- TH.mod "Variant" do
+  --   TH.prefixWith "variant" do
+  --     TH.asIdent do
+  --       TH.var "map"
+  --       TH.var "bind"
+  --       TH.var "pure"
+
+  TH.mod "Veither" do
+    TH.prefixWith "veither" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
+
+  TH.mod "VexceptT" do
+    TH.prefixWith "vexceptT" do
+      TH.asIdent do
+        TH.var "map"
+        TH.var "bind"
+        TH.var "pure"
 
   )

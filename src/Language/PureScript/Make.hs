@@ -313,11 +313,13 @@ make ma@MakeActions{..} ms = do
                   (exts, warnings) <- bracket_ (C.waitQSem lock) (C.signalQSem lock) $ do
                       -- Eventlog markers for profiling; see debug/eventlog.js
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " start"
+                      -- liftBase $ traceM $ T.unpack (runModuleName moduleName) <> " start"
                       -- Force the externs and warnings to avoid retaining excess module
                       -- data after the module is finished compiling.
                       extsAndWarnings <- evaluate . force <=< listen $ do
                         rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
 
+                      -- liftBase $ traceM $ T.unpack (runModuleName moduleName) <> " end"
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
                       return extsAndWarnings
 

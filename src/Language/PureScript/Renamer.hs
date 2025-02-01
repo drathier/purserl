@@ -62,7 +62,11 @@ newScope x = do
 updateScope :: Ident -> Rename Ident
 updateScope ident =
   case ident of
-    GenIdent name _ -> go ident $ Ident (fromMaybe "v" name)
+    GenIdent name int -> go ident $ Ident (
+      case name of
+        Nothing -> "SCOPE_" <> T.pack (show int) <> "_v"
+        Just n -> n <> "_" <> T.pack (show int)
+      )
     UnusedIdent -> return UnusedIdent
     _ -> go ident ident
   where
