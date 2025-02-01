@@ -38,55 +38,68 @@ import Control.Monad ((<=<))
 import Language.PureScript.Erl.CodeGen.Inliner qualified as Inliner
 import Language.PureScript.Erl.CodeGen.InlineLocal qualified as InlineLocal
 import Debug.Trace
+import Data.Function ((&))
 
 -- |
 -- Apply a series of optimizer passes to simplified Javascript code
 --
 optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
-optimize exports es = pure es
+-- optimize exports es = pure es
 -- optimize exports es = pure (Inliner.inline es)
 -- optimize exports es = removeUnusedFuns exports <$> pure (Inliner.inline es)
 optimize exports es = do -- removeUnusedFuns exports <$> do
-  traceM (show ("woop", "optimize1"))
-  es2 <- traverse go es
-  -- traceM (show ("woop", "optimize2"))
+  -- es2 <-
+  --     pure es
   -- let es3 = Inliner.inline es2
-  -- traceM (show ("woop", "optimize3"))
+  -- es4 <- untilFixedPoint (traverse go) es2
   -- es4 <- untilFixedPoint (traverse go) es3
-  -- traceM (show ("woop", "optimize4"))
   -- let es5 = InlineLocal.inlineVarBinds es4
-  -- traceM (show ("woop", "optimize5"))
   -- es6 <- untilFixedPoint (traverse go) es5
-  -- traceM (show ("woop", "optimize6"))
   -- let es7 = InlineLocal.inlineVarBinds es6
-  -- traceM (show ("woop", "optimize7"))
   -- es8 <- untilFixedPoint (traverse go) es7
-  -- traceM (show ("woop", "optimize8"))
-  pure es2
+  es
+    -- & map (inlineCommonOperators EC.effect EC.effectDictionaries expander)
+    -- & map (go)
+    & map (inlineCommonOperators EC.effect EC.effectDictionaries id)
+    & map (untilFix go)
+    -- & Inliner.inline
+    -- & map (untilFix go)
+    -- & Inliner.inline
+    -- & map (untilFix go)
+    -- & Inliner.inline
+    -- & map (untilFix go)
+    -- & map addMemoizeAnnotations
+    & pure
+  -- pure $ es4
 
   where
   go erl =
-   do
-    erl' <-  (pure . applyAll
-      -- INVARIANT[drathier]: these transforms must never duplicate expressions, or they might duplicate bound variables without renaming the copies. We could (and probably should) rewrite them to actually inline variables, but we could also implement that step later, which we have already done in the inliner module.
-      [ inlineCommonOperators EC.effect EC.effectDictionaries expander
-      , inlineCommonValuesTopDown expander
-      , inlineCommonValuesBottomUp expander
-      ]
-      ) erl
-    -- erl'' <- untilFixedPoint tidyUp erl'
-    erl'' <- pure erl'
+    erl
+      & inlineCommonValuesTopDown id -- expander
+      & inlineCommonValuesBottomUp id -- expander
+      -- Compilation took 107841 ms -- only topdown
+      -- Compilation took 104441 ms -- only topdown
+      -- Compilation took 102926 ms -- only bottomup
+      -- Compilation took 102995 ms -- only bottomup
+      -- Compilation took 109079 ms -- both
 
-    -- erl2 <- Inliner.inline erl
 
-    -- erl'' <- untilFixedPoint tidyUp
-    --   =<< untilFixedPoint (return . magicDo expander)
-    --   erl'
-    -- pure $ addMemoizeAnnotations erl''
-    pure $ addMemoizeAnnotations erl''
-    -- pure $ addMemoizeAnnotations erl2
+--   do
+--    erl' <-
+--      -- INVARIANT[drathier]: these transforms must never duplicate expressions, or they might duplicate bound variables without renaming the copies. We could (and probably should) rewrite them to actually inline variables, but we could also implement that step later, which we have already done in the inliner module.
+--        erl
+--        & pure
+--
+--    -- erl2 <- Inliner.inline erl
+--
+--    -- erl'' <- untilFixedPoint tidyUp
+--    --   =<< untilFixedPoint (return . magicDo expander)
+--    --   erl'
+--    -- pure $ addMemoizeAnnotations erl''
+--    pure $ erl'
+--    -- pure $ addMemoizeAnnotations erl2
 
-  expander = buildExpander es
+  -- expander = id -- buildExpander es
 
   tidyUp :: MonadSupply m => Erl -> m Erl
   tidyUp = applyAllM
@@ -109,6 +122,14 @@ untilFixedPoint f = go 10
    a' <- f a
    if a' == a then return a' else go (n-1) a'
 
+untilFix :: Show a => Eq a => (a -> a) -> a -> a
+untilFix f = go 10
+  where
+  go 0 a = trace (show ("untilFixedPoint bailed out", a)) $ a
+  go n a =
+   let a2 = f a in
+   if a2 == a then a2 else go (n-1) a2
+
 
 -- |
 -- Take all top-level ASTs and return a function for expanding top-level
@@ -125,9 +146,9 @@ buildExpander = replaceAtoms . foldr go []
   go = \case
     EFunctionDef _ _ name [] e | isSimpleApp e  -> ((name, e) :)
     _ -> id
-  
+
   replaceAtoms updates = everywhereOnErl (replaceAtom updates)
-  
+
   replaceAtom updates = \case
     EApp _ (EAtomLiteral a) [] | Just e <- lookup a updates
       -> replaceAtoms updates e
