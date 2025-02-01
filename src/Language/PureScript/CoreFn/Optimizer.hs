@@ -142,8 +142,10 @@ optimizeDataFunctionApply e =
 
     -- ASSUMPTION[drathier]: all discard instances are implemented as `discard = bind`
     -- (control_bind@ps:discard((control_bind@ps:discardUnit()), (effect@ps:bindEffect())))
-    -- (App a (App b (Var c fn) (Var d _discardImpl)) (Var e bindImpl)) | C.I_discard <- fn, C.I_bindEffect <- bindImpl -> Var a C.I_effectBindE
+    -- [drathier]: this rewrite pattern gave no diff: (App a (App b (Var c fn) (Var d _discardImpl)) (Var e bindImpl)) | C.I_discard <- fn, C.I_bindEffect <- bindImpl -> Var a C.I_effectBindE
     -- (e@ps:discard((control_bind@ps:discardUnit()))) -- wrong discard
+
+    -- [drathier]: these patterns aren't safe, because erl ast optimization translates these to ELet instead of EAndThen, so they might get silently dropped if the're `andthen # (\_ ->` since that might eventually become `let _ =` which then gets dropped. We'll have to move the specialization step here into erl ast instead.
     -- (App a (Var b fn) (Var c _discardImpl)) | C.I_eDiscard <- fn -> Var a C.I_effectBindE
     -- (App a (Var b fn) (Var c impl)) | C.I_discard <- fn, C.I_eDiscard <- impl -> Var a C.I_effectBindE
 -- -}
