@@ -1,6 +1,6 @@
 module Language.PureScript.Erl.Make where
 
--- NOTE{drathier]: This file is not the one that's generating code! You're looking for purescript/src/Language/PureScript/Make/Actions.hs
+-- NOTE[drathier]: This file is not the one that's generating code! You're looking for purescript/src/Language/PureScript/Make/Actions.hs
 
 import Prelude
 
@@ -84,7 +84,7 @@ buildActions outputDir foreigns usePrefix generateChecked =
 
     (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl) <- moduleToErl env m foreignExports
 
-    optimized <- optimize exports (trace (show ("optimize", CF.moduleName m)) rawErl)
+    optimized <- optimize exports rawErl
     checked <- optimize checkedExports checkedRawErl
 
     dir <- lift $ makeIO "get file info: ." getCurrentDirectory
