@@ -95,6 +95,7 @@ replaceIdents unfilteredVars = go
     go (EBinary op e1 e2) = f $ EBinary op (go e1) (go e2)
     go (EFunctionDef t ssann a ss e) = f $ EFunctionDef t ssann a ss (go e)
     go (EVarBind x e) = f $ EVarBind x (go e)
+    go (EBind x e) = f $ EBind (go x) (go e)
     go (EApp meta e es) = f $ EApp meta (go e) (map go es)
     go (EBlock es) = f $ EBlock (map go es)
     go (ETupleLiteral es) = f $ ETupleLiteral (map go es)
@@ -132,6 +133,7 @@ renameBoundVars :: MonadSupply m => Erl -> m Erl
 renameBoundVars = (`evalStateT` []) . go
   where
     go :: MonadSupply m => Erl -> StateT [(Text, Erl)] m Erl
+    -- TODO[drathier]: this isn't quite general enough; we might EBind without it being an EVarBind.
     go (EVarBind x e) = do
       n <- fresh
       let x' = x <> "@" <> T.pack (show n)
@@ -139,6 +141,8 @@ renameBoundVars = (`evalStateT` []) . go
       modify ((x, EVar x') :)
       pure res
     go (EBlock es) = EBlock <$> traverse go es
+    go (ELet b es) = ELet <$> go b <*> go es
+    go (EAndThen b es) = ELet <$> go b <*> go es
     go e = gets (`replaceIdents` e)
 
 collect :: Int -> Erl -> Erl
