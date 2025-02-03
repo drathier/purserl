@@ -878,7 +878,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                         ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
                       _ -> do
                         monGuardFailureCont <- buildCont restBranches
-                        guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts [(boolToAtom True, rhs2)]
+                        guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts [(ETrue, rhs2)]
                         pure $
                           [ (EBinder (tupleWrap binders2), guardsToErl2) ]
                           <>
@@ -945,11 +945,11 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           guardsToErl monGuardFailureCont ((guard, happy):restGuards) = do
             restGuards2 <- guardsToErl monGuardFailureCont restGuards
             pure $
-              case guard == boolToAtom True of
+              case guard == ETrue of
                 True -> happy
                 False ->
                   ECaseOf guard $
-                    [ ( EBinder (boolToAtom True)
+                    [ ( EBinder (ETrue)
                       , happy
                       )
                     ]
@@ -957,7 +957,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                     case (restGuards, monGuardFailureCont) of
                       ([], Nothing) -> []
                       _ ->
-                        [ ( EBinder (boolToAtom False)
+                        [ ( EBinder (EFalse)
                           , restGuards2
                           )
                         ]
@@ -980,7 +980,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   NumericLiteral (Right double) -> pure $ ENumericLiteral (Right double)
                   StringLiteral psString -> pure $ EStringLiteral psString
                   CharLiteral char -> pure $ ECharLiteral char
-                  BooleanLiteral bool -> pure $ boolToAtom bool
+                  BooleanLiteral True -> pure $ ETrue
+                  BooleanLiteral False -> pure $ EFalse
                   ObjectLiteral kvPairs ->
                     EMapPattern <$> mapM (\(k,v) -> (AtomPS Nothing k,) <$> binderToErl v) kvPairs
                   ArrayLiteral items -> do
@@ -1010,19 +1011,15 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     literalToValueErl' _ _ (NumericLiteral n) = pure (ENumericLiteral n, [])
     literalToValueErl' _ _ (StringLiteral s) = pure (EStringLiteral s, [])
     literalToValueErl' _ _ (CharLiteral c) = pure (ECharLiteral c , [])
-    literalToValueErl' _ _ (BooleanLiteral b) = pure (boolToAtom b, [])
+    literalToValueErl' _ _ (BooleanLiteral True) = pure (ETrue, [])
+    literalToValueErl' _ _ (BooleanLiteral False) = pure (EFalse, [])
     literalToValueErl' _ f (ArrayLiteral xs) = do
       args <- mapM f xs
-      let array = EListLiteral $ fst <$> args
-          binds = snd <$> args
-      pure (EApp RegularApp (EAtomLiteral $ Atom (Just "array") "from_list") [array], concat binds)
+      let binds = snd <$> args
+      pure (EArrayLiteral (map fst args), concat binds)
     literalToValueErl' mapLiteral f (ObjectLiteral ps) = do
       pairs <- mapM (sndM f) ps
       pure (mapLiteral $ map (\(label, (e, _)) -> (AtomPS Nothing label, e)) pairs, concatMap (snd . snd) pairs)
-
-    boolToAtom :: Bool -> Erl
-    boolToAtom True = EAtomLiteral $ Atom Nothing "true"
-    boolToAtom False = EAtomLiteral $ Atom Nothing "false"
 {-
     bindersToErl :: [Erl] -> [CaseAlternative Ann] -> m ([Erl], [(EFunBinder, Erl)], [Erl])
     bindersToErl vals cases = do
@@ -1090,7 +1087,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                 EFunFull
                   Nothing
                   ( (binder, ge') :
-                      [(EFunBinder (replicate (length bs) (EVar "_")), boolToAtom False) | not (irrefutable binder)]
+                      [(EFunBinder (replicate (length bs) (EVar "_")), EFalse) | not (irrefutable binder)]
                   )
               cas = EApp RegularApp fun vals
           e' <- valueToErl e

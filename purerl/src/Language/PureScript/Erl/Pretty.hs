@@ -67,8 +67,8 @@ literals = mkPattern' match
 
   match (EFunctionDef t ss x xs e) = mconcat <$> sequence (
     (case ss of
-      (Just SourceSpan { spanName = spanName, spanStart = spanStart }) -> 
-        [ do 
+      (Just SourceSpan { spanName = spanName, spanStart = spanStart }) ->
+        [ do
             tf <- transformFilename <$> get
             return $ emit $ "%-file(\"" <> T.pack (tf spanName) <> "\", " <> T.pack (show $ sourcePosLine spanStart) <> ").\n"
         ]
@@ -89,14 +89,19 @@ literals = mkPattern' match
         ELet a b -> f $ runLetAndThen prettyPrintBlockBody a b
         EBlock es -> f (prettyPrintBlockBody es)
 
-        _ -> [prettyPrintErl' e]
+        _ ->
+          [ return $ emit "\n"
+          , currentIndent' 2
+          , withIndent $ prettyPrintErl' e
+          ]
     )
-    
+
   match (EVar x) = return $ emit (escapeQuotedVar x)
 
   match (EMapLiteral elts) = do
+    ci <- currentIndent' 2
     elts' <- traverse (\(x,e) -> ((emit (runAtom x) <> emit "=>") <>) <$> prettyPrintErl' e) elts
-    return $ emit "#{" <> intercalate (emit ", ") elts' <> emit "}"
+    return $ emit "#{" <> intercalate (emit ",\n" <> ci) elts' <> emit "}"
 
   match (EMapPattern elts) = do
     elts' <- traverse (\(x,e) -> ((emit (runAtom x) <> emit ":=") <>) <$> prettyPrintErl' e) elts
@@ -106,6 +111,12 @@ literals = mkPattern' match
     e' <- prettyPrintErl' e
     elts' <- traverse (\(x,ee) -> ((emit (runAtom x) <> emit "=>") <>) <$> prettyPrintErl' ee) elts
     return $ emit "(" <> e' <> emit ")" <> emit "#{" <> intercalate (emit ", ") elts' <> emit "}"
+
+  match (EArrayLiteral es) = mconcat <$> sequence
+    [ return $ emit "(array:from_list(["
+    , intercalate (emit ", ") <$> mapM prettyPrintErl' es
+    , return $ emit "]))"
+    ]
 
   match (EListLiteral es) = mconcat <$> sequence
     [ return $ emit "["
@@ -334,12 +345,39 @@ app = mkPattern' match
   match _ = mzero
 
 binary :: (Emit gen) => BinaryOperator -> Text -> Operator PrinterState Erl gen
-binary op str = AssocL match (\v1 v2 -> v1 <> emit (" " <> str <> " ") <> v2)
+binary op str = AssocL match (\v1 v2 -> emit "(" <> v1 <> emit (" " <> str <> " ") <> v2 <> emit ")")
   where
   match :: Pattern PrinterState Erl (Erl, Erl)
   match = mkPattern match'
     where
     match' (EBinary op' v1 v2) | op' == op = Just (v1, v2)
+    match' _ = Nothing
+
+binaryConcat :: (Emit gen) => Operator PrinterState Erl gen
+binaryConcat = AssocL match (\v1 v2 -> emit "<< <<" <> v1 <> emit "/binary>>/binary, <<" <> v2 <> emit "/binary>> /binary>>")
+  where
+  match :: Pattern PrinterState Erl (Erl, Erl)
+  match = mkPattern match'
+    where
+    match' (EBinary BinaryConcat v1 v2) = Just (v1, v2)
+    match' _ = Nothing
+
+arrayConcat :: (Emit gen) => Operator PrinterState Erl gen
+arrayConcat = AssocL match (\v1 v2 -> emit "(data_semigroup@foreign:concatArray(" <> v1 <> emit "," <> v2 <> emit "))")
+  where
+  match :: Pattern PrinterState Erl (Erl, Erl)
+  match = mkPattern match'
+    where
+    match' (EBinary ArrayConcat v1 v2) = Just (v1, v2)
+    match' _ = Nothing
+
+floatRemainder :: (Emit gen) => Operator PrinterState Erl gen
+floatRemainder = AssocL match (\v1 v2 -> emit "(math@foreign:remainder(" <> v1 <> emit "," <> v2 <> emit "))")
+  where
+  match :: Pattern PrinterState Erl (Erl, Erl)
+  match = mkPattern match'
+    where
+    match' (EBinary FRemainder v1 v2) = Just (v1, v2)
     match' _ = Nothing
 
 
@@ -362,7 +400,7 @@ prettyStatements :: (Emit gen) => [Erl] -> StateT PrinterState Maybe gen
 prettyStatements sts = do
   jss <- forM sts prettyPrintErl'
   indentString <- currentIndent
-  return $ intercalate (emit "\n") $ map ((<> emit ".") . (indentString <>)) jss
+  return $ intercalate (emit "\n") $ map ((<> emit ".\n") . (indentString <>)) jss
 
 -- |
 -- Generate an indented, pretty-printed string representing a Javascript expression
@@ -382,9 +420,8 @@ prettyPrintErl' = A.runKleisli $ runPattern matchValue
         , unary     Negate               "-"
         ]
       , [ binary    FDivide              "/"
-        , binary    IDivide              "div"
+        -- , binary    IDivide              "div"
         , binary    Multiply             "*"
-        , binary    Remainder            "rem"
         , binary    BitwiseAnd           "band"
         , binary    And                  "and"
         ]
@@ -412,5 +449,12 @@ prettyPrintErl' = A.runKleisli $ runPattern matchValue
       , [ binary    AndAlso              "andalso"
         ]
       , [ binary    OrElse               "orelse"
+        ]
+      , [ Wrap app $ \args val -> emit "(" <> val <> emit "(" <> args <> emit ")" <> emit ")"]
+      -- [drathier]
+      , [ binaryConcat
+        , arrayConcat
+        , floatRemainder
+        -- , binary    IRemainder           "rem"
         ]
     ]

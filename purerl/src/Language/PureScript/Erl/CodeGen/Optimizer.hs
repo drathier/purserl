@@ -26,6 +26,7 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
       inlineCommonOperators,
       inlineCommonValuesTopDown,
       inlineCommonValuesBottomUp,
+      specialize,
       singleBegin, collectLists, replaceAppliedFunRefs, inlineCommonFnsM )
 -- import Language.PureScript.Erl.CodeGen.Optimizer.Guards
 --     ( inlineSimpleGuards )
@@ -60,8 +61,13 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
   es
     -- & map (inlineCommonOperators EC.effect EC.effectDictionaries expander)
     -- & map (go)
-    & map (inlineCommonOperators EC.effect EC.effectDictionaries id)
-    & map (untilFix go)
+    & map
+      (\b ->
+        b
+          & inlineCommonOperators EC.effect EC.effectDictionaries id
+          & specialize
+          & untilFix go
+      )
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & Inliner.inline

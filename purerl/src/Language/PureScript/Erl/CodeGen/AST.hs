@@ -9,6 +9,7 @@ module Language.PureScript.Erl.CodeGen.AST where
 import Prelude.Compat
 
 import Data.Text (Text)
+import Data.Text qualified as T
 
 import Control.Monad.Identity
 import Control.Arrow (second)
@@ -89,6 +90,8 @@ data Erl
 
   | EMapLiteral [(Atom, Erl)]
 
+  | EArrayLiteral [Erl]
+
   | EMapPattern [(Atom, Erl)]
 
   | EMapUpdate Erl [(Atom,Erl)]
@@ -119,6 +122,25 @@ data AppAnnotation
 -- | EVarBind as defined before drathier expanded it to allow more than simple var lhs's
 pattern EVarBind :: Text -> Erl -> Erl
 pattern EVarBind name e = EBind (EVar name) e
+
+-- | Aliases of EApp with specific args exact-called out and others exact-called after, to width-align pattern matches
+-- pattern EApp1 :: Maybe Text -> Erl -> Erl
+-- pattern EApp1 appKind modu f instModu instPrefix = EApp
+
+-- pattern EApp3 :: _
+
+pattern EApp1 modu1 f instModu instF a b <- EApp _ (EApp _ (EApp _ (EAtomLiteral (Atom (Just modu1) f)) [EApp _ (EAtomLiteral (Atom (Just instModu) instF)) []]) [a]) [b]
+pattern EApp2 modu1 f instModu instF a b <- EApp _ (EApp _ (EAtomLiteral (Atom (Just modu1) f)) [EApp _ (EAtomLiteral (Atom (Just instModu) instF)) []]) [a,b]
+-- pattern EApp1 modu1 f instModu instF a b <- EApp _ (EApp _ (EAtomLiteral (Atom (Just modu1) f)) [EApp _ (EAtomLiteral (Atom (Just instModu) instF)) []]) [a, b]
+pattern EApp3 modu1 f instModu instF a b <- EApp _ (EAtomLiteral (Atom (Just modu1) f)) [EApp _ (EAtomLiteral (Atom (Just instModu) instF)) [], a, b]
+
+pattern ETrue = EAtomLiteral (Atom Nothing "true")
+pattern EFalse = EAtomLiteral (Atom Nothing "false")
+
+pattern EIntLit a = ENumericLiteral (Left a)
+pattern ENumLit a = ENumericLiteral (Right a)
+
+pattern ENegate a = EUnary Negate a
 
 -- | Simple 0-arity version of EFun1
 pattern EFun0 :: Maybe Text -> Erl -> Erl
@@ -217,14 +239,20 @@ data BinaryOperator
   -- Numeric division (float)
   --
   | FDivide
+
+  -- [drathier]: Purescript euclidian integer division and remainder is not the same as erlang division, so we can't inline it as `div` or `rem` here. See data_euclideanRing@foreign:intDiv and https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/divmodnote-letter.pdf for the various kinds of division.
+  -- -- |
+  -- -- Numeric division (integer)
+  -- --
+  -- -- | IDivide
+  -- -- |
+  -- -- Integer Remainder
+  -- --
+  -- | IRemainder
   -- |
-  -- Numeric division (integer)
+  -- Float Remainder
   --
-  | IDivide
-  -- |
-  -- Remainder
-  --
-  | Remainder
+  | FRemainder
   -- |
   -- Generic equality test
   --
@@ -304,6 +332,14 @@ data BinaryOperator
   --
   | ListConcat
   -- |
+  -- Binary concatenation (<<A/binary,B/binary>>)
+  --
+  | BinaryConcat
+  -- |
+  -- Array concatenation (data_semigroup@foreign:concatArray(A,B))
+  --
+  | ArrayConcat
+  -- |
   -- List subtraction (--)
   --
   | ListSubtract
@@ -339,25 +375,39 @@ everywhereOnErl :: (Erl -> Erl) -> Erl -> Erl
 everywhereOnErl f = go
   where
   go :: Erl -> Erl
-  go (EUnary op e) = f $ EUnary op (go e)
-  go (EBinary op e1 e2) = f $ EBinary op (go e1) (go e2)
-  go (EFunctionDef t ssann a vs e) = f $ EFunctionDef t ssann a vs (go e)
-  go (EBind x e) = f $ EBind (go x) (go e)
-  go (EFunFull fname args) = f $ EFunFull fname $ map (second go) args
-  go (EApp meta e es) = f $ EApp meta (go e) (map go es)
-  go (EBlock es) = f $ EBlock (map go es)
-  go (ETupleLiteral es) = f $ ETupleLiteral (map go es)
-  go (EMapLiteral binds) = f $ EMapLiteral $ map (second go) binds
-  go (EMapPattern binds) = f $ EMapPattern $ map (second go) binds
-  go (EMapUpdate e binds) = f $ EMapUpdate (go e) $ map (second go) binds
-  go (ECaseOf e binds) = f $ ECaseOf (go e) $ map (second go) binds
-  go (EListLiteral es) = f $ EListLiteral (map go es)
-  go (EListCons es e) = f $ EListCons (map go es) (go e)
-  go (ETryAnyAny e1 e2) = f $ ETryAnyAny (go e1) (go e2)
-  go (EAndThen a b) = f $ EAndThen (go a) (go b)
-  go (ELet a b) = f $ ELet (go a) (go b)
+  go erl =
+    case erl of
+      EVar {} -> f erl
+      EAtomLiteral {} -> f erl
+      ENumericLiteral {} -> f erl
+      EStringLiteral {} -> f erl
+      ECharLiteral {} -> f erl
+      EFunRef {} -> f erl
+      EComment {} -> f erl
+      EAttribute {} -> f erl
+      ESpec {} -> f erl
+      EType {} -> f erl
 
-  go other = f other
+      EUnary op e -> f $ EUnary op (go e)
+      EBinary op e1 e2 -> f $ EBinary op (go e1) (go e2)
+      EFunctionDef t ssann a vs e -> f $ EFunctionDef t ssann a vs (go e)
+      EBind x e -> f $ EBind (go x) (go e)
+      EFunFull fname args -> f $ EFunFull fname $ map (second go) args
+      EApp meta e es -> f $ EApp meta (go e) (map go es)
+      EBlock es -> f $ EBlock (map go es)
+      ETupleLiteral es -> f $ ETupleLiteral (map go es)
+      EArrayLiteral es -> f $ EArrayLiteral (map go es)
+      EMapLiteral binds -> f $ EMapLiteral $ map (second go) binds
+      EMapPattern binds -> f $ EMapPattern $ map (second go) binds
+      EMapUpdate e binds -> f $ EMapUpdate (go e) $ map (second go) binds
+      ECaseOf e binds -> f $ ECaseOf (go e) $ map (second go) binds
+      EListLiteral es -> f $ EListLiteral (map go es)
+      EListCons es e -> f $ EListCons (map go es) (go e)
+      ETryAnyAny e1 e2 -> f $ ETryAnyAny (go e1) (go e2)
+      EAndThen a b -> f $ EAndThen (go a) (go b)
+      ELet a b -> f $ ELet (go a) (go b)
+
+      -- other -> error (show ("other", other))
 
 everywhereOnErlBottomUpM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
 everywhereOnErlBottomUpM f expr =
@@ -382,6 +432,7 @@ everywhereOnErlBottomUpM f expr =
           EApp meta e es -> f =<< EApp meta <$> go e <*> traverse go es
           EBlock es -> f =<< EBlock <$> traverse go es
           ETupleLiteral es -> f =<< ETupleLiteral <$> traverse go es
+          EArrayLiteral es -> f =<< EArrayLiteral <$> traverse go es
           EMapLiteral binds -> f =<< EMapLiteral <$> traverse (traverse go) binds
           EMapPattern binds -> f =<< EMapPattern <$> traverse (traverse go) binds
           EMapUpdate e binds -> f =<< EMapUpdate <$> go e <*> traverse (traverse go) binds
@@ -435,6 +486,9 @@ everywhereOnErlBottomUpLeftToRightM f expr =
           ETupleLiteral es -> do
             es' <- traverse go es
             f (ETupleLiteral es')
+          EArrayLiteral es -> do
+            es' <- traverse go es
+            f (EArrayLiteral es')
           EMapLiteral binds -> do
             binds' <- traverse (traverse go) binds
             f (EMapLiteral binds')
@@ -513,6 +567,9 @@ everywhereOnErlTopDownLeftToRightM f expr =
           ETupleLiteral es -> do
             es' <- traverse go es
             pure (ETupleLiteral es')
+          EArrayLiteral es -> do
+            es' <- traverse go es
+            pure (EArrayLiteral es')
           EMapLiteral binds -> do
             binds' <- traverse (traverse go) binds
             pure (EMapLiteral binds')
@@ -593,6 +650,9 @@ everywhereOnErlTopDownLeftToRightWithoutEBindPatM f expr =
           ETupleLiteral es -> do
             es' <- traverse go es
             pure (ETupleLiteral es')
+          EArrayLiteral es -> do
+            es' <- traverse go es
+            pure (EArrayLiteral es')
           EMapLiteral binds -> do
             binds' <- traverse (traverse go) binds
             pure (EMapLiteral binds')
@@ -648,6 +708,7 @@ everywhereOnErlTopDownM f = f >=> go
   go (EApp meta e es) = EApp meta <$> f' e <*> traverse f' es
   go (EBlock es) = EBlock <$> traverse f' es
   go (ETupleLiteral es) = ETupleLiteral <$> traverse f' es
+  go (EArrayLiteral es) = EArrayLiteral <$> traverse f' es
   go (EMapLiteral binds) = EMapLiteral <$> fargs binds
   go (EMapPattern binds) = EMapPattern <$> fargs binds
   go (EMapUpdate e binds) = EMapUpdate <$> f' e <*> fargs binds
@@ -680,6 +741,7 @@ everywhereOnErlTopDownMThen f = f'
   go (EApp meta e es) = EApp meta <$> f' e <*> traverse f' es
   go (EBlock es) = EBlock <$> traverse f' es
   go (ETupleLiteral es) = ETupleLiteral <$> traverse f' es
+  go (EArrayLiteral es) = EArrayLiteral <$> traverse f' es
   go (EMapLiteral binds) = EMapLiteral <$> fargs binds
   go (EMapPattern binds) = EMapPattern <$> fargs binds
   go (EMapUpdate e binds) = EMapUpdate <$> f' e <*> fargs binds
@@ -703,6 +765,7 @@ everything (<>.) f = go
   go e0@(EApp _ e es) = foldl (<>.) (f e0 <>. go e) (map go es)
   go e0@(EBlock es) = foldl (<>.) (f e0) (map go es)
   go e0@(ETupleLiteral es) = foldl (<>.) (f e0) (map go es)
+  go e0@(EArrayLiteral es) = foldl (<>.) (f e0) (map go es)
   go e0@(EMapLiteral binds) = foldl (<>.) (f e0) (map (go . snd) binds)
   go e0@(EMapPattern binds) = foldl (<>.) (f e0) (map (go . snd) binds)
   go e0@(EMapUpdate e binds) = foldl (<>.) (f e0 <>. go e) (map (go . snd) binds)

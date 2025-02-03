@@ -10,7 +10,8 @@ import Control.Arrow ((***))
 
 import Language.PureScript.AST.Literals (Literal)
 import Language.PureScript.CoreFn.Binders (Binder)
-import Language.PureScript.Names (Ident, ProperName, ProperNameType(..), Qualified)
+import Language.PureScript.Names (Ident(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), ModuleName(..))
+import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp, IsForeign))
 import Language.PureScript.PSString (PSString)
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
@@ -56,6 +57,8 @@ data Expr a
   --
   | Let a [Bind a] (Expr a)
   deriving (Eq, Ord, Show, Functor, Generic, NFData)
+
+pattern App3 modu1 f modu2 inst <- App (_,[],Just IsSyntheticApp) (Var (_,[],Just IsForeign) (Qualified (ByModuleName (ModuleName modu1)) (Ident f))) (Var (_,[],Nothing) (Qualified (ByModuleName (ModuleName modu2)) (Ident inst)))
 
 -- |
 -- A let or module binding.

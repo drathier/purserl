@@ -22,11 +22,11 @@ import Language.PureScript.AST.SourcePos (nullSourceSpan)
 import Language.PureScript.Constants.Libs qualified as C
 import Language.PureScript.CoreFn.Ann (Ann)
 import Language.PureScript.CoreFn.Binders (Binder(..))
-import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
-import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp))
+import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..), pattern App3)
+import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp, IsForeign))
 import Language.PureScript.CoreFn.Traversals (everywhereOnValues, traverseCoreFn)
 import Language.PureScript.Environment (dictTypeName)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName)
 import Language.PureScript.PSString (decodeString)
 import Data.Text qualified as T
 
@@ -388,8 +388,21 @@ optimizeCommonSubexpressions mn
   -- common subexpression elimination pass.
   shouldFloatExpr :: Expr Ann -> Bool
   shouldFloatExpr = \case
+    -- INVARIANT[drathier]: this forcefully skips CSE lifting for some type class functions, to allow them to be specialized in the Erl ast later on. See purescript/purerl/src/Language/PureScript/Erl/CodeGen/Optimizer/Inliner.hs:specialize.onErl
+    App3 "Data.Semigroup" _ "Data.Semigroup" _ -> False
+    App3 "Data.Semiring" _ "Data.Semiring" _ -> False
+    App3 "Data.Ring" _ "Data.Ring" _ -> False
+    App3 "Data.EuclideanRing" _ "Data.EuclideanRing" _ -> False
+    App3 "Data.HeytingAlgebra" _ "Data.HeytingAlgebra" _ -> False
+    App3 "Erl.Data.List.Types" _ "Erl.Data.List.Types" _ -> False
+    App3 "Data.Ord" _ "Data.Ord" _ -> False
+    App3 "Data.Eq" _ "Data.Eq" _ -> False
+    App3 "Data.Int" _ "Data.Int" _ -> False
     App (_, _, Just IsSyntheticApp) e _ -> isSimple e
     _                                   -> False
+
+
+  isInst inst prefix = T.isPrefixOf prefix inst
 
   isSimple :: Expr Ann -> Bool
   isSimple = \case
