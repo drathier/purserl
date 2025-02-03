@@ -12,37 +12,46 @@ import Language.PureScript.Erl.CodeGen.Common (atomPS)
 import Language.PureScript.PSString (PSString)
 import Prelude.Compat
 
+{-# INLINE isFn #-}
 isFn :: (Text, Text) -> Erl -> Bool
 isFn (moduleName, fnName) (EApp _ (EAtomLiteral (Atom (Just x) y)) []) =
   x == moduleName && y == fnName
 isFn _ _ = False
 
+{-# INLINE isDict #-}
 isDict :: (Text, PSString) -> Erl -> Bool
 isDict (moduleName, dictName) (EApp _ (EAtomLiteral (Atom (Just x) y)) []) = x == moduleName && y == atomPS dictName
 isDict _ _ = False
 
+{-# INLINE isUncurriedFn #-}
 isUncurriedFn :: (Text, PSString) -> Erl -> Bool
 isUncurriedFn = isFnName
 
+{-# INLINE isFnName #-}
 isFnName :: (Text, PSString) -> Erl -> Bool
 isFnName (moduleName, dictName) (EAtomLiteral (Atom (Just x) y)) = x == moduleName && y == atomPS dictName
 isFnName _ _ = False
 
+{-# INLINE isAppliedDict #-}
 isAppliedDict :: (Text, PSString) -> (Text, PSString) -> Erl -> Bool
 isAppliedDict fnDict theDict (EApp _ (EApp _ fn []) [EApp _ dict []]) = isFnName theDict dict && isFnName fnDict fn
 isAppliedDict fnDict theDict (EApp _ fn [EApp _ dict []]) = isFnName theDict dict && isFnName fnDict fn
 isAppliedDict _ _ _ = False
 
+{-# INLINE isUncurriedFn' #-}
 isUncurriedFn' :: (Text, Text) -> Erl -> Bool
 isUncurriedFn' (moduleName, fnName) (EAtomLiteral (Atom (Just x) y)) = x == moduleName && y == fnName
 isUncurriedFn' _ _ = False
 
+{-# INLINE isCurriedFn #-}
 isCurriedFn :: (Text, PSString) -> Erl -> Bool
 isCurriedFn = isDict
 
+{-# INLINE applyAll #-}
 applyAll :: [a -> a] -> a -> a
 applyAll = foldl1 (.)
 
+{-# INLINE applyAllM #-}
 applyAllM :: Monad m => [a -> m a] -> a -> m a
 applyAllM = foldl1 (<=<)
 
