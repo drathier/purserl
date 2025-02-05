@@ -7,6 +7,9 @@ module Language.PureScript.PSString
   , prettyPrintString
   , prettyPrintStringJS
   , mkString
+  --
+  , fromString
+  , fromText
   ) where
 
 import Prelude
@@ -238,3 +241,6 @@ toInt = fromIntegral
 
 mkString :: Text -> PSString
 mkString = fromString . T.unpack
+
+fromText :: Text -> PSString
+fromText t = mkString t

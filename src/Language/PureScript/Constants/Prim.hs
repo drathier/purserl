@@ -38,7 +38,7 @@ $(TH.declare do
 
   TH.mod "Prim.Row" do
     TH.prefixWith "Row" do TH.clss ["Cons", "Lacks", "Nub", "Union"]
-  
+
   TH.mod "Prim.RowList" do
     TH.ty "RowList"
     TH.cls "RowToList"
@@ -51,6 +51,8 @@ $(TH.declare do
     TH.clss ["Fail", "Warn"]
     TH.tys ["Above", "Beside", "Doc", "Quote", "QuoteLabel", "Text"]
 
+  TH.mod "Backtrace" do
+    TH.tys ["Backtrace"]
   )
 
 primModules :: [ModuleName]

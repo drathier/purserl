@@ -791,6 +791,7 @@ check' val t@(ConstrainedType _ con@(Constraint _ cls@(Qualified _ (ProperName c
   -- An empty class dictionary is never used; see code in `TypeChecker.Entailment`
   -- that wraps empty dictionary solutions in `Unused`.
   dictName <- if typeClassIsEmpty then pure UnusedIdent else freshIdent ("dict" <> className)
+  -- NOTE[drathier]: this ByNullSourcePos seems to be the SourcePos used for type class instance dicts passed into functions. If we change it from Null, some other place in the compiler stops recognizing this as a type class dict, and suddently type checking fails with a " No type class instance was found for `Data.Functor.Functor m3`". Sigh. So I can't fix this bug then; it's a load bearing bug.
   dicts <- newDictionaries [] (Qualified ByNullSourcePos dictName) con
   val' <- withBindingGroupVisible $ withTypeClassDictionaries dicts $ check val ty
   return $ TypedValue' True (Abs (VarBinder nullSourceSpan dictName) (tvToExpr val')) t

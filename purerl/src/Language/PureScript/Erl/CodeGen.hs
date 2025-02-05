@@ -118,6 +118,9 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.CoreFn.Expr qualified as E
 import Control.Monad.State (StateT(..), runStateT, mapStateT, lift, get, put)
 
+import Language.PureScript.PSString qualified as PS
+import Language.PureScript.AST.SourcePos qualified as SS
+
 identToTypeclassCtor :: Ident -> Atom
 identToTypeclassCtor a = Atom Nothing (runIdent' a)
 
@@ -634,8 +637,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     bindToErl :: Bind Ann -> m (Erl -> Erl)
     bindToErl bind =
       case bind of
-        NonRec _ ident val -> do
-          b <- EVarBind (identToVar ident) <$> valueToErl' (Just ident) val
+        NonRec (ss,_,_) ident val -> do
+          b <- EVarBind (identToVar ident) <$> valueToErl'' ss (Just ident) val
           pure (\innermost -> ELet b innermost)
           -- For recursive bindings F(X) = E1, G(X) = E2, ... we have a problem as the variables are not
           -- in scope until each expression is defined. To avoid lifting to the top level first generate
@@ -691,17 +694,47 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     qualifiedToTypeclassCtor (Qualified (P.BySourcePos  _) ident) = Atom Nothing (runIdent' ident)
 
     valueToErl :: Expr Ann -> m Erl
-    valueToErl = valueToErl' Nothing
+    valueToErl e = valueToErl' Nothing e
 
     valueToErl' :: Maybe Ident -> Expr Ann -> m Erl
-    valueToErl' _ (Literal (pos, _, _) l) =
+    valueToErl' mIdent e =
+      let (ss,_,_) =  extractAnn e in
+      valueToErl'' ss mIdent e
+
+    valueToErl2 :: SourceSpan -> Maybe Ident -> Expr Ann -> m Erl
+    valueToErl2 pss mIdent e =
+      let
+          (ss,_,_) = extractAnn e
+          ss2 = case ss of
+            SS.NullSourceSpan -> pss
+            _ -> ss
+      in
+      valueToErl'' ss2 mIdent e
+
+    valueToErl'' :: SourceSpan -> Maybe Ident -> Expr Ann -> m Erl
+    valueToErl'' ann _ (Literal (pos, _, _) l) =
       rethrowWithPosition pos $ literalToValueErl l
-    valueToErl' _ (Var _ (Qualified (P.ByModuleName C.M_Prim) (Ident undef)))
+    valueToErl'' ann _ (Var _ (Qualified (P.ByModuleName C.M_Prim) (Ident undef)))
       | undef == C.S_undefined =
         return $ EAtomLiteral $ Atom Nothing C.S_undefined
-    valueToErl' _ (Var (_, _, Just (IsConstructor _ [])) (Qualified _ ident)) =
+    valueToErl'' annotSS _ (Var (_,_,_) (Qualified (P.ByModuleName C.M_Backtrace) (Ident backtrace))) | T.isPrefixOf "backtrace" backtrace =
+      return $ EMapLiteral [(Atom Nothing "trace", EMapLiteral $ map (\(k,v) -> (Atom Nothing k, v))
+        [ ("?MODULE", EVar "?MODULE")
+        , ("?FILE", EApp RegularApp (EAtomLiteral (Atom (Just "erlang") "list_to_binary")) [EVar "?FILE"])
+        , ("?LINE", EVar "?LINE")
+        , ("?FUNCTION_NAME", EVar "?FUNCTION_NAME")
+        , ("?FUNCTION_ARITY", EVar "?FUNCTION_ARITY")
+        , ("moduleName", EStringLiteral (PS.fromText (P.runModuleName mn)))
+        , ("file", EStringLiteral (PS.fromString (P.spanName annotSS)))
+        , ("spanStartLine", EIntLit (toInteger (P.sourcePosLine (P.spanStart annotSS))))
+        , ("spanStartColumn", EIntLit (toInteger (P.sourcePosColumn (P.spanStart annotSS))))
+        , ("spanStopLine", EIntLit (toInteger (P.sourcePosLine (P.spanEnd annotSS))))
+        , ("spanStopColumn", EIntLit (toInteger (P.sourcePosColumn (P.spanEnd annotSS))))
+        ]
+      )]
+    valueToErl'' ann _ (Var (_, _, Just (IsConstructor _ [])) (Qualified _ ident)) =
       return $ constructorLiteral (runIdent' ident) []
-    valueToErl' _ (Var _ ident) | isTopLevelBinding ident = pure $
+    valueToErl'' ann _ (Var _ ident) | isTopLevelBinding ident = pure $
       case M.lookup ident arities of
         Just (Arity (0, 1)) -> EFunRef (qualifiedToErl mn ident) 1
         _
@@ -713,9 +746,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             arity > 0 ->
             EFunRef (qualifiedToErl mn ident) arity
         _ -> EApp RegularApp (EAtomLiteral $ qualifiedToErl mn ident) []
-    valueToErl' _ (Var _ ident) = return $ EVar $ qualifiedToVar ident
-    valueToErl' ident (Abs _ arg val) = do
-      ret <- valueToErl val
+    valueToErl'' ann _ (Var _ ident) = return $ EVar $ qualifiedToVar ident
+    valueToErl'' ann ident (Abs _ arg val) = do
+      ret <- valueToErl2 ann Nothing val
 
       -- TODO this is mangled in corefn json
       let fixIdent (Ident "$__unused") = UnusedIdent
@@ -724,19 +757,19 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             UnusedIdent -> "_"
             _ -> identToVar arg
       return $ EFun1 (fmap identToVar ident) arg' ret
-    valueToErl' _ (Accessor _ prop val) = do
-      eval <- valueToErl val
+    valueToErl'' ann _ (Accessor _ prop val) = do
+      eval <- valueToErl2 ann Nothing val
       return $ EApp RegularApp (EAtomLiteral $ Atom (Just "maps") "get") [EAtomLiteral $ AtomPS Nothing prop, eval]
-    valueToErl' _ (ObjectUpdate _ o _mstring ps) = do
-      obj <- valueToErl o
-      sts <- mapM (sndM valueToErl) ps
+    valueToErl'' ann _ (ObjectUpdate _ o _mstring ps) = do
+      obj <- valueToErl2 ann Nothing o
+      sts <- mapM (sndM (valueToErl2 ann Nothing)) ps
       return $ EMapUpdate obj (map (first (AtomPS Nothing)) sts)
-    valueToErl' _ e@(App (_, _, meta) _ _) = do
+    valueToErl'' ann _ e@(App (_, _, meta) _ _) = do
       let (f, args) = unApp e []
           eMeta = case meta of
                           Just IsSyntheticApp -> SyntheticApp
                           _ -> RegularApp
-      args' <- mapM valueToErl args
+      args' <- mapM (valueToErl2 ann Nothing) args
       case f of
         Var (_, _, Just IsNewtype) _ ->
           return $ head args'
@@ -767,15 +800,15 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             length args >= n,
             n > 0 ->
             return $ curriedApp (drop n args') $ EApp eMeta (EAtomLiteral (qualifiedToErl mn qi)) (take n args')
-        _ -> curriedApp args' <$> valueToErl f
+        _ -> curriedApp args' <$> valueToErl2 ann Nothing f
       where
         unApp :: Expr Ann -> [Expr Ann] -> (Expr Ann, [Expr Ann])
         unApp (App _ val arg) args = unApp val (arg : args)
         unApp other args = (other, args)
 
 
---    valueToErl' _ (Case _ values binders) = do
---      vals <- mapM valueToErl values
+--    valueToErl' _ _ (Case _ values binders) = do
+--      vals <- mapM valueToErl2 ann Nothing values
 --      (exprs, binders', newvals) <- bindersToErl vals binders
 --      -- let ret = EApp (EFunFull (Just "Case") binders') (vals++newvals)
 --      let funBinderToBinder = \case
@@ -791,11 +824,11 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
     -- TODO[drathier]: first arg (Maybe Ident) is passed in sometimes, but never used. Remove it from the function args.
 
-    valueToErl' _ (Case _ values branches) = do
+    valueToErl'' ann _ (Case _ values branches) = do
       renamedValues <-
         mapM
           (\v -> do
-            v2 <- valueToErl v
+            v2 <- valueToErl2 ann Nothing v
             case v2 of
               EVar v2n -> pure (v2n, v2)
               _ -> (,) <$> freshNameErl' "CaseOf" <*> pure v2
@@ -872,7 +905,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   Right rhs -> do
                     binders2 <- mapM binderToErl binders
                     arrayConts <- takeArrayConts
-                    rhs2 <- lift $ valueToErl rhs
+                    rhs2 <- lift $ valueToErl2 ann Nothing rhs
                     case arrayConts of
                       [] ->
                         ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
@@ -892,7 +925,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                     -- we either walk down a nested path of cases to evaluate guards, or we continue down to the next branch
                     binders2 <- mapM binderToErl binders
                     arrayConts <- takeArrayConts
-                    guardedExprs2 <- mapM (\(g,h) -> (,) <$> lift (valueToErl g) <*> lift (valueToErl h)) guardedExprs
+                    guardedExprs2 <- mapM (\(g,h) -> (,) <$> lift (valueToErl2 ann Nothing g) <*> lift (valueToErl2 ann Nothing h)) guardedExprs
                     monGuardFailureCont <- buildCont restBranches
                     guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts guardedExprs2
                     pure $
@@ -989,14 +1022,14 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                     pushArrayCont arrayVar items
                     pure (EVar arrayVar)
 
-    valueToErl' _ (Let _ ds val) = do
+    valueToErl'' ann _ (Let _ ds val) = do
       ds2 <- mapM bindToErl ds
-      ret <- valueToErl val
+      ret <- valueToErl2 ann Nothing val
       let ds3 = foldr ($) ret ds2
       pure ds3
 
-    valueToErl' _ (Constructor (_, _, Just IsNewtype) _ _ _) = error "newtype ctor"
-    valueToErl' _ (Constructor _ _ (ProperName ctor) fields) =
+    valueToErl'' ann _ (Constructor (_, _, Just IsNewtype) _ _ _) = error "newtype ctor"
+    valueToErl'' ann _ (Constructor _ _ (ProperName ctor) fields) =
       let createFn =
             let body = constructorLiteral ctor ((EVar . identToVar) `map` fields)
              in foldr (EFun1 Nothing . identToVar) body fields
@@ -1069,7 +1102,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
           (es, res) <- case alt' of
             Right e -> do
-              e' <- valueToErl e
+              e' <- valueToErl2 ann Nothing e
               pure ([], [(EFunBinder bs, e')])
             Left guards -> first concat . unzip <$> mapM (guardToErl bs) guards
 
@@ -1081,7 +1114,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         guardToErl :: [Erl] -> (Expr Ann, Expr Ann) -> m ([Erl], (EFunBinder, Erl))
         guardToErl bs (ge, e) = do
           var <- freshNameErl' "GuardVar"
-          ge' <- valueToErl ge
+          ge' <- valueToErl2 ann Nothing ge
           let binder = EFunBinder bs
               fun =
                 EFunFull
@@ -1090,7 +1123,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                       [(EFunBinder (replicate (length bs) (EVar "_")), EFalse) | not (irrefutable binder)]
                   )
               cas = EApp RegularApp fun vals
-          e' <- valueToErl e
+          e' <- valueToErl2 ann Nothing e
           pure ([EVarBind var cas], (EFunBinder bs (Just $ Guard $ EVar var), e'))
 -}
     binderVars :: Binder Ann -> [Ident]
