@@ -123,7 +123,7 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
 untilFixedPoint :: Show a => (Monad m, Eq a) => (a -> m a) -> a -> m a
 untilFixedPoint f = go 10
   where
-  go 0 a = trace (show ("untilFixedPoint bailed out", a)) $ pure a
+  go 0 a = pure a -- trace (show ("untilFixedPoint bailed out", a)) $ pure a
   go n a = do
    a' <- f a
    if a' == a then return a' else go (n-1) a'
@@ -131,7 +131,7 @@ untilFixedPoint f = go 10
 untilFix :: Show a => Eq a => (a -> a) -> a -> a
 untilFix f = go 10
   where
-  go 0 a = trace (show ("untilFixedPoint bailed out", a)) $ a
+  go 0 a = a -- trace (show ("untilFix bailed out", a)) $ a
   go n a =
    let a2 = f a in
    if a2 == a then a2 else go (n-1) a2
