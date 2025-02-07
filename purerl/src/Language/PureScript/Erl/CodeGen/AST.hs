@@ -110,6 +110,8 @@ data Erl
   | EType Atom [Text] EType
   -- [drathier]: Try
   | ETryAnyAny Erl Erl
+  -- [drathier]: raw erlang code
+  | ERawErlangSource T.Text [(Atom, Erl)]
 
   deriving (Show, Eq)
 
@@ -406,6 +408,7 @@ everywhereOnErl f = go
       ETryAnyAny e1 e2 -> f $ ETryAnyAny (go e1) (go e2)
       EAndThen a b -> f $ EAndThen (go a) (go b)
       ELet a b -> f $ ELet (go a) (go b)
+      ERawErlangSource fmt binds -> f $ ERawErlangSource fmt $ map (second go) binds
 
       -- other -> error (show ("other", other))
 
@@ -442,6 +445,7 @@ everywhereOnErlBottomUpM f expr =
           ETryAnyAny e1 e2 -> f =<< ETryAnyAny <$> go e1 <*> go e2
           EAndThen a b -> f =<< EAndThen <$> go a <*> go b
           ELet a b -> f =<< ELet <$> go a <*> go b
+          ERawErlangSource fmt binds -> f =<< ERawErlangSource fmt <$> traverse (traverse go) binds
   in go expr
 
 everywhereOnErlBottomUpLeftToRightM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
@@ -522,6 +526,9 @@ everywhereOnErlBottomUpLeftToRightM f expr =
             a' <- go a
             b' <- go b
             f (ELet a' b')
+          ERawErlangSource fmt binds -> do
+            binds' <- traverse (traverse go) binds
+            f (ERawErlangSource fmt binds')
   in go expr
 
 everywhereOnErlTopDownLeftToRightM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
@@ -603,6 +610,9 @@ everywhereOnErlTopDownLeftToRightM f expr =
             a' <- go a
             b' <- go b
             pure (ELet a' b')
+          ERawErlangSource fmt binds -> do
+            binds' <- traverse (traverse go) binds
+            pure (ERawErlangSource fmt binds')
   in go expr
 
 everywhereOnErlTopDownLeftToRightWithoutEBindPatM :: forall m. Monad m => (Erl -> m Erl) -> Erl -> m Erl
@@ -686,6 +696,9 @@ everywhereOnErlTopDownLeftToRightWithoutEBindPatM f expr =
             a' <- go a
             b' <- go b
             pure (ELet a' b')
+          ERawErlangSource fmt binds -> do
+            binds' <- traverse (traverse go) binds
+            pure (ERawErlangSource fmt binds')
   in go expr
 
 
@@ -718,6 +731,7 @@ everywhereOnErlTopDownM f = f >=> go
   go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
   go (EAndThen a b) = EAndThen <$> f' a <*> f' b
   go (ELet a b) = ELet <$> f' a <*> f' b
+  go (ERawErlangSource fmt binds) = ERawErlangSource fmt <$> fargs binds
 
   go other = f other
 
@@ -751,6 +765,7 @@ everywhereOnErlTopDownMThen f = f'
   go (ETryAnyAny e1 e2) = ETryAnyAny <$> f' e1 <*> f' e2
   go (EAndThen a b) = EAndThen <$> f' a <*> f' b
   go (ELet a b) = ELet <$> f' a <*> f' b
+  go (ERawErlangSource fmt binds) = ERawErlangSource fmt <$> fargs binds
   go other = fst <$> f other
   
 everything :: forall r. (r -> r -> r) -> (Erl -> r) -> Erl -> r
@@ -775,6 +790,7 @@ everything (<>.) f = go
   go e0@(ETryAnyAny e1 e2) = f e0 <>. go e1 <>. go e2
   go e0@(EAndThen a b) = f e0 <>. go a <>. go b
   go e0@(ELet a b) = f e0 <>. go a <>. go b
+  go e0@(ERawErlangSource _ binds) = foldl (<>.) (f e0) (map (go . snd) binds)
   -- go other = f other
 
   go e0@(EVar {}) = f e0

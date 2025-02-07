@@ -23,6 +23,10 @@ import Data.Maybe (fromMaybe)
 
 import Language.PureScript.Pretty.Common (Emit, emit, intercalate, parensPos, runPlainString)
 
+import Language.PureScript.PSString qualified as PS
+import Data.Function ((&))
+import Data.Functor ((<&>))
+
 data PrinterState = PrinterState { indent :: Int, transformFilename :: String -> String }
 
 withIndent :: StateT PrinterState Maybe gen -> StateT PrinterState Maybe gen
@@ -161,6 +165,28 @@ literals = mkPattern' match
       , currentIndent
       , return $ emit "end"
       ]
+
+  match (ERawErlangSource fmt binds) = do
+    let (p1:parts) = T.splitOn "$" fmt
+    -- binds2 <- mapM (\(k,v) -> (k,) <$> prettyPrintErl' v) binds
+    gens <- parts
+      & mapM (\p ->
+        let
+          needle = T.takeWhile (\c ->
+            ('a' <= c && c <= 'z')
+            || ('A' <= c && c <= 'Z')
+            || ('0' <= c && c <= '9')
+            || (c == '_')
+            ) p
+        in case lookup (AtomPS Nothing (PS.fromText needle)) binds of
+          Nothing -> error (show ("[drathier]: CodeGen.erlang got key", "$", needle, "not found in", map fst binds))
+          Just v -> do
+            v' <- prettyPrintErl' v
+            return (v' <> emit (T.drop (T.length needle) p))
+      )
+    return $ mconcat (emit p1 : gens)
+    -- this below compiles without all the above
+    -- intercalate (emit "") <$> mapM prettyPrintErl' (map snd binds)
 
   match (EComment s) =
     mconcat <$> sequence
