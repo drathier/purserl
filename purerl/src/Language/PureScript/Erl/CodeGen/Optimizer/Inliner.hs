@@ -32,7 +32,7 @@ import Language.PureScript.PSString (PSString, mkString)
 import Prelude.Compat
 import Debug.Trace (trace, traceM)
 import Language.PureScript.PSString qualified as PS
-import Data.Function ((&))-
+import Data.Function ((&))
 
 isEVar :: Erl -> Bool
 isEVar (EVar _) = True
@@ -238,9 +238,8 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
         (_, EIntLit _, EIntLit _) -> EBinary op (EBinary op b c) a
         (EIntLit _, _, _) -> noop
         (_, EIntLit _, _) -> EBinary op (EBinary op b a) c
-        (_, _, EIntLit _) -> EBinary op (EBinary op b a) b
+        (_, _, EIntLit _) -> EBinary op (EBinary op c a) b
         (_, _, _) -> noop
-
 
 
     fnZero = (EC.dataSemiring, snd $ C.P_zero)
@@ -431,16 +430,16 @@ isInst inst prefix = T.isPrefixOf prefix inst
 letBindIdents :: [(Text, Erl)] -> Erl -> Erl
 letBindIdents vars body =
   case vars of
-    ("_",b):rest -> letBindIdents rest body
-    (a,EVar "_"):rest -> letBindIdents rest body
+    ("_",EVar _):rest -> letBindIdents rest body
+    (_,EVar "_"):rest -> letBindIdents rest body
     (a,b):rest -> ELet (EBind (EVar a) b) (letBindIdents rest body)
     [] -> body
 
 letBindPats :: [Erl] -> [Erl] -> Erl -> Erl
 letBindPats pats rhs body =
   case (pats, rhs) of
-    (EVar "_":prest, _:brest) -> letBindPats prest brest body
-    (_:prest, EVar "_":brest) -> letBindPats prest brest body
+    (EVar "_":prest, EVar _:brest) -> letBindPats prest brest body
+    (EVar _:prest, EVar "_":brest) -> letBindPats prest brest body
     (a:prest,b:brest) -> ELet (EBind a b) (letBindPats prest brest body)
     ([],[]) -> body
 
