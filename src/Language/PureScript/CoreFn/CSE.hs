@@ -239,7 +239,7 @@ newScopeWithIdents isTopLevel idents = newScope isTopLevel . flip (withBoundIden
 --
 generateIdentFor :: (HasCSEState m, MonadSupply m) => Int -> Expr () -> m (Bool, Ident)
 generateIdentFor d e = at d . non mempty . at e %%<~ \case
-  Nothing    -> freshIdent ("CSE_" <> nameHint e) <&> \ident -> ((True, ident), Just ident)
+  Nothing    -> freshIdent (nameHint e) <&> \ident -> ((True, ident), Just ident)
   Just ident -> pure ((False, ident), Just ident)
   -- A reminder: as with %%=, the first element of the returned pair is the
   -- final result of the expression, and the second element is the value to
@@ -257,7 +257,7 @@ generateIdentFor d e = at d . non mempty . at e %%<~ \case
         -> nameHint v1
     Var _ (Qualified _ ident)
       | Ident name             <- ident -> name
-      | GenIdent (Just name) int <- ident -> name <> "_" <> T.pack (show int)
+      | GenIdent (Just name) _ <- ident -> name
     Accessor _ prop _
       | Just decodedProp <- decodeString prop -> decodedProp
     _ -> "ref"

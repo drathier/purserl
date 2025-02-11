@@ -395,27 +395,27 @@ specialize = everywhereOnErl onErl
         EApp _ (EAtomLiteral (Atom (Just "math@ps") "remainder")) [a,b] -> EBinary FRemainder a b
 
         -- Boolean
-        EApp1 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean_" -> EBinary AndAlso a b
-        EApp2 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean_" -> EBinary AndAlso a b
-        EApp3 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean_" -> EBinary AndAlso a b
-        EApp1 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean_" -> EBinary OrElse a b
-        EApp2 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean_" -> EBinary OrElse a b
-        EApp3 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean_" -> EBinary OrElse a b
+        EApp1 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary AndAlso a b
+        EApp2 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary AndAlso a b
+        EApp3 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary AndAlso a b
+        EApp1 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary OrElse a b
+        EApp2 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary OrElse a b
+        EApp3 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary OrElse a b
 
         -- String
-        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString_" -> EBinary BinaryConcat a b
-        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString_" -> EBinary BinaryConcat a b
-        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString_" -> EBinary BinaryConcat a b
+        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> EBinary BinaryConcat a b
+        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> EBinary BinaryConcat a b
+        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> EBinary BinaryConcat a b
 
         -- Array
-        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray_" -> EBinary ArrayConcat a b
-        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray_" -> EBinary ArrayConcat a b
-        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray_" -> EBinary ArrayConcat a b
+        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> EBinary ArrayConcat a b
+        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> EBinary ArrayConcat a b
+        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> EBinary ArrayConcat a b
 
         -- List
-        EApp1 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList_" -> EBinary ListConcat a b
-        EApp2 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList_" -> EBinary ListConcat a b
-        EApp3 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList_" -> EBinary ListConcat a b
+        EApp1 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> EBinary ListConcat a b
+        EApp2 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> EBinary ListConcat a b
+        EApp3 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> EBinary ListConcat a b
 
         other -> other
 
