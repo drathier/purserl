@@ -32,7 +32,7 @@ defaults:
 env:
   CI_PRERELEASE: "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
   CI_RELEASE: "${{ github.event_name == 'release' }}"
-  STACK_VERSION: "3.3.1"
+  STACK_VERSION: "2.15.1"
 
 concurrency:
   # We never want two prereleases building at the same time, since they would
@@ -222,7 +222,7 @@ jobs:
     # means our published binaries will work on the widest number of platforms.
     # But the HLint binary downloaded by this job requires a newer glibc
     # version.
-    container: haskell:9.8.4@sha256:fa5d646996faea1f6cd4a82682bc2db383e478f263c897dfeaebb6f6fbd4f105
+    container: haskell:9.10.1-bullseye@sha256:a9ed92a8f706e961efc149b6c85c40588cc081a3ad4412b5b7f48e3c12770796
 
     steps:
       - uses: "actions/checkout@v2"
