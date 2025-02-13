@@ -444,8 +444,8 @@ library
     Paths_purescript
     -- purerl
     -- Paths_purerl
-  -- autogen-modules:
-    -- Paths_purescript
+  autogen-modules:
+    Paths_purescript
     -- purerl
     -- Paths_purerl
 
@@ -479,8 +479,8 @@ executable purs
     SharedCLI
     Version
     Paths_purescript
-  autogen-modules:
-    Paths_purescript
+  -- autogen-modules:
+  --   Paths_purescript
 
 test-suite tests
   import: defaults
