@@ -175,7 +175,7 @@ tar -xzf sdist-test/purescript-*.tar.gz -C sdist-test --strip-components=1
 pushd sdist-test
 # Haddock -Werror goes here to keep us honest but prevent failing on
 # documentation errors in dependencies
-$STACK build $STACK_OPTS --haddock-arguments --optghc=-Werror
+$STACK build $STACK_OPTS --haddock-arguments --optghc="-Werror -Wwarn=x-partial -Wwarn=deprecations"
 
 if [ "$do_prerelease" ]
 then

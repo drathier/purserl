@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeOperators #-}
 -- |
 -- A class for monads supporting a supply of fresh names
 --
