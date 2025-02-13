@@ -222,7 +222,7 @@ jobs:
     # means our published binaries will work on the widest number of platforms.
     # But the HLint binary downloaded by this job requires a newer glibc
     # version.
-    container: haskell:9.10.1-bullseye@sha256:a9ed92a8f706e961efc149b6c85c40588cc081a3ad4412b5b7f48e3c12770796
+    container: haskell:9.8.4@sha256:a9ed92a8f706e961efc149b6c85c40588cc081a3ad4412b5b7f48e3c12770796
 
     steps:
       - uses: "actions/checkout@v2"
