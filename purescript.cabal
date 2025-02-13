@@ -120,7 +120,7 @@ common defaults
     TypeFamilies
     ViewPatterns
   build-tool-depends:
-    happy:happy ==1.20.1.1
+    happy:happy ==2.0.2
   build-depends:
     -- NOTE: Please do not edit these version constraints manually. They are
     -- deliberately made narrow because changing the dependency versions in
