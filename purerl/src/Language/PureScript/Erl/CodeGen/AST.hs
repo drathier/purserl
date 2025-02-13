@@ -12,6 +12,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 
 import Control.Monad.Identity
+import Control.Monad ((>=>))
 import Control.Arrow (second)
 
 import Language.PureScript.PSString (PSString)

@@ -5,15 +5,12 @@ module Language.PureScript.Erl.Errors
   ) where
 
 import Prelude
-import Protolude (ordNub)
+import Protolude (ordNub, Last(Last, getLast), unless, forM)
 
 import           Control.Arrow ((&&&))
 import           Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.Writer
-    ( unless,
-      forM,
-      Last(Last, getLast),
-      censor,
+    ( censor,
       MonadWriter(tell, listen) )
 import           Control.Exception (displayException)
 import           Control.Lens (both, head1, over)
