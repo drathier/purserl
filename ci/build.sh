@@ -25,7 +25,7 @@ set -ex
 
 # We test with --haddock because haddock generation can fail if there is invalid doc-comment syntax,
 # and these failures are very easy to miss otherwise.
-STACK="stack --no-terminal --haddock --jobs=2"
+STACK="stack --install-ghc --no-terminal --haddock --jobs=2"
 
 #STACK_OPTS="--test" # not running tests; we just want something built
 STACK_OPTS=""
