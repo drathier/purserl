@@ -33,6 +33,7 @@ import Prelude.Compat
 import Debug.Trace (trace, traceM)
 import Language.PureScript.PSString qualified as PS
 import Data.Function ((&))
+import Debug.Trace qualified as Debug
 
 isEVar :: Erl -> Bool
 isEVar (EVar _) = True
@@ -334,12 +335,16 @@ specialize = everywhereOnErl onErl
   where
     onErl :: Erl -> Erl
     onErl expr =
+      -- Debug.trace (show ("specialize.any", expr)) $
       case expr of
         -- NOTE[drathier]: type class instance apply is sometimes RegularApp and sometimes SyntheticApp for whatever currently unknown reason, so we're matching both here
         -- INVARIANT[drathier]: CSE has to let these through for us to get the chance to specialize them here. See purescript/src/Language/PureScript/CoreFn/CSE.hs:optimizeCommonSubexpressions.shouldFloatExpr
 
         -- CodeGen.erlang magic
         EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) [EStringLiteral fmt,EMapLiteral binds] ->
+          -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
+          ERawErlangSource (PS.prettyPrintString fmt & T.drop 1 & T.dropEnd 1) binds
+        EApp RegularApp (EApp RegularApp (EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) []) [EStringLiteral fmt]) [EMapLiteral binds] ->
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
           ERawErlangSource (PS.prettyPrintString fmt & T.drop 1 & T.dropEnd 1) binds
 
