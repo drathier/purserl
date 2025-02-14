@@ -163,7 +163,7 @@ common defaults
     bower-json >=1.1.0.0 && <1.2,
     boxes >=0.1.5 && <0.2,
     bytestring >=0.12.1.0,
-    Cabal >=3.14.0.0,
+    Cabal >=3.10.2.0,
     cborg >=0.2.7.0 && <0.3,
     serialise >=0.2.5.0 && <0.3,
     cheapskate >=0.1.1.2 && <0.2,
