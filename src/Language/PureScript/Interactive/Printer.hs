@@ -25,7 +25,7 @@ printModuleSignatures moduleName env =
     let names = Env.getNames env in
     let typeClasses = Env.typeClasses env in
     let types = Env.getTypes env in
-    let dataConstructors = Env.dataConstructors env in
+    let dataConstructors = M.fromList $ Env.getDataConstructors env in
     let typeSynonyms = Env.typeSynonyms env in
     -- get relevant components of a module from environment
     let moduleNamesIdent = byModuleNameList names

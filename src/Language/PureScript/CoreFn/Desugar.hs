@@ -210,7 +210,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     numConstructors
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> Int
-    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ M.toList $ Env.dataConstructors env
+    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ Env.getDataConstructors env
 
     typeConstructor
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))

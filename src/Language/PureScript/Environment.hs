@@ -59,7 +59,6 @@ module Language.PureScript.Environment
   , unapplyKinds
   , makeTypeClassData
   -- environment ctors
-  , dataConstructors
   , typeSynonyms
   , typeClassDictionaries
   , typeClasses
@@ -90,6 +89,8 @@ module Language.PureScript.Environment
   , getTypeSynonymTypes
   , addDataConstructor
   , getDataConstructor
+  , getDataConstructors
+  , getDataConstructorType
   , getDataConstructorTypes
   , addTypeClass
   , getTypeClass
@@ -267,6 +268,14 @@ addDataConstructor k v e = addDataConstructors (M.fromList [(k,v)]) e
 getDataConstructor :: Qualified (ProperName 'ConstructorName) -> Environment -> Maybe (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
 getDataConstructor dc env =
   M.lookup dc (_dataConstructors env)
+
+getDataConstructors :: Environment -> [(Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))]
+getDataConstructors env =
+  M.toList (_dataConstructors env)
+
+getDataConstructorType :: Qualified (ProperName 'ConstructorName) -> Environment -> Maybe SourceType
+getDataConstructorType k env =
+  fmap (\(_, _, ty, _) -> ty) $ M.lookup k (_dataConstructors env)
 
 getDataConstructorTypes :: Environment -> M.Map (Qualified (ProperName 'ConstructorName)) SourceType
 getDataConstructorTypes env =

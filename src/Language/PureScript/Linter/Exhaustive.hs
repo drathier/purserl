@@ -81,7 +81,7 @@ getConstructors env defmn n = extractConstructors lnte
       Just (_, pm, _, _) -> qualifyName pm defmn con
 
   getConsInfo :: Qualified (ProperName 'ConstructorName) -> Maybe (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
-  getConsInfo con = M.lookup con (Env.dataConstructors env)
+  getConsInfo con = Env.getDataConstructor con env
 
 -- |
 -- Replicates a wildcard binder

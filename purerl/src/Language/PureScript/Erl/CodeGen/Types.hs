@@ -221,4 +221,4 @@ isNewtypeConstructor e ctor = case lookupConstructor e ctor of
   where
   lookupConstructor :: Environment -> Qualified (P.ProperName 'P.ConstructorName) -> Maybe (P.DataDeclType, ProperName 'P.TypeName, P.SourceType, [Ident])
   lookupConstructor env' c =
-    c `M.lookup` P.dataConstructors env'
+    Env.getDataConstructor c env'

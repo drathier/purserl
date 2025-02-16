@@ -1622,7 +1622,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
       Just (kind, tk@(DataType _ _ tys)) ->
         EDType pn kind tk : [ EDDataConstructor dctor dty pn ty args
                             | dctor <- fromMaybe (map fst tys) dctors
-                            , (dty, _, ty, args) <- maybeToList (Qualified (ByModuleName mn) dctor `M.lookup` dataConstructors env)
+                            , (dty, _, ty, args) <- maybeToList (Env.getDataConstructor (Qualified (ByModuleName mn) dctor) env)
                             ]
       _ -> internalError "toExternsDeclaration: Invalid input"
   toExternsDeclaration (ValueRef _ ident)
@@ -1633,7 +1633,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
     , Just TypeClassData{..} <- Qualified (ByModuleName mn) className `M.lookup` typeClasses env
     , Just (kind, tk) <- Env.getType (Qualified (ByModuleName mn) (coerceProperName className)) env
     , Just (dictKind, dictData@(DataType _ _ [(dctor, _)])) <- Env.getType (Qualified (ByModuleName mn) dictName) env
-    , Just (dty, _, ty, args) <- Qualified (ByModuleName mn) dctor `M.lookup` dataConstructors env
+    , Just (dty, _, ty, args) <- Env.getDataConstructor (Qualified (ByModuleName mn) dctor) env
     = [ EDType (coerceProperName className) kind tk
       , EDType dictName dictKind dictData
       , EDDataConstructor dctor dty dictName ty args

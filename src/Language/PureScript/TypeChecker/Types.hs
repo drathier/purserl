@@ -47,7 +47,7 @@ import Data.IntSet qualified as IS
 
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (TypeClassData(..), NameKind(..), NameVisibility(..), typeClasses, fdDeterminers, kindType, tyRecord, kindRow, dataConstructors, tyFunction, function, tyBoolean, isDictTypeName, tyArray, tyChar, tyString, tyNumber, tyInt, fdDetermined)
+import Language.PureScript.Environment (TypeClassData(..), NameKind(..), NameVisibility(..), typeClasses, fdDeterminers, kindType, tyRecord, kindRow, tyFunction, function, tyBoolean, isDictTypeName, tyArray, tyChar, tyString, tyNumber, tyInt, fdDetermined)
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent)
@@ -491,9 +491,9 @@ infer' (Var ss var) = do
     _ -> return $ TypedValue' True (Var ss var) ty
 infer' v@(Constructor _ c) = do
   env <- getEnv
-  case M.lookup c (dataConstructors env) of
+  case Env.getDataConstructorType c env of
     Nothing -> throwError . errorMessage . UnknownName . fmap DctorName $ c
-    Just (_, _, ty, _) -> TypedValue' True v <$> (introduceSkolemScope <=< replaceAllTypeSynonyms $ ty)
+    Just ty -> TypedValue' True v <$> (introduceSkolemScope <=< replaceAllTypeSynonyms $ ty)
 infer' (Case vals binders) = do
   (vals', ts) <- instantiateForBinders vals binders
   ret <- freshTypeWithKind kindType
@@ -629,8 +629,8 @@ inferBinder val (LiteralBinder _ (BooleanLiteral _)) = unifyTypes val tyBoolean 
 inferBinder val (VarBinder ss name) = return $ M.singleton name (ss, val)
 inferBinder val (ConstructorBinder ss ctor binders) = do
   env <- getEnv
-  case M.lookup ctor (dataConstructors env) of
-    Just (_, _, ty, _) -> do
+  case Env.getDataConstructorType ctor env of
+    Just ty -> do
       (_, fn) <- instantiatePolyTypeWithUnknowns (internalError "Data constructor types cannot contain constraints") ty
       fn' <- introduceSkolemScope <=< replaceAllTypeSynonyms $ fn
       let (args, ret) = peelArgs fn'
@@ -892,9 +892,9 @@ check' (Accessor prop val) ty = withErrorMessageHint (ErrorCheckingAccessor val 
   return $ TypedValue' True (Accessor prop val') ty
 check' v@(Constructor _ c) ty = do
   env <- getEnv
-  case M.lookup c (dataConstructors env) of
+  case Env.getDataConstructorType c env of
     Nothing -> throwError . errorMessage . UnknownName . fmap DctorName $ c
-    Just (_, _, ty1, _) -> do
+    Just ty1 -> do
       repl <- introduceSkolemScope <=< replaceAllTypeSynonyms $ ty1
       ty' <- introduceSkolemScope <=< replaceAllTypeSynonyms $ ty
       elaborate <- subsumes repl ty'
