@@ -46,8 +46,11 @@ import Language.PureScript.CoreFn
     ssAnn,
   )
 import Language.PureScript.Environment as E
-  ( Environment (names, typeSynonyms, types),
-    tyFunction,
+  ( Environment
+  , names
+  , typeSynonyms
+  , types
+  , tyFunction
   )
 import Language.PureScript.Erl.CodeGen.AST as AST
 -- import Language.PureScript.Erl.CodeGen.CheckedWrapper (typecheckWrapper)

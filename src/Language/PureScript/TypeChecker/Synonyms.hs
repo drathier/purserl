@@ -16,7 +16,7 @@ import Control.Monad.State (MonadState)
 import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
 import Data.Text (Text)
-import Language.PureScript.Environment (Environment(..), TypeKind)
+import Language.PureScript.Environment (Environment, TypeKind, typeSynonyms, types)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), SourceSpan, errorMessage')
 import Language.PureScript.Names (ProperName, ProperNameType(..), Qualified)
 import Language.PureScript.TypeChecker.Monad (CheckState, getEnv)

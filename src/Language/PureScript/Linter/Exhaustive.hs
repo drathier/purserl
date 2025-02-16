@@ -27,6 +27,7 @@ import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.Traversals (everywhereOnValuesM)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType, Environment(..), TypeKind(..))
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (MultipleErrors, pattern NullSourceAnn, SimpleErrorMessage(..), SourceSpan, errorMessage')
 import Language.PureScript.Names as P
 import Language.PureScript.Pretty.Values (prettyPrintBinderAtom)
@@ -68,7 +69,7 @@ getConstructors env defmn n = extractConstructors lnte
   extractConstructors _ = internalError "Data name not in the scope of the current environment in extractConstructors"
 
   lnte :: Maybe (SourceType, TypeKind)
-  lnte = M.lookup qpn (types env)
+  lnte = M.lookup qpn (Env.types env)
 
   qpn :: Qualified (ProperName 'TypeName)
   qpn = getConsDataName n
@@ -80,7 +81,7 @@ getConstructors env defmn n = extractConstructors lnte
       Just (_, pm, _, _) -> qualifyName pm defmn con
 
   getConsInfo :: Qualified (ProperName 'ConstructorName) -> Maybe (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
-  getConsInfo con = M.lookup con (dataConstructors env)
+  getConsInfo con = M.lookup con (Env.dataConstructors env)
 
 -- |
 -- Replicates a wildcard binder

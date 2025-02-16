@@ -1,4 +1,94 @@
-module Language.PureScript.Environment where
+-- module Language.PureScript.Environment where
+module Language.PureScript.Environment
+  ( Environment
+  , TypeClassData(..)
+  , FunctionalDependency(..)
+  , NameVisibility(..)
+  , NameKind(..)
+  , TypeKind(..)
+  , DataDeclType(..)
+  , (-:>)
+  , initEnvironment
+  , computeCoveringSets
+  , showDataDeclType
+  , kindType
+  , kindConstraint
+  , kindSymbol
+  , kindDoc
+  , kindOrdering
+  , kindRowList
+  , kindRow
+  , kindOfREmpty
+  , tyFunction
+  , tyString
+  , tyChar
+  , tyNumber
+  , tyInt
+  , tyBoolean
+  , tyArray
+  , tyRecord
+  , tyVar
+  , tyForall
+  , function
+  , primClass
+  , primTypes
+  , allPrimTypes
+  , primBooleanTypes
+  , primCoerceTypes
+  , primOrderingTypes
+  , primRowTypes
+  , primRowListTypes
+  , primSymbolTypes
+  , primIntTypes
+  , primTypeErrorTypes
+  , primClasses
+  , allPrimClasses
+  , primCoerceClasses
+  , primRowClasses
+  , primRowListClasses
+  , primSymbolClasses
+  , primIntClasses
+  , primTypeErrorClasses
+  , lookupConstructor
+  , lookupValue
+  , dictTypeName'
+  , dictTypeName
+  , isDictTypeName
+  , nominalRolesForKind
+  , kindArity
+  , unapplyKinds
+  , makeTypeClassData
+  -- environment ctors
+  , names
+  , types
+  , dataConstructors
+  , typeSynonyms
+  , typeClassDictionaries
+  , typeClasses
+  --
+  , addName
+  , addNames
+  , getName
+  , restoreNames
+  , addType
+  , addTypes
+  , getType
+  , restoreTypes
+  , restoreTypeClassDictionaries
+  , mapNames
+  , addTypeSynonym
+  , getTypeSynonym
+  , addDataConstructor
+  , getDataConstructor
+  , addTypeClass
+  , getTypeClass
+  , addTypeClassDictionary
+  , addManyTypeClassDictionaries
+  , addTypeClassDictionaries
+  , getTypeClassDictionary
+  , getTypeClassDictionaries
+  )
+  where
 
 import Prelude
 
@@ -19,33 +109,199 @@ import Data.Semigroup (First(..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.List.NonEmpty qualified as NEL
+import Data.Function ((&))
 
 import Language.PureScript.AST.SourcePos (nullSourceAnn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy, coerceProperName)
+import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy(..), ModuleName, coerceProperName)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Types (SourceConstraint, SourceType, Type(..), TypeVarVisibility(..), eqType, srcTypeConstructor, freeTypeVariables)
 import Language.PureScript.Constants.Prim qualified as C
 
+-- drathier added start
+
+{-
+data Env
+  = Env
+    (M.Map ModuleName ModuEnv)
+    ModuEnv
+
 -- | The @Environment@ defines all values and types which are currently in scope:
-data Environment = Environment
-  { names :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+data ModuEnv = ModuEnv
+  { _names :: M.Map Ident (SourceType, NameKind, NameVisibility)
   -- ^ Values currently in scope
-  , types :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  , _types :: M.Map (ProperName 'TypeName) (SourceType, TypeKind)
   -- ^ Type names currently in scope
-  , dataConstructors :: M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
+  , _dataConstructors :: M.Map (ProperName 'ConstructorName) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
   -- ^ Data constructors currently in scope, along with their associated type
   -- constructor name, argument types and return type.
-  , typeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
+  , _typeSynonyms :: M.Map (ProperName 'TypeName) ([(Text, Maybe SourceType)], SourceType)
   -- ^ Type synonyms currently in scope
-  , typeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+  , _typeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
   -- ^ Available type class dictionaries. When looking up 'Nothing' in the
   -- outer map, this returns the map of type class dictionaries in local
   -- scope (ie dictionaries brought in by a constrained type).
-  , typeClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+  , _typeClasses :: M.Map (ProperName 'ClassName) TypeClassData
   -- ^ Type classes
   } deriving (Show, Generic)
+-}
+
+names :: Environment -> M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+names = _names
+
+types :: Environment -> M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+types = _types
+
+dataConstructors :: Environment -> M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
+dataConstructors = _dataConstructors
+
+typeSynonyms :: Environment -> M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
+typeSynonyms = _typeSynonyms
+
+typeClassDictionaries :: Environment -> M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+typeClassDictionaries = _typeClassDictionaries
+
+typeClasses :: Environment -> M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+typeClasses = _typeClasses
+
+--
+
+-- impls extraced/copied from purescript/src/Language/PureScript/TypeChecker/Monad.hs
+addNames :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility) -> Environment -> Environment
+addNames a e = e { _names = M.union a (_names e)}
+
+addName :: (Qualified Ident) -> (SourceType, NameKind, NameVisibility) -> Environment -> Environment
+addName k v e = addNames (M.fromList [(k,v)]) e
+
+getName :: (Qualified Ident) -> Environment -> Maybe (SourceType, NameKind, NameVisibility)
+getName k e = M.lookup k (_names e)
+
+restoreNames :: Environment -> Environment -> Environment
+restoreNames orig new =
+  new { _names = _names orig }
+
+mapNames :: ((SourceType, NameKind, NameVisibility) -> (SourceType, NameKind, NameVisibility)) -> Environment -> Environment
+mapNames f env =
+  env { _names = M.map f (_names env) }
+
+addTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind) -> Environment -> Environment
+addTypes a e = e { _types = M.union a (_types e)}
+
+addType :: (Qualified (ProperName 'TypeName)) -> (SourceType, TypeKind) -> Environment -> Environment
+addType k v e = addTypes (M.fromList [(k,v)]) e
+
+getType :: Qualified (ProperName 'TypeName) -> Environment -> Maybe (SourceType, TypeKind)
+getType typeName env =
+  M.lookup typeName (_types env)
+
+restoreTypes :: Environment -> Environment -> Environment
+restoreTypes orig new =
+  new { _types = _types orig }
+
+
+addTypeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType) -> Environment -> Environment
+addTypeSynonyms a e = e { _typeSynonyms = M.union a (_typeSynonyms e)}
+
+addTypeSynonym :: (Qualified (ProperName 'TypeName)) -> ([(Text, Maybe SourceType)], SourceType) -> Environment -> Environment
+addTypeSynonym k v e = addTypeSynonyms (M.fromList [(k,v)]) e
+
+getTypeSynonym :: (Qualified (ProperName 'TypeName)) -> Environment -> Maybe ([(Text, Maybe SourceType)], SourceType)
+getTypeSynonym k e = M.lookup k (_typeSynonyms e)
+
+
+addDataConstructors :: M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident]) -> Environment -> Environment
+addDataConstructors a e = e { _dataConstructors = M.union a (_dataConstructors e)}
+
+addDataConstructor :: (Qualified (ProperName 'ConstructorName)) -> (DataDeclType, ProperName 'TypeName, SourceType, [Ident]) -> Environment -> Environment
+addDataConstructor k v e = addDataConstructors (M.fromList [(k,v)]) e
+
+getDataConstructor dc env =
+  M.lookup dc (_dataConstructors env)
+
+addTypeClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData -> Environment -> Environment
+addTypeClasses a e = e { _typeClasses = M.union a (_typeClasses e)}
+
+addTypeClass :: (Qualified (ProperName 'ClassName)) -> TypeClassData -> Environment -> Environment
+addTypeClass k v e = addTypeClasses (M.fromList [(k,v)]) e
+
+
+addManyTypeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))) -> Environment -> Environment
+addManyTypeClassDictionaries a e =
+  e { _typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) a (_typeClassDictionaries e)}
+
+addTypeClassDictionaries :: QualifiedBy -> M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)) -> Environment -> Environment
+addTypeClassDictionaries mn entries env =
+  env { _typeClassDictionaries = M.insertWith (M.unionWith (M.unionWith (<>))) mn entries (_typeClassDictionaries env) }
+
+getTypeClassDictionaries :: Environment -> M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+getTypeClassDictionaries env =
+  -- this is seemingly only used to look for duplicate type class instances by looking up a modu/dictName in all modules at once. Caching type classes separately might speed this up, idk.
+  _typeClassDictionaries env
+
+restoreTypeClassDictionaries :: Environment -> Environment -> Environment
+restoreTypeClassDictionaries orig new =
+  new { _typeClassDictionaries = _typeClassDictionaries orig }
+
+
+addTypeClassDictionary
+  :: ModuleName
+  -> Qualified (ProperName 'ClassName)
+  -> Qualified Ident
+  -> NEL.NonEmpty NamedDict
+  -> Environment
+  -> Environment
+addTypeClassDictionary efModuleName className qIdent pdict env =
+  let
+          updateMap :: (Ord k, Monoid a) => (a -> a) -> k -> M.Map k a -> M.Map k a
+          updateMap f = M.alter (Just . f . fold)
+          -- if key doesn't exist, default to mempty.
+          -- then map value under key
+          -- that's all
+
+  in
+  env { _typeClassDictionaries =
+          updateMap
+            (updateMap (M.insertWith (<>) qIdent pdict) className)
+            (ByModuleName efModuleName) (_typeClassDictionaries env)
+      }
+
+
+getTypeClass :: Qualified (ProperName 'ClassName) -> Environment -> Maybe TypeClassData
+getTypeClass className env =
+  M.lookup className (_typeClasses env)
+
+getTypeClassDictionary
+  :: ModuleName
+  -> Qualified (ProperName 'ClassName)
+  -> Environment
+  -> Maybe (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
+getTypeClassDictionary mn qClass env =
+  _typeClassDictionaries env
+   & M.lookup (ByModuleName mn)
+   >>= M.lookup qClass
+
+
+
+-- | The @Environment@ defines all values and types which are currently in scope:
+data Environment = Environment
+  { _names :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  -- ^ Values currently in scope
+  , _types :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  -- ^ Type names currently in scope
+  , _dataConstructors :: M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
+  -- ^ Data constructors currently in scope, along with their associated type
+  -- constructor name, argument types and return type.
+  , _typeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
+  -- ^ Type synonyms currently in scope
+  , _typeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+  -- ^ Available type class dictionaries. When looking up 'Nothing' in the
+  -- outer map, this returns the map of type class dictionaries in local
+  -- scope (ie dictionaries brought in by a constrained type).
+  , _typeClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+  -- ^ Type classes
+  } deriving (Show, Generic)
+-- drathier added end
 
 instance NFData Environment
 

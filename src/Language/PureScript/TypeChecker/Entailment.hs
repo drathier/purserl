@@ -38,7 +38,7 @@ import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.AST (Binder(..), ErrorMessageHint(..), Expr(..), Literal(..), pattern NullSourceSpan, everywhereOnValuesTopDownM, nullSourceSpan, everythingOnValues)
 import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
+import Language.PureScript.Environment (Environment, FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString, typeClasses)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)

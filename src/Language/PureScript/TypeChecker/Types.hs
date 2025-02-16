@@ -47,7 +47,8 @@ import Data.IntSet qualified as IS
 
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment
+import Language.PureScript.Environment (TypeClassData(..), NameKind(..), NameVisibility(..), typeClasses, fdDeterminers, kindType, tyRecord, kindRow, dataConstructors, tyFunction, function, tyBoolean, isDictTypeName, tyArray, tyChar, tyString, tyNumber, tyInt, fdDetermined)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent)
 import Language.PureScript.TypeChecker.Deriving (deriveInstance)
@@ -781,7 +782,7 @@ check' val (ForAll ann vis ident mbK ty _) = do
       -- an undefined type variable that happens to clash with the variable we
       -- want to skolemize. This can happen due to synonym expansion (see 2542).
       skVal
-        | Just _ <- M.lookup (Qualified (byMaybeModuleName mn) (ProperName ident)) $ types env =
+        | Just _ <- M.lookup (Qualified (byMaybeModuleName mn) (ProperName ident)) $ Env.types env =
             skolemizeTypesInValue ss ident mbK sko scope val
         | otherwise = val
   val' <- tvToExpr <$> check skVal sk

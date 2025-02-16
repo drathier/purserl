@@ -14,7 +14,7 @@ import Data.Version (Version)
 import Language.PureScript.AST as P
 import Language.PureScript.Comments as P
 import Language.PureScript.Crash as P
-import Language.PureScript.Environment as P
+import Language.PureScript.Environment as P hiding (getTypeClassDictionaries)
 import Language.PureScript.Errors as P hiding (indent)
 import Language.PureScript.Externs as P
 import Language.PureScript.Graph as P

@@ -216,7 +216,9 @@ common defaults
     unordered-containers >=0.2.19.1,
     -- drathier
     hashable,
-    union-find
+    union-find,
+    ansi-wl-pprint,
+    exceptions
 
 library
   import: defaults

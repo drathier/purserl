@@ -44,6 +44,7 @@ import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Crash (internalError)
 -- import Language.PureScript.Environment (DataDeclType, Environment(..), FunctionalDependency, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), dictTypeName, makeTypeClassData)
 import Language.PureScript.Environment
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Names (Ident, ModuleName, OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, isPlainIdent)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
 -- import Language.PureScript.Types (SourceConstraint, SourceType, srcInstanceType)
@@ -223,22 +224,28 @@ applyExternsFileToEnvironment :: ExternsFile -> Environment -> Environment
 applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclarations
   where
   applyDecl :: Environment -> ExternsDeclaration -> Environment
-  applyDecl env (EDType pn kind tyKind) = env { types = M.insert (qual pn) (kind, tyKind) (types env) }
-  applyDecl env (EDTypeSynonym pn args ty) = env { typeSynonyms = M.insert (qual pn) (args, ty) (typeSynonyms env) }
-  applyDecl env (EDDataConstructor pn dTy tNm ty nms) = env { dataConstructors = M.insert (qual pn) (dTy, tNm, ty, nms) (dataConstructors env) }
-  applyDecl env (EDValue ident ty) = env { names = M.insert (Qualified (ByModuleName efModuleName) ident) (ty, External, Defined) (names env) }
-  applyDecl env (EDClass pn args members cs deps tcIsEmpty) = env { typeClasses = M.insert (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) (typeClasses env) }
+  applyDecl env (EDType pn kind tyKind) = Env.addType (qual pn) (kind, tyKind) env
+  applyDecl env (EDTypeSynonym pn args ty) = Env.addTypeSynonym (qual pn) (args, ty) env
+  applyDecl env (EDDataConstructor pn dTy tNm ty nms) = Env.addDataConstructor (qual pn) (dTy, tNm, ty, nms) env
+  applyDecl env (EDValue ident ty) = Env.addName (Qualified (ByModuleName efModuleName) ident) (ty, External, Defined) env
+  applyDecl env (EDClass pn args members cs deps tcIsEmpty) = Env.addTypeClass (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) env
   applyDecl env (EDInstance className ident vars kinds tys cs ch idx ns ss) =
-    env { typeClassDictionaries =
-            updateMap
-              (updateMap (M.insertWith (<>) (qual ident) (pure dict)) className)
-              (ByModuleName efModuleName) (typeClassDictionaries env) }
+    -- this is doing a higher level operation, like adding a new class to the env. It should be a single simple call to Env.something
+    -- like `Env.addTypeClassDictionary efModuleName (qual ident) (pure dict) env` ?
+    Env.addTypeClassDictionary efModuleName className (qual ident) (pure dict) env
+    -- env { typeClassDictionaries =
+    --         updateMap
+    --           (updateMap (M.insertWith (<>) (qual ident) (pure dict)) className)
+    --           (ByModuleName efModuleName) (typeClassDictionaries env) }
     where
     dict :: NamedDict
     dict = TypeClassDictionaryInScope ch idx (qual ident) [] className vars kinds tys cs instTy
 
     updateMap :: (Ord k, Monoid a) => (a -> a) -> k -> M.Map k a -> M.Map k a
     updateMap f = M.alter (Just . f . fold)
+      -- if key doesn't exist, default to mempty.
+      -- then map value under key
+      -- that's all
 
     instTy :: Maybe SourceType
     instTy = case ns of

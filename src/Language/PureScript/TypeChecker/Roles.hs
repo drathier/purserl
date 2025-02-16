@@ -25,6 +25,7 @@ import Data.Semigroup (Any(..))
 import Data.Text (Text)
 
 import Language.PureScript.Environment (Environment(..), TypeKind(..))
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (DataConstructorDeclaration(..), MultipleErrors, RoleDeclarationData(..), SimpleErrorMessage(..), errorMessage)
 import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..))
 import Language.PureScript.Roles (Role(..))
@@ -59,7 +60,7 @@ typeKindRoles = \case
 
 getRoleEnv :: Environment -> RoleEnv
 getRoleEnv env =
-  M.mapMaybe (typeKindRoles . snd) (types env)
+  M.mapMaybe (typeKindRoles . snd) (Env.types env)
 
 updateRoleEnv
   :: Qualified (ProperName 'TypeName)
@@ -82,7 +83,7 @@ lookupRoles
   -> Qualified (ProperName 'TypeName)
   -> [Role]
 lookupRoles env tyName =
-  fromMaybe [] $ M.lookup tyName (types env) >>= typeKindRoles . snd
+  fromMaybe [] $ M.lookup tyName (Env.types env) >>= typeKindRoles . snd
 
 -- |
 -- Compares the inferred roles to the explicitly declared roles and ensures

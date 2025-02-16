@@ -9,6 +9,7 @@ import Data.Text qualified as T
 import Data.Text (Text)
 import Language.PureScript qualified as P
 import Text.PrettyPrint.Boxes qualified as Box
+import Language.PureScript.Environment qualified as Env
 
 -- TODO (Christoph): Text version of boxes
 textT :: Text -> Box.Box
@@ -20,7 +21,12 @@ textT = Box.text . T.unpack
 -- Pretty print a module's signatures
 --
 printModuleSignatures :: P.ModuleName -> P.Environment -> String
-printModuleSignatures moduleName P.Environment{..} =
+printModuleSignatures moduleName env =
+    let names = Env.names env in
+    let typeClasses = Env.typeClasses env in
+    let types = Env.types env in
+    let dataConstructors = Env.dataConstructors env in
+    let typeSynonyms = Env.typeSynonyms env in
     -- get relevant components of a module from environment
     let moduleNamesIdent = byModuleName names
         moduleTypeClasses = byModuleName typeClasses

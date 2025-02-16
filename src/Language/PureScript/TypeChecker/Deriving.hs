@@ -22,6 +22,7 @@ import Language.PureScript.Constants.Libs qualified as Libs
 import Language.PureScript.Constants.Prim qualified as Prim
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify)
@@ -63,7 +64,7 @@ deriveInstance instType className strategy = do
 
   TypeClassData{..} <-
     note (errorMessage . UnknownName $ fmap TyClassName className) $
-      className `M.lookup` typeClasses env
+      Env.getTypeClass className env
 
   case strategy of
     KnownClassStrategy -> let
@@ -152,10 +153,10 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     verifySuperclasses :: m ()
     verifySuperclasses = do
       env <- getEnv
-      for_ (M.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
+      for_ (Env.getTypeClass className env) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
         for_ superclasses $ \Constraint{..} -> do
           let constraintClass' = qualify (internalError "verifySuperclasses: unknown class module") constraintClass
-          for_ (M.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
+          for_ (Env.getTypeClass constraintClass env) $ \TypeClassData{ typeClassDependencies = deps } ->
             -- We need to check whether the newtype is mentioned, because of classes like MonadWriter
             -- with its Monoid superclass constraint.
             when (not (null args) && any ((fst (last args) `elem`) . usedTypeVariables) constraintArgs) $ do
@@ -171,21 +172,22 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
                   -- check, since the superclass might have multiple type arguments, so overlaps might still
                   -- be possible, so we warn again.
                   for_ (extractNewtypeName mn tys) $ \nm -> do
-                    unless (hasNewtypeSuperclassInstance constraintClass' nm (typeClassDictionaries env)) $
+                    unless (hasNewtypeSuperclassInstance constraintClass' nm env) $
                       tell . errorMessage $ MissingNewtypeSuperclassInstance constraintClass className tys
                 else tell . errorMessage $ UnverifiableSuperclassInstance constraintClass className tys
 
     -- Note that this check doesn't actually verify that the superclass is
     -- newtype-derived; see #3168. The whole verifySuperclasses feature
     -- is pretty sketchy, and could use a thorough review and probably rewrite.
-    hasNewtypeSuperclassInstance (suModule, suClass) nt@(newtypeModule, _) dicts =
+    hasNewtypeSuperclassInstance (suModule, suClass) nt@(newtypeModule, _) env =
       let su = Qualified (ByModuleName suModule) suClass
           lookIn mn'
             = elem nt
-            . (toList . extractNewtypeName mn' . tcdInstanceTypes
+            $ (toList . extractNewtypeName mn' . tcdInstanceTypes
                 <=< foldMap toList . M.elems
-                <=< toList . (M.lookup su <=< M.lookup (ByModuleName mn')))
-            $ dicts
+                <=< toList
+              )
+              (Env.getTypeClassDictionary mn' su env)
       in lookIn suModule || lookIn newtypeModule
 
 data TypeInfo = TypeInfo
@@ -363,11 +365,11 @@ lookupTypeDecl
 lookupTypeDecl mn typeName = do
   env <- getEnv
   note (errorMessage $ CannotFindDerivingType typeName) $ do
-    (kind, DataType _ args dctors) <- Qualified (ByModuleName mn) typeName `M.lookup` types env
+    (kind, DataType _ args dctors) <- Env.getType (Qualified (ByModuleName mn) typeName) env
     (kargs, _) <- completeBinderList kind
     let dtype = do
           (ctorName, _) <- headMay dctors
-          (a, _, _, _) <- Qualified (ByModuleName mn) ctorName `M.lookup` dataConstructors env
+          (a, _, _, _) <- Env.getDataConstructor (Qualified (ByModuleName mn) ctorName) env
           pure a
     pure (dtype, fst . snd <$> kargs, map (\(v, k, _) -> (v, k)) args, dctors)
 

@@ -20,7 +20,8 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
+import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), names, types, dataConstructors, typeSynonyms, typeClassDictionaries, typeClasses)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
 import Language.PureScript.Pretty.Types (prettyPrintType)
@@ -122,9 +123,10 @@ bindNames
   -> m a
 bindNames newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `M.union` (names . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = Env.addNames newNames (checkEnv st) }
+  -- modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `M.union` (names . checkEnv $ st) } }
   a <- action
-  modify $ \st -> st { checkEnv = (checkEnv st) { names = names . checkEnv $ orig } }
+  modify $ \st -> st { checkEnv = Env.restoreNames (checkEnv $ orig) (checkEnv st) }
   return a
 
 -- | Temporarily bind a collection of names to types
@@ -135,9 +137,10 @@ bindTypes
   -> m a
 bindTypes newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `M.union` (types . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = Env.addTypes newNames (checkEnv st) }
+  -- modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `M.union` (types . checkEnv $ st) } }
   a <- action
-  modify $ \st -> st { checkEnv = (checkEnv st) { types = types . checkEnv $ orig } }
+  modify $ \st -> st { checkEnv = Env.restoreTypes (checkEnv $ orig) (checkEnv st) }
   return a
 
 -- | Temporarily bind a collection of names to types
@@ -202,9 +205,10 @@ withTypeClassDictionaries entries action = do
               <- entries
           ]
 
-  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
+  modify $ \st -> st { checkEnv = Env.addManyTypeClassDictionaries mentries (checkEnv st) }
+  -- modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
   a <- action
-  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = typeClassDictionaries . checkEnv $ orig } }
+  modify $ \st -> st { checkEnv = Env.restoreTypeClassDictionaries (checkEnv $ orig) (checkEnv st) }
   return a
 
 -- | Get the currently available map of type class dictionaries
@@ -249,7 +253,7 @@ bindLocalTypeVariables moduleName bindings =
 
 -- | Update the visibility of all names to Defined
 makeBindingGroupVisible :: (MonadState CheckState m) => m ()
-makeBindingGroupVisible = modifyEnv $ \e -> e { names = M.map (\(ty, nk, _) -> (ty, nk, Defined)) (names e) }
+makeBindingGroupVisible = modifyEnv $ Env.mapNames (\(ty, nk, _) -> (ty, nk, Defined))
 
 -- | Update the visibility of all names to Defined in the scope of the provided action
 withBindingGroupVisible :: (MonadState CheckState m) => m a -> m a
@@ -258,10 +262,14 @@ withBindingGroupVisible action = preservingNames $ makeBindingGroupVisible >> ac
 -- | Perform an action while preserving the names from the @Environment@.
 preservingNames :: (MonadState CheckState m) => m a -> m a
 preservingNames action = do
-  orig <- gets (names . checkEnv)
+  -- orig <- gets (names . checkEnv)
+  -- a <- action
+  -- modifyEnv $ \e -> e { names = orig }
+  -- return a
+  orig <- gets checkEnv
   a <- action
-  modifyEnv $ \e -> e { names = orig }
-  return a
+  modifyEnv $ Env.restoreNames orig
+  pure a
 
 -- | Lookup the type of a value by name in the @Environment@
 lookupVariable

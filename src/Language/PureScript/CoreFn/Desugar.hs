@@ -22,6 +22,7 @@ import Language.PureScript.CoreFn.Meta (ConstructorType(..), Meta(..))
 import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), NameKind(..), isDictTypeName, lookupConstructor, lookupValue)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), getQual)
 import Language.PureScript.PSString (PSString)
@@ -209,7 +210,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     numConstructors
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> Int
-    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ M.toList $ dataConstructors env
+    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ M.toList $ Env.dataConstructors env
 
     typeConstructor
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
