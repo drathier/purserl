@@ -45,9 +45,9 @@ import Language.PureScript.CoreFn
     extractAnn,
     ssAnn,
   )
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Environment as E
   ( Environment
-  , names
   , typeSynonyms
   , types
   , tyFunction
@@ -190,7 +190,7 @@ buildCodegenEnvironment env = CodegenEnvironment env explicitArities
     explicitArities = tyArity <$> types
 
     types :: M.Map (Qualified Ident) SourceType
-    types = M.map (\(t, _, _) -> t) $ E.names env
+    types = Env.getNameTypes env -- M.map (\(t, _, _) -> t) $ E.names env
 
 data Arities = Arities
   { _effective :: M.Map (Qualified Ident) FnArity
@@ -406,7 +406,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             go other = other
 
     types :: M.Map (Qualified Ident) SourceType
-    types = M.map (\(t, _, _) -> t) $ E.names env
+    types = Env.getNameTypes env -- M.map (\(t, _, _) -> t) $ E.names env
 
     findAttributes :: [Bind Ann] -> [Erl]
     findAttributes expr = map (uncurry EAttribute) $ mapMaybe getAttribute $ concatMap onBind expr

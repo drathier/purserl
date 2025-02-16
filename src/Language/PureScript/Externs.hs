@@ -1194,7 +1194,7 @@ findDepsImpl getKind getRole mn env d =
     ValueDeclaration (ValueDeclarationData _ ident namekind binders exprs) -> do
       -- TODO[drathier]: do we really need expr in here too? Yes, we need to know what modules its value and type refers to at least.
       let !(_, nexprDB) = mempty & runState (traverse_ toCS exprs)
-      let tipe = case M.lookup (Qualified (ByModuleName mn) ident) (names env) of
+      let tipe = case Env.getName (Qualified (ByModuleName mn) ident) env of
                     Nothing -> internalError "drathier1"
                     Just (ty, _, _) -> const () <$> ty
       dbPutValueDeclaration ident (CSValueDeclaration namekind (length binders) tipe nexprDB)
@@ -1626,7 +1626,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                             ]
       _ -> internalError "toExternsDeclaration: Invalid input"
   toExternsDeclaration (ValueRef _ ident)
-    | Just (ty, _, _) <- Qualified (ByModuleName mn) ident `M.lookup` names env
+    | Just (ty, _, _) <- Env.getName (Qualified (ByModuleName mn) ident) env
     = [ EDValue (lookupRenamedIdent ident) ty ]
   toExternsDeclaration (TypeClassRef _ className)
     | let dictName = dictTypeName . coerceProperName $ className

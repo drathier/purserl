@@ -23,6 +23,7 @@ import Language.PureScript.Crash qualified as P
 import Language.PureScript.Errors qualified as P
 import Language.PureScript.Externs qualified as P
 import Language.PureScript.Environment qualified as P
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Names qualified as P
 import Language.PureScript.Roles qualified as P
 import Language.PureScript.Sugar qualified as P
@@ -163,8 +164,8 @@ insertValueTypesAndAdjustKinds env m =
 
   lookupName name =
     let key = P.Qualified (P.ByModuleName (modName m)) name
-    in case Map.lookup key (P.names env) of
-      Just (ty, _, _) ->
+    in case Env.getNameType key env of
+      Just ty ->
         ty
       Nothing ->
         err ("name not found: " ++ show key)

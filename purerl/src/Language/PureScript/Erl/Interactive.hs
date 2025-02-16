@@ -29,6 +29,7 @@ import           Control.Monad.Trans.State.Strict (StateT, runStateT, evalStateT
 import           Control.Monad.Writer.Strict (Writer(), runWriter)
 
 import qualified Language.PureScript as P
+import Language.PureScript.Environment qualified as Env
 import qualified Language.PureScript.CST as CST
 import qualified Language.PureScript.Names as N
 import qualified Language.PureScript.Constants.Prim as C
@@ -279,8 +280,8 @@ handleTypeOf print' val = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.mkQualified (P.Ident "it") (P.ModuleName "$PSCI")) (P.names env') of
-        Just (ty, _, _) -> print' . P.prettyPrintType maxBound $ ty
+      case Env.getNameType (P.mkQualified (P.Ident "it") (P.ModuleName "$PSCI")) env' of
+        Just ty -> print' . P.prettyPrintType maxBound $ ty
         Nothing -> print' "Could not find type"
 
 -- | Takes a type and prints its kind
@@ -297,8 +298,8 @@ handleKindOf print' typ = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.Qualified (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
-        Just (_, typ') -> do
+      case Env.getTypeSynonymType (P.Qualified (P.ByModuleName mName) $ P.ProperName "IT") env' of
+        Just typ' -> do
           let chk = (P.emptyCheckState env') { P.checkCurrentModule = Just mName }
               k   = check (snd <$> P.kindOf typ') chk
 

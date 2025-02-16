@@ -20,7 +20,7 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), names, types, dataConstructors, typeSynonyms, typeClassDictionaries, typeClasses)
+import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), types, dataConstructors, typeSynonyms, typeClassDictionaries, typeClasses)
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
@@ -278,7 +278,7 @@ lookupVariable
   -> m SourceType
 lookupVariable qual = do
   env <- getEnv
-  case M.lookup qual (names env) of
+  case Env.getName qual env of
     Nothing -> throwError . errorMessage $ NameIsUndefined (disqualify qual)
     Just (ty, _, _) -> return ty
 
@@ -289,7 +289,7 @@ getVisibility
   -> m NameVisibility
 getVisibility qual = do
   env <- getEnv
-  case M.lookup qual (names env) of
+  case Env.getName qual env of
     Nothing -> throwError . errorMessage $ NameIsUndefined (disqualify qual)
     Just (_, _, vis) -> return vis
 
@@ -328,7 +328,7 @@ getEnv = gets checkEnv
 getLocalContext :: MonadState CheckState m => m Context
 getLocalContext = do
   env <- getEnv
-  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- M.toList (names env) ]
+  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- Env.getNames env ]
 
 -- | Update the @Environment@
 putEnv :: (MonadState CheckState m) => Environment -> m ()
@@ -416,7 +416,7 @@ debugTypes = go <=< M.toList . types
     pure $ decl <> " " <> unpack name <> " :: " <> init ppTy
 
 debugNames :: Environment -> [String]
-debugNames = fmap go . M.toList . names
+debugNames env = map go $ Env.getNames env
   where
   go (qual, (srcTy, _, _)) = do
     let

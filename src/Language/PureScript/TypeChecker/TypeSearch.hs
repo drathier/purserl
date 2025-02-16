@@ -15,6 +15,7 @@ import Language.PureScript.TypeChecker.Unify       as P
 import Control.Monad.Supply                        as P
 import Language.PureScript.AST                     as P
 import Language.PureScript.Environment             as P
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors                  as P
 import Language.PureScript.Label (Label)
 import Language.PureScript.Names                   as P
@@ -120,8 +121,8 @@ typeSearch unsolved env st type' =
     runTypeSearch :: Map k P.SourceType -> Map k P.SourceType
     runTypeSearch = Map.mapMaybe (\ty -> checkSubsume unsolved env st type' ty $> ty)
 
-    matchingNames = runTypeSearch (Map.map (\(ty, _, _) -> ty) (P.names env))
-    matchingConstructors = runTypeSearch (Map.map (\(_, _, ty, _) -> ty) (P.dataConstructors env))
+    matchingNames = runTypeSearch (Env.getNameTypes env)
+    matchingConstructors = runTypeSearch (Env.getDataConstructorTypes env)
     (allLabels, matchingLabels) = accessorSearch unsolved env st type'
 
     runPlainIdent (Qualified m (Ident k), v) = Just (Qualified m k, v)
