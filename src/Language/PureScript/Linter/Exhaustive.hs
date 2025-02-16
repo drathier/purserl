@@ -69,7 +69,7 @@ getConstructors env defmn n = extractConstructors lnte
   extractConstructors _ = internalError "Data name not in the scope of the current environment in extractConstructors"
 
   lnte :: Maybe (SourceType, TypeKind)
-  lnte = M.lookup qpn (Env.types env)
+  lnte = Env.getType qpn env
 
   qpn :: Qualified (ProperName 'TypeName)
   qpn = getConsDataName n

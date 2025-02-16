@@ -20,7 +20,7 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), types, dataConstructors, typeSynonyms, typeClassDictionaries, typeClasses)
+import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), dataConstructors, typeSynonyms, typeClassDictionaries, typeClasses)
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
@@ -153,7 +153,7 @@ withScopedTypeVars
 withScopedTypeVars mn ks ma = do
   orig <- get
   forM_ ks $ \(name, _) ->
-    when (Qualified (ByModuleName mn) (ProperName name) `M.member` types (checkEnv orig)) $
+    when (Env.memberType (Qualified (ByModuleName mn) (ProperName name)) (checkEnv orig)) $
       tell . errorMessage $ ShadowedTypeVar name
   bindTypes (M.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (ProperName name), (k, ScopedTypeVar))) ks)) ma
 
@@ -312,9 +312,9 @@ lookupTypeVariable
   -> m SourceType
 lookupTypeVariable currentModule (Qualified qb name) = do
   env <- getEnv
-  case M.lookup (Qualified qb' name) (types env) of
+  case Env.getTypeType (Qualified qb' name) env of
     Nothing -> throwError . errorMessage $ UndefinedTypeVariable name
-    Just (k, _) -> return k
+    Just k -> return k
   where
   qb' = ByModuleName $ case qb of
     ByModuleName m -> m
@@ -400,7 +400,7 @@ debugConstraint (Constraint ann clsName kinds args _) =
   debugType $ foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
 
 debugTypes :: Environment -> [String]
-debugTypes = go <=< M.toList . types
+debugTypes = go <=< Env.getTypes
   where
   go (qual, (srcTy, which)) = do
     let

@@ -782,7 +782,7 @@ check' val (ForAll ann vis ident mbK ty _) = do
       -- an undefined type variable that happens to clash with the variable we
       -- want to skolemize. This can happen due to synonym expansion (see 2542).
       skVal
-        | Just _ <- M.lookup (Qualified (byMaybeModuleName mn) (ProperName ident)) $ Env.types env =
+        | True <- Env.memberType (Qualified (byMaybeModuleName mn) (ProperName ident)) env =
             skolemizeTypesInValue ss ident mbK sko scope val
         | otherwise = val
   val' <- tvToExpr <$> check skVal sk

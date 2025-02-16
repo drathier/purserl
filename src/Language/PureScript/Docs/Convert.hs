@@ -85,7 +85,7 @@ insertValueTypesAndAdjustKinds env m =
     inferredRoles :: [P.Role]
     inferredRoles = do
       let key = P.Qualified (P.ByModuleName (modName m)) (P.ProperName (declTitle d))
-      case Map.lookup key (P.types env) of
+      case Env.getType key env of
         Just (_, tyKind) -> case tyKind of
           P.DataType _ tySourceTyRole _ ->
             map (\(_,_,r) -> r) tySourceTyRole
@@ -215,7 +215,7 @@ insertValueTypesAndAdjustKinds env m =
   insertInferredKind d name keyword =
     let
       key = P.Qualified (P.ByModuleName (modName m)) (P.ProperName name)
-    in case Map.lookup key (P.types env) of
+    in case Env.getType key env of
       Just (inferredKind, _) ->
         if isUninteresting keyword inferredKind'
           then  d

@@ -59,7 +59,6 @@ module Language.PureScript.Environment
   , unapplyKinds
   , makeTypeClassData
   -- environment ctors
-  , types
   , dataConstructors
   , typeSynonyms
   , typeClassDictionaries
@@ -75,12 +74,20 @@ module Language.PureScript.Environment
   , addType
   , addTypes
   , getType
+  , getTypes
+  , getTypeType
+  , getTypeTypes
+  , getTypeKind
+  , getTypeKinds
+  , memberType
   , restoreTypes
   , restoreTypeClassDictionaries
   , mapNames
   , addTypeSynonym
   , getTypeSynonym
+  , getTypeSynonyms
   , getTypeSynonymType
+  , getTypeSynonymTypes
   , addDataConstructor
   , getDataConstructor
   , getDataConstructorTypes
@@ -108,7 +115,7 @@ import Data.IntMap qualified as IM
 import Data.IntSet qualified as IS
 import Data.Map qualified as M
 import Data.Set qualified as S
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, isJust)
 import Data.Semigroup (First(..))
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -150,9 +157,6 @@ data ModuEnv = ModuEnv
   -- ^ Type classes
   } deriving (Show, Generic)
 -}
-
-types :: Environment -> M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
-types = _types
 
 dataConstructors :: Environment -> M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
 dataConstructors = _dataConstructors
@@ -206,6 +210,30 @@ getType :: Qualified (ProperName 'TypeName) -> Environment -> Maybe (SourceType,
 getType typeName env =
   M.lookup typeName (_types env)
 
+getTypes :: Environment -> [(Qualified (ProperName 'TypeName), (SourceType, TypeKind))]
+getTypes env =
+  M.toList $ _types env
+
+getTypeType :: Qualified (ProperName 'TypeName) -> Environment -> Maybe SourceType
+getTypeType typeName env =
+  fmap fst $ M.lookup typeName (_types env)
+
+getTypeTypes :: Environment -> [(Qualified (ProperName 'TypeName), SourceType)]
+getTypeTypes env =
+  fmap (fmap fst) $ M.toList (_types env)
+
+getTypeKind :: Qualified (ProperName 'TypeName) -> Environment -> Maybe TypeKind
+getTypeKind typeName env =
+  fmap snd $ M.lookup typeName (_types env)
+
+getTypeKinds :: Environment -> [(Qualified (ProperName 'TypeName), TypeKind)]
+getTypeKinds env =
+  fmap (fmap snd) $ M.toList (_types env)
+
+memberType :: Qualified (ProperName 'TypeName) -> Environment -> Bool
+memberType k env =
+  isJust $ getTypeKind k env
+
 restoreTypes :: Environment -> Environment -> Environment
 restoreTypes orig new =
   new { _types = _types orig }
@@ -220,8 +248,14 @@ addTypeSynonym k v e = addTypeSynonyms (M.fromList [(k,v)]) e
 getTypeSynonym :: (Qualified (ProperName 'TypeName)) -> Environment -> Maybe ([(Text, Maybe SourceType)], SourceType)
 getTypeSynonym k e = M.lookup k (_typeSynonyms e)
 
+getTypeSynonyms :: Environment -> [((Qualified (ProperName 'TypeName)), ([(Text, Maybe SourceType)], SourceType))]
+getTypeSynonyms e = M.toList (_typeSynonyms e)
+
 getTypeSynonymType :: (Qualified (ProperName 'TypeName)) -> Environment -> Maybe SourceType
 getTypeSynonymType k e = fmap snd $ M.lookup k (_typeSynonyms e)
+
+getTypeSynonymTypes :: Environment -> [((Qualified (ProperName 'TypeName)), SourceType)]
+getTypeSynonymTypes e = map (\(k,(_,st)) -> (k,st)) $ M.toList (_typeSynonyms e)
 
 
 addDataConstructors :: M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident]) -> Environment -> Environment

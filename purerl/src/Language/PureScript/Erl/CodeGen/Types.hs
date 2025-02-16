@@ -12,6 +12,7 @@ import Data.Text (Text)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.State (State, runState, modify, get)
+import Language.PureScript.Environment qualified as Env
 import qualified Language.PureScript.Environment as E
 -- import Language.PureScript (ModuleName, Qualified (Qualified), ProperName (ProperName), nullSourceAnn, Ident, Environment, tyRecord)
 import Debug.Trace (trace)
@@ -76,7 +77,7 @@ translateType env = flip runState Map.empty . go
         TFun [] <$> go t2
     (TypeApp _ tr t1)
       | tr == tyRecord ->
-        let t1' = fromRight t1 $ replaceAllTypeSynonyms' (E.typeSynonyms env) (E.types env) t1
+        let t1' = fromRight t1 $ replaceAllTypeSynonyms' (M.fromList $ Env.getTypeSynonyms env) (M.fromList $ Env.getTypes env) t1
           in TMap <$> row t1' []
       where
         row (REmpty _) acc = pure $ Just acc
@@ -129,7 +130,7 @@ translateType env = flip runState Map.empty . go
             . M.lookup erlName
         pure $ TAlias (Atom Nothing erlName) tyargs
     tname
-      | Just (_, t) <- M.lookup tname (E.types env),
+      | Just t <- Env.getTypeKind tname env,
         --  DataType [(Text, Maybe SourceKind)] [(ProperName 'ConstructorName, [SourceType])]
         P.DataType _dt dtargs (ctors :: [(ProperName 'P.ConstructorName, [SourceType])]) <- t,
         length dtargs == length tyargs,

@@ -49,7 +49,6 @@ import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Environment as E
   ( Environment
   , typeSynonyms
-  , types
   , tyFunction
   )
 import Language.PureScript.Erl.CodeGen.AST as AST
@@ -175,7 +174,7 @@ buildCodegenEnvironment env = CodegenEnvironment env explicitArities
     tyArity :: SourceType -> FnArity
     tyArity t = Arity $ go 0 t'
       where
-        t' = fromRight t $ replaceAllTypeSynonyms' (E.typeSynonyms env) (E.types env) t
+        t' = fromRight t $ replaceAllTypeSynonyms' (M.fromList $ Env.getTypeSynonyms env) (M.fromList $ Env.getTypes env) t
 
         go n = \case
           ConstrainedType _ _ ty -> go (n + 1) ty

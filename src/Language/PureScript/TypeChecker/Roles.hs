@@ -19,7 +19,7 @@ import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State (MonadState(..), runState, state)
 import Data.Coerce (coerce)
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set qualified as S
 import Data.Semigroup (Any(..))
 import Data.Text (Text)
@@ -60,7 +60,7 @@ typeKindRoles = \case
 
 getRoleEnv :: Environment -> RoleEnv
 getRoleEnv env =
-  M.mapMaybe (typeKindRoles . snd) (Env.types env)
+  M.fromList $ mapMaybe (\(k,tyKind) -> (k,) <$> typeKindRoles tyKind) (Env.getTypeKinds env)
 
 updateRoleEnv
   :: Qualified (ProperName 'TypeName)
@@ -83,7 +83,7 @@ lookupRoles
   -> Qualified (ProperName 'TypeName)
   -> [Role]
 lookupRoles env tyName =
-  fromMaybe [] $ M.lookup tyName (Env.types env) >>= typeKindRoles . snd
+  fromMaybe [] $ (Env.getTypeKind tyName env) >>= typeKindRoles
 
 -- |
 -- Compares the inferred roles to the explicitly declared roles and ensures

@@ -1176,7 +1176,7 @@ findDepsImpl getKind getRole mn env d =
       -- TODO[drathier]: KindedType.purs has a "Just SourceType" targ. I don't know how to handle it here. Right now I'm just storing it as-is.
       let nstype = stype <&> const ()
       let ntargs = targs <&> fmap (fmap (fmap (const ())))
-      let nstypeDB = stype & replaceTypeSynonyms (types env) (typeSynonyms env <&> snd) & flip execState mempty
+      let nstypeDB = stype & replaceTypeSynonyms (M.fromList $ Env.getTypes env) (M.fromList $ Env.getTypeSynonymTypes env) & flip execState mempty
       dbPutTypeSynonymDeclaration tname (CSTypeSynonymDeclaration tname ntargs nstype nstypeDB (getKind TypeSynonymSig tname))
 
     -- KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
@@ -1614,7 +1614,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
   toExternsDeclaration :: DeclarationRef -> [ExternsDeclaration]
   toExternsDeclaration (TypeRef _ pn dctors) =
-    case Qualified (ByModuleName mn) pn `M.lookup` types env of
+    case Env.getType (Qualified (ByModuleName mn) pn) env of
       Nothing -> internalError "toExternsDeclaration: no kind in toExternsDeclaration"
       Just (kind, TypeSynonym)
         | Just (args, synTy) <- Qualified (ByModuleName mn) pn `M.lookup` typeSynonyms env -> [ EDType pn kind TypeSynonym, EDTypeSynonym pn args synTy ]
@@ -1631,8 +1631,8 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   toExternsDeclaration (TypeClassRef _ className)
     | let dictName = dictTypeName . coerceProperName $ className
     , Just TypeClassData{..} <- Qualified (ByModuleName mn) className `M.lookup` typeClasses env
-    , Just (kind, tk) <- Qualified (ByModuleName mn) (coerceProperName className) `M.lookup` types env
-    , Just (dictKind, dictData@(DataType _ _ [(dctor, _)])) <- Qualified (ByModuleName mn) dictName `M.lookup` types env
+    , Just (kind, tk) <- Env.getType (Qualified (ByModuleName mn) (coerceProperName className)) env
+    , Just (dictKind, dictData@(DataType _ _ [(dctor, _)])) <- Env.getType (Qualified (ByModuleName mn) dictName) env
     , Just (dty, _, ty, args) <- Qualified (ByModuleName mn) dctor `M.lookup` dataConstructors env
     = [ EDType (coerceProperName className) kind tk
       , EDType dictName dictKind dictData

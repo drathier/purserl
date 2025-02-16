@@ -48,6 +48,7 @@ import Data.Text qualified as T
 import Data.Traversable (for)
 
 import Language.PureScript.Crash (HasCallStack, internalError)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Environment qualified as E
 import Language.PureScript.Errors
 import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified)
@@ -165,7 +166,7 @@ inferKind = \tyToInfer ->
   go = \case
     ty@(TypeConstructor ann v) -> do
       env <- getEnv
-      case M.lookup v (E.types env) of
+      case Env.getType v env of
         Nothing ->
           throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
         Just (kind, E.LocalTypeVariable) -> do
@@ -175,7 +176,7 @@ inferKind = \tyToInfer ->
           pure (ty, kind $> ann)
     ConstrainedType ann' con@(Constraint ann v _ _ _) ty -> do
       env <- getEnv
-      con' <- case M.lookup (coerceProperName <$> v) (E.types env) of
+      con' <- case Env.getTypeKind (coerceProperName <$> v) env of
         Nothing ->
           throwError . errorMessage' (fst ann) . UnknownName . fmap TyClassName $ v
         Just _ ->
@@ -522,10 +523,10 @@ elaborateKind = \case
     pure $ E.tyInt $> ann
   TypeConstructor ann v -> do
     env <- getEnv
-    case M.lookup v (E.types env) of
+    case Env.getTypeType v env of
       Nothing ->
         throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
-      Just (kind, _) ->
+      Just kind ->
         ($> ann) <$> apply kind
   TypeVar ann a -> do
     moduleName <- unsafeCheckCurrentModule
@@ -941,9 +942,9 @@ existingSignatureOrFreshKind
   -> m SourceType
 existingSignatureOrFreshKind moduleName ss name = do
   env <- getEnv
-  case M.lookup (Qualified (ByModuleName moduleName) name) (E.types env) of
+  case Env.getTypeType (Qualified (ByModuleName moduleName) name) env of
     Nothing -> freshKind ss
-    Just (kind, _) -> pure kind
+    Just kind -> pure kind
 
 kindsOfAll
   :: forall m. (MonadError MultipleErrors m, MonadState CheckState m)
