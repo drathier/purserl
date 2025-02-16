@@ -17,7 +17,7 @@ import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
 import Data.Text (Text)
 import Language.PureScript.Environment qualified as Env
-import Language.PureScript.Environment (Environment, TypeKind, typeSynonyms)
+import Language.PureScript.Environment (Environment, TypeKind)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), SourceSpan, errorMessage')
 import Language.PureScript.Names (ProperName, ProperNameType(..), Qualified)
 import Language.PureScript.TypeChecker.Monad (CheckState, getEnv)
@@ -60,4 +60,4 @@ replaceAllTypeSynonyms' syns kinds = everywhereOnTypesTopDownM try
 replaceAllTypeSynonyms :: (e ~ MultipleErrors, MonadState CheckState m, MonadError e m) => SourceType -> m SourceType
 replaceAllTypeSynonyms d = do
   env <- getEnv
-  either throwError return $ replaceAllTypeSynonyms' (typeSynonyms env) (M.fromList $ Env.getTypes env) d
+  either throwError return $ replaceAllTypeSynonyms' (M.fromList $ Env.getTypeSynonyms env) (M.fromList $ Env.getTypes env) d

@@ -20,7 +20,7 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), typeSynonyms, typeClassDictionaries, typeClasses)
+import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), typeClassDictionaries, typeClasses)
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
@@ -434,7 +434,7 @@ debugDataConstructors = fmap go . Env.getDataConstructors
     unpack name <> " :: " <> init ppTy
 
 debugTypeSynonyms :: Environment -> [String]
-debugTypeSynonyms = fmap go . M.toList . typeSynonyms
+debugTypeSynonyms = fmap go . Env.getTypeSynonyms
   where
   go (qual, (binders, subTy)) = do
     let

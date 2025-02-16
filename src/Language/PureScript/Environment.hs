@@ -59,7 +59,6 @@ module Language.PureScript.Environment
   , unapplyKinds
   , makeTypeClassData
   -- environment ctors
-  , typeSynonyms
   , typeClassDictionaries
   , typeClasses
   --
@@ -83,6 +82,7 @@ module Language.PureScript.Environment
   , restoreTypeClassDictionaries
   , mapNames
   , addTypeSynonym
+  , memberTypeSynonym
   , getTypeSynonym
   , getTypeSynonyms
   , getTypeSynonymType
@@ -245,6 +245,9 @@ addTypeSynonyms a e = e { _typeSynonyms = M.union a (_typeSynonyms e)}
 
 addTypeSynonym :: (Qualified (ProperName 'TypeName)) -> ([(Text, Maybe SourceType)], SourceType) -> Environment -> Environment
 addTypeSynonym k v e = addTypeSynonyms (M.fromList [(k,v)]) e
+
+memberTypeSynonym :: (Qualified (ProperName 'TypeName)) -> Environment -> Bool
+memberTypeSynonym k e = M.member k (_typeSynonyms e)
 
 getTypeSynonym :: (Qualified (ProperName 'TypeName)) -> Environment -> Maybe ([(Text, Maybe SourceType)], SourceType)
 getTypeSynonym k e = M.lookup k (_typeSynonyms e)

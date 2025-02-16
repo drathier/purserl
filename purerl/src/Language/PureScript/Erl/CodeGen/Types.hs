@@ -113,7 +113,7 @@ translateType env = flip runState Map.empty . go
   goTCtor :: [EType] -> Qualified (ProperName 'P.TypeName) -> State ETypeEnv EType
   goTCtor tyargs = \case
     tname
-      | Just (args, t) <- M.lookup tname (E.typeSynonyms env),
+      | Just (args, t) <- Env.getTypeSynonym tname env,
         length args == length tyargs,
         (Qualified _mn _ident) <- tname -> do
         let erlName = erlTypeName tname

@@ -48,7 +48,6 @@ import Language.PureScript.CoreFn
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Environment as E
   ( Environment
-  , typeSynonyms
   , tyFunction
   )
 import Language.PureScript.Erl.CodeGen.AST as AST
