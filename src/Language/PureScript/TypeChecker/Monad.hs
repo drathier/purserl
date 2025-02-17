@@ -20,7 +20,7 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), typeClassDictionaries, typeClasses)
+import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), typeClasses)
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
@@ -215,22 +215,22 @@ withTypeClassDictionaries entries action = do
 getTypeClassDictionaries
   :: (MonadState CheckState m)
   => m (M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
-getTypeClassDictionaries = gets $ typeClassDictionaries . checkEnv
+getTypeClassDictionaries = gets $ M.fromList . Env.getTypeClassDictionaries . checkEnv
 
--- | Lookup type class dictionaries in a module.
-lookupTypeClassDictionaries
-  :: (MonadState CheckState m)
-  => QualifiedBy
-  -> m (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
-lookupTypeClassDictionaries mn = gets $ fromMaybe M.empty . M.lookup mn . typeClassDictionaries . checkEnv
+-- -- | Lookup type class dictionaries in a module.
+-- lookupTypeClassDictionaries
+--   :: (MonadState CheckState m)
+--   => QualifiedBy
+--   -> m (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+-- lookupTypeClassDictionaries mn = gets $ fromMaybe M.empty . M.lookup mn . typeClassDictionaries . checkEnv
 
--- | Lookup type class dictionaries in a module.
-lookupTypeClassDictionariesForClass
-  :: (MonadState CheckState m)
-  => QualifiedBy
-  -> Qualified (ProperName 'ClassName)
-  -> m (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
-lookupTypeClassDictionariesForClass mn cn = fromMaybe M.empty . M.lookup cn <$> lookupTypeClassDictionaries mn
+-- -- | Lookup type class dictionaries in a module.
+-- lookupTypeClassDictionariesForClass
+--   :: (MonadState CheckState m)
+--   => QualifiedBy
+--   -> Qualified (ProperName 'ClassName)
+--   -> m (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
+-- lookupTypeClassDictionariesForClass mn cn = fromMaybe M.empty . M.lookup cn <$> lookupTypeClassDictionaries mn
 
 -- | Temporarily bind a collection of names to local variables
 bindLocalVariables
@@ -446,10 +446,10 @@ debugTypeSynonyms = fmap go . Env.getTypeSynonyms
     "type " <> unpack name <> " " <> vars <> " = " <> init ppTy
 
 debugTypeClassDictionaries :: Environment -> [String]
-debugTypeClassDictionaries = go . typeClassDictionaries
+debugTypeClassDictionaries = go . Env.getTypeClassDictionaries
   where
   go tcds = do
-    (mbModuleName, classes) <- M.toList tcds
+    (mbModuleName, classes) <- tcds
     (className, instances) <- M.toList classes
     (ident, dicts) <- M.toList instances
     let

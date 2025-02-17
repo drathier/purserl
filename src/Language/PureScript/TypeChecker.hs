@@ -397,7 +397,7 @@ typeCheckAll moduleName = traverse go
     rethrow (addHint (ErrorInInstance className tys) . addHint (positionedError ss)) $ do
       env <- getEnv
       let qualifiedDictName = Qualified (ByModuleName moduleName) dictName
-      flip (traverse_ . traverse_) (Env.getTypeClassDictionaries env) $ \dictionaries ->
+      flip (traverse_ . traverse_) (M.fromList $ Env.getTypeClassDictionaries env) $ \dictionaries ->
         guardWith (errorMessage (DuplicateInstance dictName ss)) $
           not (M.member qualifiedDictName dictionaries)
       case Env.getTypeClass className env of
@@ -498,7 +498,7 @@ typeCheckAll moduleName = traverse go
     -> m ()
   checkOverlappingInstance ss ch dictName vars className typeClass tys' nonOrphanModules = do
     for_ nonOrphanModules $ \m -> do
-      dicts <- M.toList <$> lookupTypeClassDictionariesForClass (ByModuleName m) className
+      dicts <- gets $ Env.getTypeClassDictionary m className . checkEnv
 
       for_ dicts $ \(Qualified mn' ident, dictNel) -> do
         for_ dictNel $ \dict -> do

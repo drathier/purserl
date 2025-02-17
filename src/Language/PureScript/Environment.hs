@@ -59,7 +59,6 @@ module Language.PureScript.Environment
   , unapplyKinds
   , makeTypeClassData
   -- environment ctors
-  , typeClassDictionaries
   , typeClasses
   --
   , addName
@@ -99,6 +98,7 @@ module Language.PureScript.Environment
   , addTypeClassDictionaries
   , getTypeClassDictionary
   , getTypeClassDictionaries
+  , getTypeClassDictionaryForAllModules
   )
   where
 
@@ -116,7 +116,7 @@ import Data.IntMap qualified as IM
 import Data.IntSet qualified as IS
 import Data.Map qualified as M
 import Data.Set qualified as S
-import Data.Maybe (fromMaybe, mapMaybe, isJust)
+import Data.Maybe (fromMaybe, mapMaybe, isJust, maybeToList)
 import Data.Semigroup (First(..))
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -125,7 +125,7 @@ import Data.Function ((&))
 
 import Language.PureScript.AST.SourcePos (nullSourceAnn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy(..), ModuleName, coerceProperName)
+import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), ModuleName, coerceProperName)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Types (SourceConstraint, SourceType, Type(..), TypeVarVisibility(..), eqType, srcTypeConstructor, freeTypeVariables)
@@ -299,10 +299,10 @@ addTypeClassDictionaries :: QualifiedBy -> M.Map (Qualified (ProperName 'ClassNa
 addTypeClassDictionaries mn entries env =
   env { _typeClassDictionaries = M.insertWith (M.unionWith (M.unionWith (<>))) mn entries (_typeClassDictionaries env) }
 
-getTypeClassDictionaries :: Environment -> M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+getTypeClassDictionaries :: Environment -> [(QualifiedBy, M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))]
 getTypeClassDictionaries env =
   -- this is seemingly only used to look for duplicate type class instances by looking up a modu/dictName in all modules at once. Caching type classes separately might speed this up, idk.
-  _typeClassDictionaries env
+  M.toList $ _typeClassDictionaries env
 
 restoreTypeClassDictionaries :: Environment -> Environment -> Environment
 restoreTypeClassDictionaries orig new =
@@ -340,12 +340,22 @@ getTypeClassDictionary
   :: ModuleName
   -> Qualified (ProperName 'ClassName)
   -> Environment
-  -> Maybe (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
+  -> [(Qualified Ident, NEL.NonEmpty NamedDict)]
 getTypeClassDictionary mn qClass env =
   _typeClassDictionaries env
    & M.lookup (ByModuleName mn)
    >>= M.lookup qClass
+   & fromMaybe M.empty
+   & M.toList
 
+getTypeClassDictionaryForAllModules :: ModuleName -> Ident -> Environment -> [NamedDict]
+getTypeClassDictionaryForAllModules mn ident env =
+  _typeClassDictionaries env
+    & M.lookup (ByModuleName mn)
+    & maybeToList
+    & concatMap M.elems
+    & mapMaybe (M.lookup (Qualified (ByModuleName mn) ident))
+    & concatMap NEL.toList
 
 
 -- | The @Environment@ defines all values and types which are currently in scope:

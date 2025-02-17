@@ -1641,10 +1641,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
       ]
   toExternsDeclaration (TypeInstanceRef ss' ident ns)
     = [ EDInstance tcdClassName (lookupRenamedIdent ident) tcdForAll tcdInstanceKinds tcdInstanceTypes tcdDependencies tcdChain tcdIndex ns ss'
-      | m1 <- maybeToList (M.lookup (ByModuleName mn) (typeClassDictionaries env))
-      , m2 <- M.elems m1
-      , nel <- maybeToList (M.lookup (Qualified (ByModuleName mn) ident) m2)
-      , TypeClassDictionaryInScope{..} <- NEL.toList nel
+      | TypeClassDictionaryInScope{..} <- Env.getTypeClassDictionaryForAllModules mn ident env
       ]
   toExternsDeclaration _ = []
 

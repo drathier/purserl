@@ -182,12 +182,16 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     hasNewtypeSuperclassInstance (suModule, suClass) nt@(newtypeModule, _) env =
       let su = Qualified (ByModuleName suModule) suClass
           lookIn mn'
-            = elem nt
-            $ (toList . extractNewtypeName mn' . tcdInstanceTypes
-                <=< foldMap toList . M.elems
-                <=< toList
+            = (case Env.getTypeClassDictionary mn' su env of
+                [] -> False
+                tcds ->
+                  elem nt
+                  $ (toList . extractNewtypeName mn' . tcdInstanceTypes
+                      <=< foldMap toList
+                    )
+                  $ map snd
+                  $ tcds
               )
-              (Env.getTypeClassDictionary mn' su env)
       in lookIn suModule || lookIn newtypeModule
 
 data TypeInfo = TypeInfo
