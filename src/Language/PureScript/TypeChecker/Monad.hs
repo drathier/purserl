@@ -20,7 +20,7 @@ import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), typeClasses)
+import Language.PureScript.Environment (Environment, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
@@ -461,7 +461,7 @@ debugTypeClassDictionaries = go . Env.getTypeClassDictionaries
     pure $ "dict " <> unpack moduleName <> unpack className' <> " " <> unpack ident' <> " (" <> show (length dicts) <> ")" <> " " <> kds <> " " <> tys
 
 debugTypeClasses :: Environment -> [String]
-debugTypeClasses = fmap go . M.toList . typeClasses
+debugTypeClasses = fmap go . Env.getTypeClasses
   where
   go (className, tc) = do
     let

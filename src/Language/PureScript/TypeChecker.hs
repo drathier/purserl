@@ -641,7 +641,8 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
         . fmap constraintClass
         . typeClassSuperclasses
         )
-      . Env.typeClasses
+      . M.fromList
+      . Env.getTypeClasses
       . checkEnv
       )
     let

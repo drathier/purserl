@@ -1630,7 +1630,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
     = [ EDValue (lookupRenamedIdent ident) ty ]
   toExternsDeclaration (TypeClassRef _ className)
     | let dictName = dictTypeName . coerceProperName $ className
-    , Just TypeClassData{..} <- Qualified (ByModuleName mn) className `M.lookup` typeClasses env
+    , Just TypeClassData{..} <- Env.getTypeClass (Qualified (ByModuleName mn) className) env
     , Just (kind, tk) <- Env.getType (Qualified (ByModuleName mn) (coerceProperName className)) env
     , Just (dictKind, dictData@(DataType _ _ [(dctor, _)])) <- Env.getType (Qualified (ByModuleName mn) dictName) env
     , Just (dty, _, ty, args) <- Env.getDataConstructor (Qualified (ByModuleName mn) dctor) env

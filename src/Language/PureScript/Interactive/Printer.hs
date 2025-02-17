@@ -23,13 +23,14 @@ textT = Box.text . T.unpack
 printModuleSignatures :: P.ModuleName -> P.Environment -> String
 printModuleSignatures moduleName env =
     let names = Env.getNames env in
-    let typeClasses = Env.typeClasses env in
+    let typeClasses = Env.getTypeClasses env in
     let types = Env.getTypes env in
     let dataConstructors = M.fromList $ Env.getDataConstructors env in
     let typeSynonyms = M.fromList $ Env.getTypeSynonyms env in
     -- get relevant components of a module from environment
+    let typeClassesMap = M.fromList typeClasses in
     let moduleNamesIdent = byModuleNameList names
-        moduleTypeClasses = byModuleName typeClasses
+        moduleTypeClasses = byModuleNameList typeClasses
         moduleTypes = byModuleNameList types
 
         byModuleName :: M.Map (P.Qualified a) b -> [P.Qualified a]
@@ -40,8 +41,8 @@ printModuleSignatures moduleName env =
   in
     -- print each component
     (unlines . map trimEnd . lines . Box.render . Box.vsep 1 Box.left)
-      [ printModule's (mapMaybe (showTypeClass . findTypeClass typeClasses)) moduleTypeClasses -- typeClasses
-      , printModule's (mapMaybe (showType typeClasses dataConstructors typeSynonyms . findType (M.fromList types))) moduleTypes -- types
+      [ printModule's (mapMaybe (showTypeClass . findTypeClass typeClassesMap)) moduleTypeClasses -- typeClasses
+      , printModule's (mapMaybe (showType typeClassesMap dataConstructors typeSynonyms . findType (M.fromList types))) moduleTypes -- types
       , printModule's (map (showNameType . findNameType (M.fromList names))) moduleNamesIdent -- functions
       ]
 

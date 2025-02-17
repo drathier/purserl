@@ -47,7 +47,7 @@ import Data.IntSet qualified as IS
 
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Environment (TypeClassData(..), NameKind(..), NameVisibility(..), typeClasses, fdDeterminers, kindType, tyRecord, kindRow, tyFunction, function, tyBoolean, isDictTypeName, tyArray, tyChar, tyString, tyNumber, tyInt, fdDetermined)
+import Language.PureScript.Environment (TypeClassData(..), NameKind(..), NameVisibility(..), fdDeterminers, kindType, tyRecord, kindRow, tyFunction, function, tyBoolean, isDictTypeName, tyArray, tyChar, tyString, tyNumber, tyInt, fdDetermined)
 import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent)
@@ -79,8 +79,7 @@ tvToExpr (TypedValue' c e t) = TypedValue c e t
 -- | Lookup data about a type class in the @Environment@
 lookupTypeClass :: MonadState CheckState m => Qualified (ProperName 'ClassName) -> m TypeClassData
 lookupTypeClass name =
-  let findClass = fromMaybe (internalError "entails: type class not found in environment") . M.lookup name
-   in gets (findClass . typeClasses . checkEnv)
+  gets (fromMaybe (internalError "entails: type class not found in environment") . Env.getTypeClass name . checkEnv)
 
 -- | Infer the types of multiple mutually-recursive values, and return elaborated values including
 -- type class dictionaries and type annotations.

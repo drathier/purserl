@@ -58,8 +58,6 @@ module Language.PureScript.Environment
   , kindArity
   , unapplyKinds
   , makeTypeClassData
-  -- environment ctors
-  , typeClasses
   --
   , addName
   , addNames
@@ -93,6 +91,7 @@ module Language.PureScript.Environment
   , getDataConstructorTypes
   , addTypeClass
   , getTypeClass
+  , getTypeClasses
   , addTypeClassDictionary
   , addManyTypeClassDictionaries
   , addTypeClassDictionaries
@@ -335,6 +334,10 @@ addTypeClassDictionary efModuleName className qIdent pdict env =
 getTypeClass :: Qualified (ProperName 'ClassName) -> Environment -> Maybe TypeClassData
 getTypeClass className env =
   M.lookup className (_typeClasses env)
+
+getTypeClasses :: Environment -> [(Qualified (ProperName 'ClassName), TypeClassData)]
+getTypeClasses env =
+  M.toList $ _typeClasses env
 
 getTypeClassDictionary
   :: ModuleName
