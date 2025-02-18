@@ -70,26 +70,26 @@ externsEnv
   => Env
   -> ExternsFile
   -> m Env
-externsEnv env ExternsFile{..} = do
+externsEnv env externs = do
   let members = Exports{..}
-      env' = M.insert efModuleName (efSourceSpan, nullImports, members) env
-      fromEFImport (ExternsImport mn mt qmn) = (mn, [(efSourceSpan, Just mt, qmn)])
-  imps <- foldM (resolveModuleImport env') nullImports (map fromEFImport efImports)
-  exps <- resolveExports env' efSourceSpan efModuleName imps members efExports
-  return $ M.insert efModuleName (efSourceSpan, imps, exps) env
+      env' = M.insert (efModuleName externs) (efSourceSpan externs, nullImports, members) env
+      fromEFImport (ExternsImport mn mt qmn) = (mn, [(efSourceSpan externs, Just mt, qmn)])
+  imps <- foldM (resolveModuleImport env') nullImports (map fromEFImport (efImports externs))
+  exps <- resolveExports env' (efSourceSpan externs) (efModuleName externs) imps members (efExports externs)
+  return $ M.insert (efModuleName externs) (efSourceSpan externs, imps, exps) env
   where
 
   -- An ExportSource for declarations local to the module which the given
   -- ExternsFile corresponds to.
   localExportSource =
-    ExportSource { exportSourceDefinedIn = efModuleName
+    ExportSource { exportSourceDefinedIn = efModuleName externs
                   , exportSourceImportedFrom = Nothing
                   }
 
   exportedTypes :: M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
-  exportedTypes = M.fromList $ mapMaybe toExportedType efExports
+  exportedTypes = M.fromList $ mapMaybe toExportedType (efExports externs)
     where
-    toExportedType (TypeRef _ tyCon dctors) = Just (tyCon, (fromMaybe (mapMaybe forTyCon efDeclarations) dctors, localExportSource))
+    toExportedType (TypeRef _ tyCon dctors) = Just (tyCon, (fromMaybe (mapMaybe forTyCon (efDeclarations externs)) dctors, localExportSource))
       where
       forTyCon :: ExternsDeclaration -> Maybe (ProperName 'ConstructorName)
       forTyCon (EDDataConstructor pn _ tNm _ _) | tNm == tyCon = Just pn
@@ -110,7 +110,7 @@ externsEnv env ExternsFile{..} = do
 
   exportedRefs :: Ord a => (DeclarationRef -> Maybe a) -> M.Map a ExportSource
   exportedRefs f =
-    M.fromList $ (, localExportSource) <$> mapMaybe f efExports
+    M.fromList $ (, localExportSource) <$> mapMaybe f (efExports externs)
 
 -- |
 -- Make all exports for a module explicit. This may still affect modules that

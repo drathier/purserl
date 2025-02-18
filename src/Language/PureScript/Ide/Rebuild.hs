@@ -219,8 +219,8 @@ sortExterns m ex = do
       let deps = fromJust (List.lookup (P.getModuleName m) graph)
       pure $ mapMaybe getExtern (deps `inOrderOf` map P.getModuleName sorted)
   where
-    mkShallowModule P.ExternsFile{..} =
-      P.Module (P.internalModuleSourceSpan "<rebuild>") [] efModuleName (map mkImport efImports) Nothing
+    mkShallowModule externs =
+      P.Module (P.internalModuleSourceSpan "<rebuild>") [] (P.efModuleName externs) (map mkImport (P.efImports externs)) Nothing
     mkImport (P.ExternsImport mn it iq) =
       P.ImportDeclaration (P.internalModuleSourceSpan "<rebuild>", []) mn it iq
     getExtern mn = M.lookup mn ex

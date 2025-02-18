@@ -1,6 +1,8 @@
 module Language.PureScript.Make.BuildPlan
-  ( BuildPlan(bpEnv, bpIndex)
+  ( BuildPlan
   , BuildJobResult(..)
+  , bpEnv
+  , bpIndex
   , buildJobSuccess
   , construct
   , getResult
@@ -160,6 +162,7 @@ cfaPrebuilt cfa =
     UpToDate pb -> Just pb
 
 shouldRecompile :: ModuleName -> CacheFilesAvailable -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile
+shouldRecompile mn cfa externs = Left Nothing
 shouldRecompile mn cfa externs = do
   -- let cfatag =
   --       case cfa of

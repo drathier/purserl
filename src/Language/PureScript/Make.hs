@@ -24,7 +24,7 @@ import Control.Monad.Trans.State (runStateT)
 import Control.Monad.Writer.Class (MonadWriter(..), censor)
 import Control.Monad.Writer.Strict (runWriterT, lift)
 import Data.Function (on)
-import Data.Foldable (fold, for_)
+import Data.Foldable (fold, for_, traverse_)
 import Data.List (foldl', sortOn)
 import Data.List.NonEmpty qualified as NEL
 import Data.Maybe (fromMaybe)
@@ -110,7 +110,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   progress $ CompileMeta ("### CS.goDesugar1[" <> runModuleName moduleName <> "]")
   ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
     -- lift $ progress $ CompilingModule moduleName moduleIndex "2"
-    (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty)
+    (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty) -- desugar needs operaor fixities and type classes from externs
     lift $ progress $ CompileMeta ("### CS.goTypeCheck2[" <> runModuleName moduleName <> "]")
     -- lift $ progress $ CompilingModule moduleName moduleIndex "3"
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
@@ -166,7 +166,83 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   evalSupplyT nextVar'' $ codegen env renamed docs exts
   -- progress $ CompilingModule moduleName moduleIndex "9"
   return exts
+{-
+rebuildModuleWithIndex2
+  :: forall m
+   . (MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+  => MakeActions m
+  -> M.Map ModuleName ExternsFile
+  -> Module
+  -> m ExternsFile
+rebuildModuleWithIndex2 MakeActions{..} externs m@(Module _ _ moduleName _ _) = do
+  progress $ CompilingModule moduleName (Just (-1, -1))
 
+  exEnv <- foldM externsEnv primEnv externs
+
+  let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
+      withPrim = importPrim m
+  lint withPrim
+
+  progress $ CompileMeta ("### CS.goDesugar1[" <> runModuleName moduleName <> "]")
+  ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "2"
+    (desugared, (exEnv', usedImports)) <- runStateT (desugar (M.elems externs) withPrim) (exEnv, mempty)
+    lift $ progress $ CompileMeta ("### CS.goTypeCheck2[" <> runModuleName moduleName <> "]")
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "3"
+    let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "4"
+    (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
+    lift $ progress $ CompileMeta ("### CS.goLintImports3[" <> runModuleName moduleName <> "]")
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "5"
+    let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
+          M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
+    -- Imports cannot be linted before type checking because we need to
+    -- known which newtype constructors are used to solve Coercible
+    -- constraints in order to not report them as unused.
+    censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
+    lift $ progress $ CompileMeta ("### CS.goDesugarCaseGuards4[" <> runModuleName moduleName <> "]")
+    return (checked, checkEnv)
+
+  -- progress $ CompilingModule moduleName moduleIndex "6"
+
+  -- desugar case declarations *after* type- and exhaustiveness checking
+  -- since pattern guards introduces cases which the exhaustiveness checker
+  -- reports as not-exhaustive.
+  (deguarded, nextVar') <- runSupplyT nextVar $ do
+    desugarCaseGuards elaborated
+  progress $ CompileMeta ("### CS.goCreateBindingGroups5[" <> runModuleName moduleName <> "]")
+
+  let upstreamDBs = M.empty -- M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
+
+  regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
+  progress $ CompileMeta ("### CS.goFfiCodegen6[" <> runModuleName moduleName <> "]")
+  let mod' = Module ss coms moduleName regrouped exps
+      corefn = CF.moduleToCoreFn env' mod'
+      (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
+      (renamedIdents, renamed) = renameInModule optimized
+      exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
+  ffiCodegen renamed
+  progress $ CompileMeta ("### CS.goCodegen7[" <> runModuleName moduleName <> "]")
+
+  -- progress $ CompilingModule moduleName moduleIndex "7"
+  -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
+  -- but I have not done so for two reasons:
+  -- 1. This should never fail; any genuine errors in the code should have been
+  -- caught earlier in this function. Therefore if we do fail here it indicates
+  -- a bug in the compiler, which should be reported as such.
+  -- 2. We do not want to perform any extra work generating docs unless the
+  -- user has asked for docs to be generated.
+  let docs = case Docs.convertModule (M.elems externs) exEnv env' m of
+               Left errs -> internalError $
+                 "Failed to produce docs for " ++ T.unpack (runModuleName moduleName)
+                 ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
+               Right d -> d
+
+  -- progress $ CompilingModule moduleName moduleIndex "8"
+  evalSupplyT nextVar'' $ codegen env renamed docs exts
+  -- progress $ CompilingModule moduleName moduleIndex "9"
+  return exts
+-}
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
 --
 -- If timestamps or hashes have not changed, existing externs files can be used to provide upstream modules' types without
@@ -187,9 +263,6 @@ make ma@MakeActions{..} ms = do
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
   progress $ CompileMeta ("### CS.goConstructBuildPlan10")
 
-  (buildPlan, newCacheDb) <- BuildPlan.construct ma cacheDb (sorted, graph)
-  progress $ CompileMeta ("### CS.goFork11")
-
   -- Limit concurrent module builds to the number of capabilities as
   -- (by default) inferred from `+RTS -N -RTS` or set explicitly like `-N4`.
   -- This is to ensure that modules complete fully before moving on, to avoid
@@ -198,6 +271,53 @@ make ma@MakeActions{..} ms = do
   capabilities <- getNumCapabilities
   let concurrency = max 1 capabilities
   lock <- C.newQSem concurrency
+{-
+  let moduDeps :: M.Map ModuleName [ModuleName] = M.fromList graph
+  depExterns :: M.Map ModuleName (MVar ExternsFile) <- M.fromList <$> traverse (\m -> (m,) <$> newEmptyMVar) (map fst graph)
+  let getCaches mn = do
+        let depModules = (fromMaybe [] $ M.lookup mn moduDeps)
+        res <- traverse (\d -> readMVar $ fromMaybe (error "missing-dep") $ M.lookup d depExterns) depModules
+        let Just depExternMVar = M.lookup mn depExterns
+        depExtern <- readMVar depExternMVar
+        pure (mn, depExtern)
+
+  for_ sorted $ \m -> fork $ do
+    let moduleName = getModuleName . CST.resPartial $ m
+    let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
+    -- progress $ CompileMeta (T.pack $ show ("### --- Wait building", moduleName, "deps", map runModuleName deps))
+    externsMap <- M.fromList <$> traverse getCaches deps
+    progress $ CompileMeta (T.pack $ show ("### --- Start building", moduleName, "deps", map runModuleName deps))
+
+    result <- buildModule2 lock moduleName externsMap
+      (spanName . getModuleSourceSpan . CST.resPartial $ m)
+      (fst $ CST.resFull m)
+      (fmap importPrim . snd $ CST.resFull m)
+      (deps `inOrderOf` map (getModuleName . CST.resPartial) sorted)
+      -- Prevent hanging on other modules when there is an internal error
+      -- (the exception is thrown, but other threads waiting on MVars are released)
+      -- `onException` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
+
+    case result of
+      BuildJobSucceeded _ exts -> do
+        tryRes <- tryPutMVar (depExterns M.! moduleName) exts
+        let True = tryRes
+        progress $ CompileMeta (T.pack $ show ("### --- Done building", moduleName, "BuildJobSucceeded"))
+      BuildJobFailed errs -> do
+        progress $ CompileMeta (T.pack $ show ("### --- Fail building", moduleName, "BuildJobFailed", errs))
+        throwError errs
+      BuildJobSkipped -> do
+        progress $ CompileMeta (T.pack $ show ("### --- Skip building", moduleName, "BuildJobSkipped"))
+        pure ()
+
+  progress $ CompileMeta ("### -------- ### wait for everything to finish compiling")
+  traverse_ readMVar depExterns
+  progress $ CompileMeta ("### -------- ### back to normal compilation flow again")
+
+-}
+  -----------
+
+  (buildPlan, newCacheDb) <- BuildPlan.construct ma cacheDb (sorted, graph)
+  progress $ CompileMeta ("### CS.goFork11")
 
   let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
   let totalModuleCount = length toBeRebuilt
@@ -369,6 +489,28 @@ make ma@MakeActions{..} ms = do
 
     BuildPlan.markComplete buildPlan moduleName result
 
+{-
+  buildModule2 :: QSem -> ModuleName -> M.Map ModuleName ExternsFile -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m BuildJobResult
+  buildModule2 _lock moduleName externsMap fp pwarnings mres deps = do
+    progress $ CompileMeta ("### CS.goWaitForDepsMvars12[" <> runModuleName moduleName <> "]")
+
+    -- NOTE[drathier]: catchError here only ever fires if there's an error in a module we're building; it does not fire if a module is skipped because upstream modules failed to build.
+    result <- flip catchError (return . BuildJobFailed) $ do
+      let pwarnings' = CST.toMultipleWarnings fp pwarnings
+      tell pwarnings'
+      m <- CST.unwrapParserError fp mres
+      -- We need to wait for dependencies to be built, before checking if the current
+      -- module should be rebuilt, so the first thing to do is to wait on the
+      -- MVars for the module's dependencies.
+      progress $ CompileMeta ("### CS.goBuildEnv13[" <> runModuleName moduleName <> "]")
+
+      (exts, warnings) <- evaluate . force <=< listen $ do
+        rebuildModuleWithIndex2 ma externsMap m
+      return $ BuildJobSucceeded (pwarnings' <> warnings) exts
+
+    -- BuildPlan.markComplete buildPlan moduleName result
+    pure result
+-}
 
 data WasCacheHit = WasCacheHit | WasCacheMiss
 

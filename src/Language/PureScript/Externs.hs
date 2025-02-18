@@ -6,7 +6,21 @@
 -- foreign import declarations.
 --
 module Language.PureScript.Externs
-  ( ExternsFile(..)
+  ( ExternsFile
+  , efVersion
+  , efModuleName
+  , efExports
+  , efImports
+  , efFixities
+  , efTypeFixities
+  , efDeclarations
+  , efSourceSpan
+  , efUpstreamCacheShapes
+  , efOurCacheShapes
+  , externsFixities
+  , FixityRecord
+  , ValueFixityRecord
+  , TypeFixityRecord
   , ExternsImport(..)
   , ExternsFixity(..)
   , ExternsTypeFixity(..)
@@ -230,22 +244,10 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
   applyDecl env (EDValue ident ty) = Env.addName (Qualified (ByModuleName efModuleName) ident) (ty, External, Defined) env
   applyDecl env (EDClass pn args members cs deps tcIsEmpty) = Env.addTypeClass (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) env
   applyDecl env (EDInstance className ident vars kinds tys cs ch idx ns ss) =
-    -- this is doing a higher level operation, like adding a new class to the env. It should be a single simple call to Env.something
-    -- like `Env.addTypeClassDictionary efModuleName (qual ident) (pure dict) env` ?
     Env.addTypeClassDictionary efModuleName className (qual ident) (pure dict) env
-    -- env { typeClassDictionaries =
-    --         updateMap
-    --           (updateMap (M.insertWith (<>) (qual ident) (pure dict)) className)
-    --           (ByModuleName efModuleName) (typeClassDictionaries env) }
     where
     dict :: NamedDict
     dict = TypeClassDictionaryInScope ch idx (qual ident) [] className vars kinds tys cs instTy
-
-    updateMap :: (Ord k, Monoid a) => (a -> a) -> k -> M.Map k a -> M.Map k a
-    updateMap f = M.alter (Just . f . fold)
-      -- if key doesn't exist, default to mempty.
-      -- then map value under key
-      -- that's all
 
     instTy :: Maybe SourceType
     instTy = case ns of
@@ -952,6 +954,7 @@ instance Semigroup DB where
 instance Monoid DB where
   mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
+-- [drathier]: tested, replacing all fields here with mempty saves something like 1s build time on a clean build
 dbToOpaque :: DB -> DBOpaque
 dbToOpaque (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
   DBOpaque
@@ -1444,7 +1447,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   in
 
 
-  let shouldCache = not $
+  let shouldCache = const False $ not $
         case unsafePerformIO (lookupEnv "PURS_DISABLE_DISK_CACHE") of
           Just "0" -> False
           Just "no" -> False
@@ -1659,3 +1662,42 @@ externsFileName = "externs.cbor"
 
 moduIsPrim :: ModuleName -> Bool
 moduIsPrim (ModuleName n) = "Prim" `T.isPrefixOf` n
+
+
+----
+
+
+externsFixities :: ExternsFile -> [Either ValueFixityRecord TypeFixityRecord]
+externsFixities externs =
+  map fromFixity (efFixities externs) ++ map fromTypeFixity (efTypeFixities externs)
+  where
+
+  fromFixity
+    :: ExternsFixity
+    -> Either ValueFixityRecord TypeFixityRecord
+  fromFixity (ExternsFixity assoc prec op name) =
+    Left
+      ( Qualified (ByModuleName (efModuleName externs)) op
+      , internalModuleSourceSpan ""
+      , Fixity assoc prec
+      , name
+      )
+
+  fromTypeFixity
+    :: ExternsTypeFixity
+    -> Either ValueFixityRecord TypeFixityRecord
+  fromTypeFixity (ExternsTypeFixity assoc prec op name) =
+    Right
+      ( Qualified (ByModuleName (efModuleName externs)) op
+      , internalModuleSourceSpan ""
+      , Fixity assoc prec
+      , name
+      )
+
+-- |
+-- An operator associated with its declaration position, fixity, and the name
+-- of the function or data constructor it is an alias for.
+--
+type FixityRecord op alias = (Qualified op, SourceSpan, Fixity, Qualified alias)
+type ValueFixityRecord = FixityRecord (OpName 'ValueOpName) (Either Ident (ProperName 'ConstructorName))
+type TypeFixityRecord = FixityRecord (OpName 'TypeOpName) (ProperName 'TypeName)

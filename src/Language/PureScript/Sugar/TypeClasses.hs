@@ -49,7 +49,7 @@ desugarTypeClasses
   => [ExternsFile]
   -> Module
   -> m Module
-desugarTypeClasses externs = flip evalStateT initialState . desugarModule
+desugarTypeClasses externFiles = flip evalStateT initialState . desugarModule
   where
   initialState :: MemberMap
   initialState =
@@ -61,7 +61,7 @@ desugarTypeClasses externs = flip evalStateT initialState . desugarModule
       , M.mapKeys (qualify C.M_Prim_Symbol) primSymbolClasses
       , M.mapKeys (qualify C.M_Prim_Int) primIntClasses
       , M.mapKeys (qualify C.M_Prim_TypeError) primTypeErrorClasses
-      , M.fromList (externs >>= \ExternsFile{..} -> mapMaybe (fromExternsDecl efModuleName) efDeclarations)
+      , M.fromList (externFiles >>= \externs -> mapMaybe (fromExternsDecl (efModuleName externs)) (efDeclarations externs))
       ]
 
   fromExternsDecl

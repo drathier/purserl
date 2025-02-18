@@ -18,7 +18,7 @@ import Prelude
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage', parU, rethrow, rethrowWithPosition)
-import Language.PureScript.Externs (ExternsFile(..), ExternsFixity(..), ExternsTypeFixity(..))
+import Language.PureScript.Externs (ExternsFile(..), ExternsFixity(..), ExternsTypeFixity(..), externsFixities, FixityRecord, ValueFixityRecord, TypeFixityRecord)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent')
 import Language.PureScript.Sugar.Operators.Binders (matchBinderOperators)
 import Language.PureScript.Sugar.Operators.Expr (matchExprOperators)
@@ -52,14 +52,6 @@ desugarSignedLiterals (Module ss coms mn ds exts) =
   (f', _, _) = everywhereOnValues id go id
   go (UnaryMinus ss' val) = App (Var ss' (Qualified ByNullSourcePos (Ident C.S_negate))) val
   go other = other
-
--- |
--- An operator associated with its declaration position, fixity, and the name
--- of the function or data constructor it is an alias for.
---
-type FixityRecord op alias = (Qualified op, SourceSpan, Fixity, Qualified alias)
-type ValueFixityRecord = FixityRecord (OpName 'ValueOpName) (Either Ident (ProperName 'ConstructorName))
-type TypeFixityRecord = FixityRecord (OpName 'TypeOpName) (ProperName 'TypeName)
 
 -- |
 -- Remove explicit parentheses and reorder binary operator applications.
@@ -292,33 +284,6 @@ removeParens = f
     -> a
     -> a
   decontextify ctxf = snd . runIdentity . ctxf (internalError "attempted to use SourceSpan in removeParens")
-
-externsFixities :: ExternsFile -> [Either ValueFixityRecord TypeFixityRecord]
-externsFixities ExternsFile{..} =
-  map fromFixity efFixities ++ map fromTypeFixity efTypeFixities
-  where
-
-  fromFixity
-    :: ExternsFixity
-    -> Either ValueFixityRecord TypeFixityRecord
-  fromFixity (ExternsFixity assoc prec op name) =
-    Left
-      ( Qualified (ByModuleName efModuleName) op
-      , internalModuleSourceSpan ""
-      , Fixity assoc prec
-      , name
-      )
-
-  fromTypeFixity
-    :: ExternsTypeFixity
-    -> Either ValueFixityRecord TypeFixityRecord
-  fromTypeFixity (ExternsTypeFixity assoc prec op name) =
-    Right
-      ( Qualified (ByModuleName efModuleName) op
-      , internalModuleSourceSpan ""
-      , Fixity assoc prec
-      , name
-      )
 
 collectFixities :: Module -> [Either ValueFixityRecord TypeFixityRecord]
 collectFixities (Module _ _ moduleName ds _) = concatMap collect ds

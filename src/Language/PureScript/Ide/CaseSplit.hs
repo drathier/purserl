@@ -74,11 +74,11 @@ findTypeDeclaration'
   :: P.ProperName 'P.TypeName
   -> ExternsFile
   -> First DataType
-findTypeDeclaration' t ExternsFile{..} =
+findTypeDeclaration' t externs =
   First $ head $ mapMaybe (\case
             EDType tn _ (P.DataType _ typeVars ctors)
               | tn == t -> Just (typeVars, ctors)
-            _ -> Nothing) efDeclarations
+            _ -> Nothing) (efDeclarations externs)
 
 splitTypeConstructor :: (MonadError IdeError m) =>
                         P.Type a -> m (P.ProperName 'P.TypeName, [P.Type a])
