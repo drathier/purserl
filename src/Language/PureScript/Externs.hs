@@ -238,11 +238,11 @@ applyExternsFileToEnvironment :: ExternsFile -> Environment -> Environment
 applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclarations
   where
   applyDecl :: Environment -> ExternsDeclaration -> Environment
-  applyDecl env (EDType pn kind tyKind) = Env.addType (qual pn) (kind, tyKind) env
-  applyDecl env (EDTypeSynonym pn args ty) = Env.addTypeSynonym (qual pn) (args, ty) env
-  applyDecl env (EDDataConstructor pn dTy tNm ty nms) = Env.addDataConstructor (qual pn) (dTy, tNm, ty, nms) env
-  applyDecl env (EDValue ident ty) = Env.addName (Qualified (ByModuleName efModuleName) ident) (ty, External, Defined) env
-  applyDecl env (EDClass pn args members cs deps tcIsEmpty) = Env.addTypeClass (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) env
+  applyDecl env (EDType pn kind tyKind) = Env.addTypeModu efModuleName pn (kind, tyKind) env
+  applyDecl env (EDTypeSynonym pn args ty) = Env.addTypeSynonymModu efModuleName pn (args, ty) env
+  applyDecl env (EDDataConstructor pn dTy tNm ty nms) = Env.addDataConstructorModu efModuleName pn (dTy, tNm, ty, nms) env
+  applyDecl env (EDValue ident ty) = Env.addNameModu efModuleName ident (ty, External, Defined) env
+  applyDecl env (EDClass pn args members cs deps tcIsEmpty) = Env.addTypeClassModu efModuleName pn (makeTypeClassData args members cs deps tcIsEmpty) env
   applyDecl env (EDInstance className ident vars kinds tys cs ch idx ns ss) =
     Env.addTypeClassDictionary efModuleName className (qual ident) (pure dict) env
     where
@@ -1625,7 +1625,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
       Just (kind, tk@(DataType _ _ tys)) ->
         EDType pn kind tk : [ EDDataConstructor dctor dty pn ty args
                             | dctor <- fromMaybe (map fst tys) dctors
-                            , (dty, _, ty, args) <- maybeToList (Env.getDataConstructor (Qualified (ByModuleName mn) dctor) env)
+                            , (dty, _, ty, args) <- maybeToList (Env.getDataConstructorModu mn dctor env)
                             ]
       _ -> internalError "toExternsDeclaration: Invalid input"
   toExternsDeclaration (ValueRef _ ident)
@@ -1636,7 +1636,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
     , Just TypeClassData{..} <- Env.getTypeClass (Qualified (ByModuleName mn) className) env
     , Just (kind, tk) <- Env.getType (Qualified (ByModuleName mn) (coerceProperName className)) env
     , Just (dictKind, dictData@(DataType _ _ [(dctor, _)])) <- Env.getType (Qualified (ByModuleName mn) dictName) env
-    , Just (dty, _, ty, args) <- Env.getDataConstructor (Qualified (ByModuleName mn) dctor) env
+    , Just (dty, _, ty, args) <- Env.getDataConstructorModu mn dctor env
     = [ EDType (coerceProperName className) kind tk
       , EDType dictName dictKind dictData
       , EDDataConstructor dctor dty dictName ty args

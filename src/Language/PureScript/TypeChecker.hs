@@ -60,9 +60,8 @@ addDataType
 addDataType moduleName dtype name args dctors ctorKind = do
   env <- getEnv
   let mapDataCtor (DataConstructorDeclaration _ ctorName vars) = (ctorName, snd <$> vars)
-      qualName = Qualified (ByModuleName moduleName) name
-      hasSig = isJust $ Env.getType qualName env
-  putEnv $ Env.addType qualName (ctorKind, DataType dtype args (map (mapDataCtor . fst) dctors)) env
+      hasSig = isJust $ Env.getTypeModu moduleName name env
+  putEnv $ Env.addTypeModu moduleName name (ctorKind, DataType dtype args (map (mapDataCtor . fst) dctors)) env
   unless (hasSig || isDictTypeName name || not (containsForAll ctorKind)) $ do
     tell . errorMessage $ MissingKindDeclaration (if dtype == Newtype then NewtypeSig else DataSig) name ctorKind
   for_ dctors $ \(DataConstructorDeclaration _ dctor fields, polyType) ->
@@ -82,7 +81,7 @@ addDataConstructor moduleName dtype name dctor dctorArgs polyType = do
   let fields = fst <$> dctorArgs
   env <- getEnv
   checkTypeSynonyms polyType
-  putEnv $ Env.addDataConstructor (Qualified (ByModuleName moduleName) dctor) (dtype, name, polyType, fields) env
+  putEnv $ Env.addDataConstructorModu moduleName dctor (dtype, name, polyType, fields) env
 
 checkRoleDeclaration
   :: (MonadState CheckState m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
@@ -92,16 +91,15 @@ checkRoleDeclaration
 checkRoleDeclaration moduleName (RoleDeclarationData (ss, _) name declaredRoles) = do
   warnAndRethrow (addHint (ErrorInRoleDeclaration name) . addHint (positionedError ss)) $ do
     env <- getEnv
-    let qualName = Qualified (ByModuleName moduleName) name
-    case Env.getType qualName env of
+    case Env.getTypeModu moduleName name env of
       Just (kind, DataType dtype args dctors) -> do
         checkRoleDeclarationArity name declaredRoles (length args)
         checkRoles args declaredRoles
         let args' = zipWith (\(v, k, _) r -> (v, k, r)) args declaredRoles
-        putEnv $ Env.addType qualName (kind, DataType dtype args' dctors) env
+        putEnv $ Env.addTypeModu moduleName name (kind, DataType dtype args' dctors) env
       Just (kind, ExternData _) -> do
         checkRoleDeclarationArity name declaredRoles (kindArity kind)
-        putEnv $ Env.addType qualName (kind, ExternData declaredRoles) env
+        putEnv $ Env.addTypeModu moduleName name (kind, ExternData declaredRoles) env
       _ -> internalError "Unsupported role declaration"
 
 addTypeSynonym
@@ -115,13 +113,12 @@ addTypeSynonym
 addTypeSynonym moduleName name args ty kind = do
   env <- getEnv
   checkTypeSynonyms ty
-  let qualName = Qualified (ByModuleName moduleName) name
-      hasSig = isJust $ Env.getType qualName env
+  let hasSig = isJust $ Env.getTypeModu moduleName name env
   unless (hasSig || not (containsForAll kind)) $ do
     tell . errorMessage $ MissingKindDeclaration TypeSynonymSig name kind
   putEnv
-    $ Env.addType qualName (kind, TypeSynonym)
-    $ Env.addTypeSynonym qualName (args, ty)
+    $ Env.addTypeModu moduleName name (kind, TypeSynonym)
+    $ Env.addTypeSynonymModu moduleName name (args, ty)
     $ env
 
 valueIsNotDefined
@@ -144,29 +141,29 @@ addValue
   -> m ()
 addValue moduleName name ty nameKind = do
   env <- getEnv
-  putEnv (Env.addName (Qualified (ByModuleName moduleName) name) (ty, nameKind, Defined) env)
+  putEnv (Env.addNameModu moduleName name (ty, nameKind, Defined) env)
 
 addTypeClass
   :: forall m
    . (MonadState CheckState m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => ModuleName
-  -> Qualified (ProperName 'ClassName)
+  -> ProperName 'ClassName
   -> [(Text, Maybe SourceType)]
   -> [SourceConstraint]
   -> [FunctionalDependency]
   -> [Declaration]
   -> SourceType
   -> m ()
-addTypeClass _ qualifiedClassName args implies dependencies ds kind = do
+addTypeClass modu className args implies dependencies ds kind = do
   env <- getEnv
   newClass <- mkNewClass
-  let qualName = fmap coerceProperName qualifiedClassName
+  let qualName = fmap coerceProperName (Qualified (ByModuleName modu) className)
       hasSig = isJust $ Env.getType qualName env
   unless (hasSig || not (containsForAll kind)) $ do
     tell . errorMessage $ MissingKindDeclaration ClassSig (disqualify qualName) kind
   putEnv
     $ Env.addType qualName (kind, ExternData (nominalRolesForKind kind))
-    $ Env.addTypeClass qualifiedClassName newClass
+    $ Env.addTypeClassModu modu className newClass
     $ env
   where
     classMembers :: [(Ident, SourceType)]
@@ -301,10 +298,9 @@ typeCheckAll moduleName = traverse go
         addDataType moduleName dtype name args'' dataCtors ctorKind
       for_ roleDecls $ checkRoleDeclaration moduleName
       for_ (zip clss cls_ks) $ \((deps, (sa, pn, _, _, _)), (args', implies', tys', kind)) -> do
-        let qualifiedClassName = Qualified (ByModuleName moduleName) pn
         guardWith (errorMessage (DuplicateTypeClass pn (fst sa))) $
-          isNothing $ Env.getTypeClass qualifiedClassName env
-        addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
+          isNothing $ Env.getTypeClassModu moduleName pn env
+        addTypeClass moduleName pn (fmap Just <$> args') implies' deps tys' kind
     return d
     where
     toTypeSynonym (TypeSynonymDeclaration sa nm args ty) = Just (sa, nm, args, ty)
@@ -379,18 +375,17 @@ typeCheckAll moduleName = traverse go
       checkTypeKind elabTy kind
       case Env.getName (Qualified (ByModuleName moduleName) name) env of
         Just _ -> throwError . errorMessage $ RedefinedIdent name
-        Nothing -> putEnv $ Env.addName (Qualified (ByModuleName moduleName) name) (elabTy, External, Defined) env
+        Nothing -> putEnv $ Env.addNameModu moduleName name (elabTy, External, Defined) env
     return d
   go d@FixityDeclaration{} = return d
   go d@ImportDeclaration{} = return d
   go d@(TypeClassDeclaration sa@(ss, _) pn args implies deps tys) = do
     warnAndRethrow (addHint (ErrorInTypeClassDeclaration pn) . addHint (positionedError ss)) $ do
       env <- getEnv
-      let qualifiedClassName = Qualified (ByModuleName moduleName) pn
       guardWith (errorMessage (DuplicateTypeClass pn ss)) $
-        isNothing $ Env.getTypeClass qualifiedClassName env
+        isNothing $ Env.getTypeClassModu moduleName pn env
       (args', implies', tys', kind) <- kindOfClass moduleName (sa, pn, args, implies, tys)
-      addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
+      addTypeClass moduleName pn (fmap Just <$> args') implies' deps tys' kind
       return d
   go (TypeInstanceDeclaration _ _ _ _ (Left _) _ _ _ _) = internalError "typeCheckAll: type class instance generated name should have been desugared"
   go d@(TypeInstanceDeclaration sa@(ss, _) _ ch idx (Right dictName) deps className tys body) =

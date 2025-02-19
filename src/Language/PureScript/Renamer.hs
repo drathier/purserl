@@ -16,9 +16,10 @@ import Data.Set qualified as S
 import Data.Text qualified as T
 
 import Language.PureScript.CoreFn (Ann, Bind(..), Binder(..), CaseAlternative(..), Expr(..), Literal(..), Module(..))
-import Language.PureScript.Names (Ident(..), Qualified(..), isBySourcePos, isPlainIdent, runIdent, showIdent)
+import Language.PureScript.Names (Ident(..), Qualified(..), isBySourcePos, isPlainIdent, runIdent, showIdent, ModuleName(..))
 import Language.PureScript.Traversals (eitherM, pairM, sndM)
 
+import Debug.Trace qualified as Debug
 -- |
 -- The state object used in this module
 --
@@ -98,7 +99,9 @@ lookupIdent name = do
   name' <- gets $ M.lookup name . rsBoundNames
   case name' of
     Just name'' -> return name''
-    Nothing -> error $ "Rename scope is missing ident '" ++ T.unpack (showIdent name) ++ "'"
+    Nothing -> do
+      db <- get
+      error $ "Rename scope is missing ident '" ++ T.unpack (showIdent name) ++ "' has " ++ show ("rsBoundNames", rsBoundNames db) ++ "' and " ++ show ("rsUsedNames", rsUsedNames db)
 
 
 -- |

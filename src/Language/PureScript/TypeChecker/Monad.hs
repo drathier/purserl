@@ -123,7 +123,7 @@ bindNames
   -> m a
 bindNames newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = Env.addNames newNames (checkEnv st) }
+  modify $ \st -> st { checkEnv = Env.addNamesSlow newNames (checkEnv st) }
   -- modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `M.union` (names . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = Env.restoreNames (checkEnv $ orig) (checkEnv st) }
@@ -137,7 +137,7 @@ bindTypes
   -> m a
 bindTypes newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = Env.addTypes newNames (checkEnv st) }
+  modify $ \st -> st { checkEnv = Env.addTypesSlow newNames (checkEnv st) }
   -- modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `M.union` (types . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = Env.restoreTypes (checkEnv $ orig) (checkEnv st) }
@@ -152,9 +152,10 @@ withScopedTypeVars
   -> m a
 withScopedTypeVars mn ks ma = do
   orig <- get
-  forM_ ks $ \(name, _) ->
-    when (Env.memberType (Qualified (ByModuleName mn) (ProperName name)) (checkEnv orig)) $
-      tell . errorMessage $ ShadowedTypeVar name
+  -- NOTE[drathier]: I don't care about shadowed type vars, and there's a very large number of them being printed
+  -- forM_ ks $ \(name, _) ->
+  --   when (Env.memberType (Qualified (ByModuleName mn) (ProperName name)) (checkEnv orig)) $
+  --     tell . errorMessage $ ShadowedTypeVar name
   bindTypes (M.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (ProperName name), (k, ScopedTypeVar))) ks)) ma
 
 withErrorMessageHint
@@ -205,7 +206,7 @@ withTypeClassDictionaries entries action = do
               <- entries
           ]
 
-  modify $ \st -> st { checkEnv = Env.addManyTypeClassDictionaries mentries (checkEnv st) }
+  modify $ \st -> st { checkEnv = Env.addManyTypeClassDictionariesSlow mentries (checkEnv st) }
   -- modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
   a <- action
   modify $ \st -> st { checkEnv = Env.restoreTypeClassDictionaries (checkEnv $ orig) (checkEnv st) }
