@@ -307,7 +307,7 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
         -- [drathier]: Skipping because it traverses body: -- EFunFull _ [(EFunBinder vars, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
 
         EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> v
-        EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs
+        -- EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs -- [drathier]: this optimization broke prod
 
         EApp appKind (ELet bind body) args -> ELet bind (EApp appKind body args)
 
