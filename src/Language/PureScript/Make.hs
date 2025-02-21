@@ -36,7 +36,8 @@ import Language.PureScript.AST (ErrorMessageHint(..), Module(..), SourceSpan(..)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
-import Language.PureScript.Environment (initEnvironment)
+import Language.PureScript.Environment (Environment, initEnvironment)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
 -- import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Externs
@@ -91,6 +92,82 @@ rebuildModule'
   -> Module
   -> m ExternsFile
 rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing
+
+rebuildModuleWithIndex3
+  :: forall m
+   . (MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+  => MakeActions m
+  -> Env
+  -> Environment
+  -> [ExternsFile]
+  -> Module
+  -> Maybe (Int, Int)
+  -> m ExternsFile
+rebuildModuleWithIndex3 MakeActions{..} exEnv env externs m@(Module _ _ moduleName _ _) moduleIndex = do
+  progress $ CompilingModule moduleName moduleIndex
+  let -- env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
+      withPrim = importPrim m
+  lint withPrim
+
+  progress $ CompileMeta ("### CS.goDesugar1[" <> runModuleName moduleName <> "]")
+  ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "2"
+    (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty) -- desugar needs operaor fixities and type classes from externs
+    lift $ progress $ CompileMeta ("### CS.goTypeCheck2[" <> runModuleName moduleName <> "]")
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "3"
+    let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "4"
+    (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
+    lift $ progress $ CompileMeta ("### CS.goLintImports3[" <> runModuleName moduleName <> "]")
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "5"
+    let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
+          M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
+    -- Imports cannot be linted before type checking because we need to
+    -- known which newtype constructors are used to solve Coercible
+    -- constraints in order to not report them as unused.
+    censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
+    lift $ progress $ CompileMeta ("### CS.goDesugarCaseGuards4[" <> runModuleName moduleName <> "]")
+    return (checked, checkEnv)
+
+  -- progress $ CompilingModule moduleName moduleIndex "6"
+
+  -- desugar case declarations *after* type- and exhaustiveness checking
+  -- since pattern guards introduces cases which the exhaustiveness checker
+  -- reports as not-exhaustive.
+  (deguarded, nextVar') <- runSupplyT nextVar $ do
+    desugarCaseGuards elaborated
+  progress $ CompileMeta ("### CS.goCreateBindingGroups5[" <> runModuleName moduleName <> "]")
+
+  let upstreamDBs = M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
+
+  regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
+  progress $ CompileMeta ("### CS.goFfiCodegen6[" <> runModuleName moduleName <> "]")
+  let mod' = Module ss coms moduleName regrouped exps
+      corefn = CF.moduleToCoreFn env' mod'
+      (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
+      (renamedIdents, renamed) = renameInModule optimized
+      exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
+  ffiCodegen renamed
+  progress $ CompileMeta ("### CS.goCodegen7[" <> runModuleName moduleName <> "]")
+
+  -- progress $ CompilingModule moduleName moduleIndex "7"
+  -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
+  -- but I have not done so for two reasons:
+  -- 1. This should never fail; any genuine errors in the code should have been
+  -- caught earlier in this function. Therefore if we do fail here it indicates
+  -- a bug in the compiler, which should be reported as such.
+  -- 2. We do not want to perform any extra work generating docs unless the
+  -- user has asked for docs to be generated.
+  let docs = case Docs.convertModule externs exEnv env' m of
+               Left errs -> internalError $
+                 "Failed to produce docs for " ++ T.unpack (runModuleName moduleName)
+                 ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
+               Right d -> d
+
+  -- progress $ CompilingModule moduleName moduleIndex "8"
+  evalSupplyT nextVar'' $ codegen env renamed docs exts
+  -- progress $ CompilingModule moduleName moduleIndex "9"
+  return exts
 
 rebuildModuleWithIndex
   :: forall m
@@ -436,6 +513,7 @@ make ma@MakeActions{..} ms = do
                 _ -> return e
             foldM go env deps
           env <- C.readMVar (bpEnv buildPlan)
+          environment <- C.readMVar (bpEnvironment buildPlan)
           idx <- C.takeMVar (bpIndex buildPlan)
           C.putMVar (bpIndex buildPlan) (idx + 1)
           let cfa = BuildPlan.getCacheFilesAvailable buildPlan moduleName
@@ -453,12 +531,20 @@ make ma@MakeActions{..} ms = do
                       -- Force the externs and warnings to avoid retaining excess module
                       -- data after the module is finished compiling.
                       extsAndWarnings <- evaluate . force <=< listen $ do
-                        rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
+                        rebuildModuleWithIndex3 ma env environment externs m (Just (idx, cnt))
 
                       -- liftBase $ traceM $ T.unpack (runModuleName moduleName) <> " end"
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
                       return extsAndWarnings
-
+                  let !exts2 = force exts -- didn't help, environment mvar seems to just slow down things, but not sure why. Cpu usage is about the same, it looks like it uses all cores, idk.
+                  hereiam -- we're still not using the fact that env is now split into self and deps; let's try putting mvars on each module, so we can reuse them in parallel instead of using modifyMVar on the whole env via applyExternsFile
+                  progress $ CompileMeta ("### CS.preEnvironment88[" <> runModuleName moduleName <> "]")
+                  C.modifyMVar_ (bpEnvironment buildPlan)
+                    (\environment' ->
+                      -- [drathier]: env is both read and updated between when the module build is safe to start (externs/buildresults are avilable) and when we markComplete
+                      pure $ applyExternsFileToEnvironment exts2 environment'
+                    )
+                  progress $ CompileMeta ("### CS.preEnvironment99[" <> runModuleName moduleName <> "]")
                   return $ BuildJobSucceeded (pwarnings' <> warnings) exts
 
           -- [drathier]: so that we can quickly go back and forth between caching and non-caching versions when testing this out

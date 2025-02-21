@@ -2,6 +2,7 @@ module Language.PureScript.Make.BuildPlan
   ( BuildPlan
   , BuildJobResult(..)
   , bpEnv
+  , bpEnvironment
   , bpIndex
   , buildJobSuccess
   , construct
@@ -30,6 +31,8 @@ import Data.Time.Clock (UTCTime)
 import Language.PureScript.AST (Module, getModuleName)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
+import Language.PureScript.Environment (Environment)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (MultipleErrors(..))
 -- import Language.PureScript.Externs (ExternsFile)
 import Language.PureScript.Externs
@@ -49,6 +52,7 @@ data BuildPlan = BuildPlan
   , bpDirtyExterns :: M.Map ModuleName CacheFilesAvailable
   , bpBuildJobs :: M.Map ModuleName BuildJob
   , bpEnv :: C.MVar Env
+  , bpEnvironment :: C.MVar Environment
   , bpIndex :: C.MVar Int
   }
 
@@ -241,8 +245,9 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
   buildJobs <- foldM makeBuildJob M.empty toBeRebuilt
   env <- C.newMVar primEnv
   idx <- C.newMVar 1
+  environment <- C.newMVar Env.initEnvironment
   pure
-    ( BuildPlan prebuilt dirty buildJobs env idx
+    ( BuildPlan prebuilt dirty buildJobs env environment idx
     , let
         update = flip $ \s ->
           M.alter (const (statusNewCacheInfo s)) (statusModuleName s)
