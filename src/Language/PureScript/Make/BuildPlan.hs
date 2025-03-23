@@ -228,7 +228,6 @@ construct
 construct MakeActions{..} cacheDb (sorted, graph) = do
   let sortedModuleNames = map (getModuleName . CST.resPartial) sorted
   cacheChanged <- A.forConcurrently sortedModuleNames getRebuildStatusIsUpToDate
-  progress $ CompileMeta ("### CSX.construct91:" <> T.pack (show cacheChanged) <> " and " <> T.pack (show (foldl (&&) True cacheChanged)))
   let prebuilt = M.empty
   case foldl (&&) True cacheChanged of
     True -> do
