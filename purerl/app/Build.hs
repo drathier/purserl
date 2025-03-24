@@ -111,6 +111,7 @@ compile' BuildOptions {..} = do
       cacheDbFile = joinPath [buildOutputDir, "purerl-cache-db.json"]
   corefnFiles <- globWarningOnMisses warnFileTypeNotFound [coreFnGlob]
   cwd <- liftBase getCurrentDirectory
+  -- NOTE[drathier]: UNUSED, purerl-cache-db.json is never written to disk
 
   when (null corefnFiles) $ do
     hPutStr stderr $

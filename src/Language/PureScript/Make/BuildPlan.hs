@@ -227,25 +227,37 @@ construct
   -> m (BuildPlan, CacheDb)
 construct MakeActions{..} cacheDb (sorted, graph) = do
   let sortedModuleNames = map (getModuleName . CST.resPartial) sorted
-  rebuildStatuses <- A.forConcurrently sortedModuleNames getRebuildStatus
+  cacheChanged <- A.forConcurrently sortedModuleNames getRebuildStatusIsUpToDate
   let prebuilt = M.empty
-        -- foldl' collectPrebuiltModules M.empty $
-        --   mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
-  let dirty =
-        foldl' collectDirtyModules M.empty $
-          mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
-  let toBeRebuilt = filter (not . flip M.member prebuilt) sortedModuleNames
-  buildJobs <- foldM makeBuildJob M.empty toBeRebuilt
-  env <- C.newMVar primEnv
-  idx <- C.newMVar 1
-  pure
-    ( BuildPlan prebuilt dirty buildJobs env idx
-    , let
-        update = flip $ \s ->
-          M.alter (const (statusNewCacheInfo s)) (statusModuleName s)
-      in
-        foldl' update cacheDb rebuildStatuses
-    )
+  case foldl (&&) True cacheChanged of
+    True -> do
+      let buildJobs = M.empty
+      let dirty = M.empty
+      env <- C.newMVar primEnv
+      idx <- C.newMVar 1
+      pure
+        ( BuildPlan prebuilt M.empty M.empty env idx
+        , cacheDb
+        )
+    False -> do
+      rebuildStatuses <- A.forConcurrently sortedModuleNames getRebuildStatus
+            -- foldl' collectPrebuiltModules M.empty $
+            --   mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
+      let dirty =
+            foldl' collectDirtyModules M.empty $
+              mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
+      let toBeRebuilt = filter (not . flip M.member prebuilt) sortedModuleNames
+      buildJobs <- foldM makeBuildJob M.empty toBeRebuilt
+      env <- C.newMVar primEnv
+      idx <- C.newMVar 1
+      pure
+        ( BuildPlan prebuilt dirty buildJobs env idx
+        , let
+            update = flip $ \s ->
+              M.alter (const (statusNewCacheInfo s)) (statusModuleName s)
+          in
+            foldl' update cacheDb rebuildStatuses
+        )
   where
     makeBuildJob prev moduleName = do
       buildJob <- BuildJob <$> C.newEmptyMVar
@@ -289,6 +301,19 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
             , statusDirtyExterns = dirtyExterns
             , statusNewCacheInfo = Just newCacheInfo
             })
+
+    getRebuildStatusIsUpToDate :: ModuleName -> m Bool
+    getRebuildStatusIsUpToDate moduleName = do
+      inputInfo <- getInputTimestampsAndHashes moduleName
+      case inputInfo of
+        Left RebuildNever ->
+          pure True
+        Left RebuildAlways ->
+          pure False
+        Right cacheInfo -> do
+          cwd <- liftBase getCurrentDirectory
+          (newCacheInfo, isUpToDate) <- checkChanged cacheDb moduleName cwd cacheInfo
+          pure isUpToDate
 
     findExistingExtern :: Maybe ExternsFile -> ModuleName -> m (Maybe Prebuilt)
     findExistingExtern mexterns moduleName = runMaybeT $ do
