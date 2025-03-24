@@ -102,7 +102,7 @@ jobs:
           [ "$(stack --numeric-version)" = "$STACK_VERSION" ]
           chown root:root .
 
-      - uses: "actions/cache@v2"
+      - uses: "actions/cache@v4"
         with:
           path: |
             /root/.stack
@@ -231,7 +231,7 @@ jobs:
         run: |
           chown root:root .
 
-      - uses: "actions/cache@v2"
+      - uses: "actions/cache@v4"
         with:
           path: |
             /root/.stack
