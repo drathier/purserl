@@ -254,7 +254,7 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
       env <- C.newMVar primEnv
       idx <- C.newMVar 1
       pure
-    ( BuildPlan prebuilt dirty buildJobs env idx
+        ( BuildPlan prebuilt dirty buildJobs env idx
         , let
             update = flip $ \s ->
               M.alter (const (statusNewCacheInfo s)) (statusModuleName s)

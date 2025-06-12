@@ -36,7 +36,8 @@ import Language.PureScript.AST (ErrorMessageHint(..), Module(..), SourceSpan(..)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
-import Language.PureScript.Environment (initEnvironment)
+import Language.PureScript.Environment (Environment, initEnvironment)
+import Language.PureScript.Environment qualified as Env
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
 -- import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Externs
