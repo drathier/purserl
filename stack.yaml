@@ -1,12 +1,12 @@
 # Please update Haskell image versions under .github/workflows/ci.yml together to use the same GHC version
 # (or the CI build will fail)
-resolver: lts-23.8
+resolver: lts-20.26
 pvp-bounds: both
 packages:
 - '.'
 ghc-options:
   # Build with advanced optimizations enabled by default
-  "$locals": -O2 -Werror -Wwarn=x-partial -Wwarn=deprecations -fspecialize-aggressively
+  "$locals": -O2 -Werror -fspecialize-aggressively
 extra-deps:
 # As of 2021-11-08, the latest release of `language-javascript` is 0.7.1.0,
 # but it has a problem with parsing the `async` keyword.  It doesn't allow
@@ -15,10 +15,9 @@ extra-deps:
 - language-javascript-0.7.0.0
 # Fix issue with libtinfo.
 # See https://github.com/purescript/purescript/issues/4253
-- process-1.6.25.0
+- process-1.6.13.1
 # The Cabal library is not in Stackage
-- Cabal-3.10.2.0
-- Cabal-syntax-3.10.3.0
+- Cabal-3.6.3.0
 # hspec versions 2.9.3 to 2.10.6 depend on ghc
 # ghc depends on terminfo by default, but that can be ignored
 # if one uses the '-terminfo' flag.
@@ -28,19 +27,6 @@ extra-deps:
 - hspec-2.10.9
 - hspec-core-2.10.9
 - hspec-discover-2.10.9
-
-- bower-json-1.1.0.0@sha256:a136aaca67bf0d15c336f5864f7e9d40ebe046ca2cb4b25bc4895617ea35f9f6,1864
-- haskeline-0.8.2.1@sha256:40096f75591b5391aa99c5ed87148da0e9288ca4be302dd9e5c4326f814089ba,6117
-
-- git: https://github.com/drathier/pattern-arrows
-  commit: 04adf3703e64c7b8d9f8a9d1461eea31186b4654
-- git: https://github.com/drathier/union-find
-  commit: 34b1ca63aac10adf9434bb60fd3c45a8f6b6669d
-- git: https://github.com/drathier/cheapskate
-  commit: 7a47a084211734bbae874d5be72cd0cb2d4ba771
-- git: https://github.com/drathier/aeson-better-errors
-  commit: 7951366310effe6f6e026fb52555baaf83abb404
-
 
 nix:
   packages:
@@ -52,8 +38,8 @@ nix:
 flags:
   aeson-pretty:
     lib-only: true
-#  these:
-#    assoc: false
-#  haskeline:
-#    # Avoids a libtinfo dynamic library dependency
-#    terminfo: false
+  these:
+    assoc: false
+  haskeline:
+    # Avoids a libtinfo dynamic library dependency
+    terminfo: false
