@@ -136,6 +136,11 @@ import Language.PureScript.Types (SourceConstraint, SourceType, Type(..), TypeVa
 import Language.PureScript.Constants.Prim qualified as C
 import Debug.Trace qualified as Debug
 
+-- [drathier]: tried to see if any of these api's are unused. addTypesSlow sometimes does no-op inserts, but not always. No other insertion api's does even a single no-op.
+-- [drathier]: tagged ByModuleName branches of all `case` exprs in this file; they're all used except the one replaced by an `error`
+-- [drathier]: restore-functions really tempting to not look at _eOthers, but it's unsafe. Perhaps we could make the type layered, so we can pop it like a stack?
+
+
 -- drathier added start
 
 mInsert f k m =
@@ -329,7 +334,7 @@ memberTypeSynonym k e =
   case k of
     Qualified (BySourcePos spos) k2 -> M.member k2 (_typeSynonyms (_eSelf e))
     Qualified (ByModuleName m) k2 ->
-      case M.lookup m (_eOthers e) of
+            case M.lookup m (_eOthers e) of
         Nothing -> False
         Just me -> M.member k2 (_typeSynonyms me)
 
@@ -360,7 +365,7 @@ getDataConstructor :: Qualified (ProperName 'ConstructorName) -> Environment -> 
 getDataConstructor dc env =
   case dc of
     Qualified (BySourcePos spos) dc2 -> M.lookup dc2 (_dataConstructors (_eSelf env))
-    Qualified (ByModuleName m) dc2 -> M.lookup dc2 =<< _dataConstructors <$> M.lookup m (_eOthers env)
+    Qualified (ByModuleName m) dc2 ->  M.lookup dc2 =<< _dataConstructors <$> M.lookup m (_eOthers env)
 
 getDataConstructorModu :: ModuleName -> ProperName 'ConstructorName -> Environment -> Maybe (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
 getDataConstructorModu modu dc env =
@@ -421,7 +426,7 @@ addTypeClass :: Qualified (ProperName 'ClassName) -> TypeClassData -> Environmen
 addTypeClass k v e =
   case k of
     Qualified (BySourcePos spos) k2 -> e { _eSelf = ((_eSelf e) { _typeClasses = M.insert k2 v (_typeClasses (_eSelf e)) }) }
-    Qualified (ByModuleName m) k2 -> e { _eOthers = mInsert (\me -> me { _typeClasses = M.insert k2 v (_typeClasses me) }) m (_eOthers e) }
+    Qualified (ByModuleName m) k2 -> error "unused path" -- e { _eOthers = mInsert (\me -> me { _typeClasses = M.insert k2 v (_typeClasses me) }) m (_eOthers e) }
 
 addTypeClassModu :: ModuleName -> ProperName 'ClassName -> TypeClassData -> Environment -> Environment
 addTypeClassModu m k v e =
@@ -432,7 +437,7 @@ getTypeClass :: Qualified (ProperName 'ClassName) -> Environment -> Maybe TypeCl
 getTypeClass className env =
   case className of
     Qualified (BySourcePos spos) className' -> M.lookup className' (_typeClasses (_eSelf env))
-    Qualified (ByModuleName m) className' -> M.lookup className' =<< _typeClasses <$> M.lookup m (_eOthers env)
+    Qualified (ByModuleName m) className' ->  M.lookup className' =<< _typeClasses <$> M.lookup m (_eOthers env)
 
 getTypeClassModu :: ModuleName -> ProperName 'ClassName -> Environment -> Maybe TypeClassData
 getTypeClassModu modu className env =
@@ -471,7 +476,7 @@ data Environment
     -- SourcePos is key in self, used for error reporting perhaps?
     , _eOthers :: M.Map ModuleName EnvironmentModule
     , _typeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
-    } deriving (Show, Generic)
+    } deriving (Eq, Show, Generic)
 instance NFData Environment
 
 data EnvironmentModule = EnvironmentModule
@@ -490,7 +495,7 @@ data EnvironmentModule = EnvironmentModule
   -- -- scope (ie dictionaries brought in by a constrained type).
   , _typeClasses :: M.Map (ProperName 'ClassName) TypeClassData
   -- ^ Type classes
-  } deriving (Show, Generic)
+  } deriving (Eq, Show, Generic)
 -- drathier added end
 
 instance NFData EnvironmentModule
@@ -540,7 +545,7 @@ data TypeClassData = TypeClassData
   -- ^ A sets of arguments that can be used to infer all other arguments.
   , typeClassIsEmpty :: Bool
   -- ^ Whether or not dictionaries for this type class are necessarily empty.
-  } deriving (Show, Generic)
+  } deriving (Eq, Show, Generic)
 
 instance NFData TypeClassData
 

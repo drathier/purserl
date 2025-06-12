@@ -37,7 +37,7 @@ data TypeClassDictionaryInScope v
     -- error messages
     , tcdDescription :: Maybe SourceType
     }
-    deriving (Show, Functor, Foldable, Traversable, Generic)
+    deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
 
 instance NFData v => NFData (TypeClassDictionaryInScope v)
 
