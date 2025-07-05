@@ -10,11 +10,10 @@ import Protolude (ordNub)
 import           Control.Arrow ((&&&))
 import           Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.Writer
-    ( unless,
-      forM,
-      Last(Last, getLast),
-      censor,
+    ( censor,
       MonadWriter(tell, listen) )
+import Data.Monoid ( Last(Last, getLast))
+import Control.Monad ( unless, forM )
 import           Control.Exception (displayException)
 import           Control.Lens (both, head1, over)
 import           Control.Monad.Trans.State.Lazy

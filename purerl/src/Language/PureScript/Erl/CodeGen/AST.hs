@@ -11,6 +11,7 @@ import Prelude.Compat
 import Data.Text (Text)
 import Data.Text qualified as T
 
+import Control.Monad ((>=>))
 import Control.Monad.Identity
 import Control.Arrow (second)
 

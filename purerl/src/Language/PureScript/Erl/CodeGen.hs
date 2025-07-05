@@ -16,7 +16,8 @@ import Control.Monad (foldM, replicateM, unless)
 import Control.Monad.Error.Class (MonadError (..))
 import Control.Monad.Reader (MonadReader (..))
 import Control.Monad.Supply.Class (MonadSupply (fresh), bumpToNextRoundNumber)
-import Control.Monad.Writer (MonadWriter (..), Any (Any), WriterT (runWriterT))
+import Control.Monad.Writer (MonadWriter (..), WriterT (runWriterT))
+import Data.Monoid (Any(..))
 import Data.Either (fromRight)
 import Data.Foldable (find, traverse_, foldl')
 import Data.List (nub)
@@ -718,21 +719,6 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     valueToErl'' ann _ (Var _ (Qualified (P.ByModuleName C.M_Prim) (Ident undef)))
       | undef == C.S_undefined =
         return $ EAtomLiteral $ Atom Nothing C.S_undefined
-    valueToErl'' annotSS _ (Var (_,_,_) (Qualified (P.ByModuleName C.M_Backtrace) (Ident backtrace))) | T.isPrefixOf "backtrace" backtrace =
-      return $ EMapLiteral [(Atom Nothing "trace", EMapLiteral $ map (\(k,v) -> (Atom Nothing k, v))
-        [ ("?MODULE", EVar "?MODULE")
-        , ("?FILE", EApp RegularApp (EAtomLiteral (Atom (Just "erlang") "list_to_binary")) [EVar "?FILE"])
-        , ("?LINE", EVar "?LINE")
-        , ("?FUNCTION_NAME", EVar "?FUNCTION_NAME")
-        , ("?FUNCTION_ARITY", EVar "?FUNCTION_ARITY")
-        , ("moduleName", EStringLiteral (PS.fromText (P.runModuleName mn)))
-        , ("file", EStringLiteral (PS.fromString (P.spanName annotSS)))
-        , ("spanStartLine", EIntLit (toInteger (P.sourcePosLine (P.spanStart annotSS))))
-        , ("spanStartColumn", EIntLit (toInteger (P.sourcePosColumn (P.spanStart annotSS))))
-        , ("spanStopLine", EIntLit (toInteger (P.sourcePosLine (P.spanEnd annotSS))))
-        , ("spanStopColumn", EIntLit (toInteger (P.sourcePosColumn (P.spanEnd annotSS))))
-        ]
-      )]
     valueToErl'' ann _ (Var (_, _, Just (IsConstructor _ [])) (Qualified _ ident)) =
       return $ constructorLiteral (runIdent' ident) []
     valueToErl'' ann _ (Var _ ident) | isTopLevelBinding ident = pure $

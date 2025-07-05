@@ -12,7 +12,7 @@ import Language.PureScript.CoreFn.Traversals (everywhereOnValues, traverseCoreFn
 import Language.PureScript.Constants.Libs qualified as C
 import Debug.Trace qualified as Debug
 import System.IO.Unsafe
-import Language.PureScript.Names (Ident(..), runIdent, ModuleName, QualifiedBy(..), runModuleName)
+import Language.PureScript.Names (Ident(..), runIdent, ModuleName(..), QualifiedBy(..), runModuleName)
 import Control.DeepSeq (force)
 import Control.Monad.Trans.RWS.Strict (evalRWST, asks, local, RWST)
 import Control.Monad.State
@@ -31,6 +31,11 @@ import Language.PureScript.CoreFn.Binders (Binder(..))
 import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
 import Language.PureScript.Names (Ident, ProperName, ProperNameType(..), Qualified(..))
 
+import Language.PureScript.AST.SourcePos qualified as P
+import Language.PureScript.PSString qualified as PS
+import Language.PureScript.CoreFn.Meta (ConstructorType(..), Meta(..))
+import qualified Language.PureScript.Constants.Libs as C
+import qualified Language.PureScript.Constants.Prim as C
 
 -- |
 -- CoreFn optimization pass.
@@ -43,8 +48,53 @@ optimizeCoreFn m =
   optimizeCommonSubexpressions (moduleName m) $
   -- Debug.trace (show ("optimizeCoreFn2", "dummy")) $
   optimizeModuleDecls (moduleName m) (moduleForeign m) $
+  --
+  translateBacktrace (moduleName m) (moduleForeign m) $
   -- Debug.trace (show ("optimizeCoreFn3", "dummy")) $
   moduleDecls m
+
+translateBacktrace :: ModuleName -> [Ident] -> [Bind Ann] -> [Bind Ann]
+translateBacktrace modu foreignIdents binds =
+  map transformBinds binds
+
+  where
+  (transformBinds, _, _) = everywhereOnValues identity transformExprs identity
+  transformExprs e =
+    case e of
+      App ann@(ss,ann2,Just IsSyntheticApp) fun (Var _ (Qualified (ByModuleName C.M_Backtrace) (Ident backtrace))) | T.isPrefixOf "backtrace" backtrace ->
+        -- Debug.trace (show ("backtrace.transformExprs.hit", e)) $
+        let erl a =
+              App (ss, ann2, Nothing)
+                (App (ss, ann2, Nothing)
+                  (Var ann (Qualified (ByModuleName (ModuleName "CodeGen")) (Ident "erlang")))
+                  (Literal ann (StringLiteral a))
+                )
+                (Literal ann (ObjectLiteral [])) in
+
+        App ann fun $
+        Literal ann $
+          ObjectLiteral
+            [ ("trace"
+              , Literal ann
+                (ObjectLiteral
+                  [ ("?MODULE", erl "?MODULE")
+                  , ("?FILE", erl "erlang:list_to_binary(?FILE)")
+                  , ("?LINE", erl "?LINE")
+                  , ("?FUNCTION_NAME", erl "?FUNCTION_NAME")
+                  , ("?FUNCTION_ARITY", erl "?FUNCTION_ARITY")
+                  , ("moduleName", Literal ann (StringLiteral (PS.fromText (runModuleName modu))))
+                  , ("file", Literal ann (StringLiteral (PS.fromString (P.spanName ss))))
+                  , ("spanStartLine", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosLine (P.spanStart ss))))))
+                  , ("spanStartColumn", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosColumn (P.spanStart ss))))))
+                  , ("spanStopLine", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosLine (P.spanEnd ss))))))
+                  , ("spanStopColumn", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosColumn (P.spanEnd ss))))))
+                  ]
+                )
+              )
+            ]
+
+      _ -> e
+
 
 optimizeModuleDecls :: ModuleName -> [Ident] -> [Bind Ann] -> [Bind Ann]
 optimizeModuleDecls modu foreignIdents binds =

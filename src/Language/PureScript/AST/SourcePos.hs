@@ -57,6 +57,7 @@ data SourceSpan = SourceSpan
   } deriving (Eq, Ord, Generic, NFData, Serialise)
 
 instance Show SourceSpan where
+  show NullSourceSpan = "s0"
   show _ = "ss"
 
 displayStartEndPosShort :: SourceSpan -> Text
