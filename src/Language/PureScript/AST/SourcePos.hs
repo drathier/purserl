@@ -6,7 +6,9 @@ module Language.PureScript.AST.SourcePos where
 
 import Prelude
 
-import Codec.Serialise (Serialise)
+import Codec.Serialise (Serialise, encode, decode)
+import Codec.Serialise.Encoding (encodeSimple)
+import Codec.Serialise.Decoding (decodeSimple)
 import Control.DeepSeq (NFData)
 import Data.Aeson ((.=), (.:))
 import Data.Text (Text)
@@ -18,16 +20,40 @@ import System.FilePath (makeRelative)
 
 -- | Source annotation - position information and comments.
 data SourceAnn = SourceAnn !SourceSpan ![Comment]
-  deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  deriving (Show, Eq, Ord, Generic, NFData)
+
+instance Serialise SourceAnn where
+  encode sa =
+    case sa of
+      SourceAnn NullSourceSpan [] -> encodeSimple 0
+      SourceAnn ss [] -> encodeSimple 1 <> encode ss
+      SourceAnn NullSourceSpan comments -> encodeSimple 2 <> encode comments
+      SourceAnn ss comments -> encodeSimple 3 <> encode ss <> encode comments
+
+  decode = do
+    tag <- decodeSimple
+    case tag of
+      0 -> pure $ SourceAnn NullSourceSpan []
+      1 -> do
+        ss <- decode
+        pure $ SourceAnn ss []
+      2 -> do
+        comments <- decode
+        pure $ SourceAnn NullSourceSpan comments
+      3 -> do
+        ss <- decode
+        comments <- decode
+        pure $ SourceAnn ss comments
+
 
 safst (SourceAnn a _) = a
 sasnd (SourceAnn _ b) = b
 
 -- | Source position information
 data SourcePos = SourcePos
-  { sourcePosLine :: Int
+  { sourcePosLine :: !Int
     -- ^ Line number
-  , sourcePosColumn :: Int
+  , sourcePosColumn :: !Int
     -- ^ Column number
   } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
 
@@ -51,11 +77,11 @@ instance A.FromJSON SourcePos where
     return $ SourcePos line col
 
 data SourceSpan = SourceSpan
-  { spanName :: String
+  { spanName :: !String
     -- ^ Source name
-  , spanStart :: SourcePos
+  , spanStart :: !SourcePos
     -- ^ Start of the span
-  , spanEnd :: SourcePos
+  , spanEnd :: !SourcePos
     -- ^ End of the span
   } deriving (Eq, Ord, Generic, NFData, Serialise)
 
