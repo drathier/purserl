@@ -41,6 +41,7 @@ import System.Directory (getCurrentDirectory)
 import qualified Data.Text as T
 import Debug.Trace
 import PrettyPrint
+import Language.PureScript.Environment (Environment)
 
 -- | The BuildPlan tracks information about our build progress, and holds all
 -- prebuilt modules for incremental builds.
@@ -64,7 +65,7 @@ newtype BuildJob = BuildJob
   }
 
 data BuildJobResult
-  = BuildJobSucceeded !MultipleErrors !ExternsFile
+  = BuildJobSucceeded !MultipleErrors !ExternsFile !(Maybe Environment)
   -- ^ Succeeded, with warnings and externs
   --
   | BuildJobFailed !MultipleErrors
@@ -73,8 +74,8 @@ data BuildJobResult
   | BuildJobSkipped
   -- ^ The build job was not run, because an upstream build job failed
 
-buildJobSuccess :: BuildJobResult -> Maybe (MultipleErrors, ExternsFile)
-buildJobSuccess (BuildJobSucceeded warnings externs) = Just (warnings, externs)
+buildJobSuccess :: BuildJobResult -> Maybe (MultipleErrors, ExternsFile, Maybe Environment)
+buildJobSuccess (BuildJobSucceeded warnings externs env) = Just (warnings, externs, env)
 buildJobSuccess _ = Nothing
 
 -- | Information obtained about a particular module while constructing a build
@@ -103,7 +104,7 @@ markComplete
   -> m ()
 markComplete buildPlan moduleName result = do
   liftBase $ putStrLn $ case result of
-      BuildJobSucceeded _ _ ->
+      BuildJobSucceeded _ _ _ ->
         "### CS.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
       BuildJobFailed _ ->
         "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
@@ -124,7 +125,7 @@ collectResults
   => BuildPlan
   -> m (M.Map ModuleName BuildJobResult)
 collectResults buildPlan = do
-  let prebuiltResults = M.map (BuildJobSucceeded (MultipleErrors []) . pbExternsFile) (bpPrebuilt buildPlan)
+  let prebuiltResults = M.map (\ext -> BuildJobSucceeded (MultipleErrors []) (pbExternsFile ext) Nothing) (bpPrebuilt buildPlan)
   barrierResults <- traverse (readMVar . bjResult) $ bpBuildJobs buildPlan
   pure (M.union prebuiltResults barrierResults)
 
@@ -134,11 +135,11 @@ getResult
   :: (MonadBaseControl IO m)
   => BuildPlan
   -> ModuleName
-  -> m (Maybe (MultipleErrors, ExternsFile))
+  -> m (Maybe (MultipleErrors, ExternsFile, Maybe Environment))
 getResult buildPlan moduleName =
   case M.lookup moduleName (bpPrebuilt buildPlan) of
     Just es ->
-      pure (Just (MultipleErrors [], pbExternsFile es))
+      pure (Just (MultipleErrors [], pbExternsFile es, Nothing))
     Nothing -> do
       r <- readMVar $ bjResult $ fromMaybe (internalError "make: no barrier") $ M.lookup moduleName (bpBuildJobs buildPlan)
       pure $ buildJobSuccess r
@@ -162,7 +163,7 @@ cfaPrebuilt cfa =
     UpToDate pb -> Just pb
 
 shouldRecompile :: ModuleName -> CacheFilesAvailable -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile
-shouldRecompile mn cfa externs = Left Nothing
+-- shouldRecompile mn cfa externs = Left Nothing
 shouldRecompile mn cfa externs = do
   -- let cfatag =
   --       case cfa of

@@ -96,6 +96,9 @@ nullSourceAnn = (nullSourceSpan, [])
 pattern NullSourceSpan :: SourceSpan
 pattern NullSourceSpan = SourceSpan "" (SourcePos 0 0) (SourcePos 0 0)
 
+pattern UnsavedSourceSpan :: SourceSpan
+pattern UnsavedSourceSpan = SourceSpan "" (SourcePos 2 2) (SourcePos 2 2)
+
 pattern NullSourceAnn :: SourceAnn
 pattern NullSourceAnn = (NullSourceSpan, [])
 

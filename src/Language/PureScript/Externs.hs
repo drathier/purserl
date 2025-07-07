@@ -1447,7 +1447,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   in
 
 
-  let shouldCache = const False $ not $
+  let shouldCache = not $
         case unsafePerformIO (lookupEnv "PURS_DISABLE_DISK_CACHE") of
           Just "0" -> False
           Just "no" -> False

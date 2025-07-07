@@ -503,7 +503,7 @@ instance NFData EnvironmentModule
 emptyEnvironmentModule :: EnvironmentModule
 emptyEnvironmentModule = EnvironmentModule M.empty M.empty M.empty M.empty M.empty
 
-data Environment2 = Environment2
+data PreviousEnvironmentFormat = PreviousEnvironmentFormat
   { _x_names :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ Values currently in scope
   , _x_types :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
