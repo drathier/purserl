@@ -5,7 +5,6 @@ import Prelude
 import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 import Control.Monad (unless)
-import Data.Store (Store)
 import Codec.Serialise (Serialise)
 import Data.Aeson ((.=), (.:))
 import Data.Aeson qualified as A
@@ -86,7 +85,6 @@ data FunctionalDependency = FunctionalDependency
   } deriving (Show, Generic, Eq)
 
 instance NFData FunctionalDependency
-instance Store FunctionalDependency
 instance Serialise FunctionalDependency
 
 instance A.FromJSON FunctionalDependency where
@@ -238,7 +236,6 @@ data NameVisibility
   deriving (Show, Eq, Generic)
 
 instance NFData NameVisibility
-instance Store NameVisibility
 instance Serialise NameVisibility
 
 -- | A flag for whether a name is for an private or public value - only public values will be
@@ -254,7 +251,6 @@ data NameKind
   deriving (Show, Eq, Generic)
 
 instance NFData NameKind
-instance Store NameKind
 instance Serialise NameKind
 
 -- | The kinds of a type
@@ -272,7 +268,6 @@ data TypeKind
   deriving (Show, Eq, Generic)
 
 instance NFData TypeKind
-instance Store TypeKind
 instance Serialise TypeKind
 
 -- | The type ('data' or 'newtype') of a data type declaration
@@ -284,7 +279,6 @@ data DataDeclType
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData DataDeclType
-instance Store DataDeclType
 instance Serialise DataDeclType
 
 showDataDeclType :: DataDeclType -> Text

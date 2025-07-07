@@ -7,7 +7,6 @@ import Prelude
 import Protolude (ordNub, fromMaybe)
 
 import Codec.Serialise (Serialise)
-import Data.Store (Store)
 import Control.Applicative ((<|>))
 import Control.Arrow (first, second)
 import Control.DeepSeq (NFData)
@@ -40,7 +39,6 @@ newtype SkolemScope = SkolemScope { runSkolemScope :: Int }
   deriving (Show, Eq, Ord, A.ToJSON, A.FromJSON, Generic)
 
 instance NFData SkolemScope
-instance Store SkolemScope
 instance Serialise SkolemScope
 
 -- |
@@ -53,7 +51,6 @@ data WildcardData = HoleWildcard Text | UnnamedWildcard | IgnoredWildcard
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData WildcardData
-instance Store WildcardData
 instance Serialise WildcardData
 
 data TypeVarVisibility
@@ -62,7 +59,6 @@ data TypeVarVisibility
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData TypeVarVisibility
-instance Store TypeVarVisibility
 instance Serialise TypeVarVisibility
 
 typeVarVisibilityPrefix :: TypeVarVisibility -> Text
@@ -117,7 +113,6 @@ data Type a
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Type a)
-instance Store a => Store (Type a)
 instance Serialise a => Serialise (Type a)
 
 srcTUnknown :: Int -> SourceType
@@ -181,7 +176,6 @@ data ConstraintData
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData ConstraintData
-instance Store ConstraintData
 instance Serialise ConstraintData
 
 -- | A typeclass constraint
@@ -199,7 +193,6 @@ data Constraint a = Constraint
   } deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Constraint a)
-instance Store a => Store (Constraint a)
 instance Serialise a => Serialise (Constraint a)
 
 srcConstraint :: Qualified (ProperName 'ClassName) -> [SourceType] -> [SourceType] -> Maybe ConstraintData -> SourceConstraint

@@ -9,7 +9,6 @@ module Language.PureScript.AST.Declarations where
 import Prelude
 import Protolude.Exceptions (hush)
 
-import Data.Store (Store)
 import Codec.Serialise (Serialise)
 import Control.DeepSeq (NFData)
 import Data.Functor.Identity (Identity(..))
@@ -166,7 +165,7 @@ importPrim =
       . addDefaultImport (Qualified ByNullSourcePos primModName)
 
 data NameSource = UserNamed | CompilerNamed
-  deriving (Show, Generic, NFData, Serialise, Store)
+  deriving (Show, Generic, NFData, Serialise)
 
 -- |
 -- An item in a list of explicit imports or exports
@@ -205,7 +204,7 @@ data DeclarationRef
   -- elaboration in name desugaring.
   --
   | ReExportRef SourceSpan ExportSource DeclarationRef
-  deriving (Show, Generic, NFData, Serialise, Store)
+  deriving (Show, Generic, NFData, Serialise)
 
 instance Eq DeclarationRef where
   (TypeClassRef _ name) == (TypeClassRef _ name') = name == name'
@@ -245,7 +244,7 @@ data ExportSource =
   { exportSourceImportedFrom :: Maybe ModuleName
   , exportSourceDefinedIn :: ModuleName
   }
-  deriving (Eq, Ord, Show, Generic, NFData, Serialise, Store)
+  deriving (Eq, Ord, Show, Generic, NFData, Serialise)
 
 declRefSourceSpan :: DeclarationRef -> SourceSpan
 declRefSourceSpan (TypeRef ss _ _) = ss
@@ -307,7 +306,7 @@ data ImportDeclarationType
   -- An import with a list of references to hide: `import M hiding (foo)`
   --
   | Hiding [DeclarationRef]
-  deriving (Eq, Show, Generic, Serialise, NFData, Store)
+  deriving (Eq, Show, Generic, Serialise, NFData)
 
 isExplicit :: ImportDeclarationType -> Bool
 isExplicit (Explicit _) = True

@@ -7,7 +7,6 @@ module Language.PureScript.Names where
 
 import Prelude
 
-import Data.Store (Store)
 import Codec.Serialise (Serialise)
 import Control.Applicative ((<|>))
 import Control.Monad.Supply.Class (MonadSupply(..))
@@ -35,7 +34,6 @@ data Name
   deriving (Eq, Ord, Show, Generic)
 
 instance NFData Name
-instance Store Name
 instance Serialise Name
 
 getIdentName :: Name -> Maybe Ident
@@ -75,7 +73,6 @@ data InternalIdentData
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData InternalIdentData
-instance Store InternalIdentData
 instance Serialise InternalIdentData
 
 -- |
@@ -101,7 +98,6 @@ data Ident
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Ident
-instance Store Ident
 instance Serialise Ident
 
 unusedIdent :: Text
@@ -134,7 +130,6 @@ newtype OpName (a :: OpNameType) = OpName { runOpName :: Text }
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData (OpName a)
-instance Store (OpName a)
 instance Serialise (OpName a)
 
 instance ToJSON (OpName a) where
@@ -164,7 +159,6 @@ newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData (ProperName a)
-instance Store (ProperName a)
 instance Serialise (ProperName a)
 
 instance ToJSON (ProperName a) where
@@ -196,7 +190,6 @@ coerceProperName = ProperName . runProperName
 newtype ModuleName = ModuleName Text
   deriving (Show, Eq, Ord, Generic)
   deriving newtype Serialise
-  deriving newtype Store
 
 instance NFData ModuleName
 
@@ -218,7 +211,6 @@ pattern ByNullSourcePos :: QualifiedBy
 pattern ByNullSourcePos = BySourcePos (SourcePos 0 0)
 
 instance NFData QualifiedBy
-instance Store QualifiedBy
 instance Serialise QualifiedBy
 
 isBySourcePos :: QualifiedBy -> Bool
@@ -240,7 +232,6 @@ data Qualified a = Qualified QualifiedBy a
   deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
 
 instance NFData a => NFData (Qualified a)
-instance Store a => Store (Qualified a)
 instance Serialise a => Serialise (Qualified a)
 
 showQualified :: (a -> Text) -> Qualified a -> Text
