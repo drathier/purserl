@@ -33,7 +33,8 @@ instance Serialise SourceAnn where
   decode = do
     tag <- decodeSimple
     case tag of
-      0 -> pure $ SourceAnn NullSourceSpan []
+      0 ->
+        pure $ SourceAnn NullSourceSpan []
       1 -> do
         ss <- decode
         pure $ SourceAnn ss []

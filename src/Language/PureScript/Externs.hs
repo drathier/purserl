@@ -1409,10 +1409,10 @@ moduleToExternsFile _ (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExte
 -- data Module = Module SourceSpan [Comment] ModuleName [Declaration] (Maybe [DeclarationRef])
 moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdents =
   let
-    sortDsByCtor :: Foldable f => f Declaration -> M.Map String [Declaration]
+    sortDsByCtor :: Foldable f => f Declaration -> M.Map T.Text [Declaration]
     sortDsByCtor dsx =
       foldr sortDsByCtorImpl mempty dsx
-    sortDsByCtorImpl :: Declaration -> M.Map String [Declaration] -> M.Map String [Declaration]
+    sortDsByCtorImpl :: Declaration -> M.Map T.Text [Declaration] -> M.Map T.Text [Declaration]
     sortDsByCtorImpl d res =
       case d of
         DataDeclaration _ _ _ _ _ -> M.insertWith (<>) "DataDeclaration" [d] res
