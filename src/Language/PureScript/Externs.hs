@@ -22,7 +22,9 @@ module Language.PureScript.Externs
 
 import Prelude
 
-import Codec.Serialise (Serialise, serialise)
+import Codec.Serialise (Serialise, serialise, encode, decode)
+import Codec.Serialise.Encoding (encodeString)
+import Codec.Serialise.Decoding (decodeString)
 import Control.DeepSeq (NFData)
 import Control.Monad (join)
 import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
@@ -111,7 +113,41 @@ data ExternsFile = ExternsFile
   -- ^ Shapes of things in this module
   } deriving (Show, Generic, NFData)
 
-instance Serialise ExternsFile
+-- instance Serialise ExternsFile
+instance Serialise ExternsFile where
+  encode ef =
+    encodeString "efVersion" <> encode (efVersion ef) <>
+    encodeString "efModuleName" <> encode (efModuleName ef) <>
+    encodeString "efExports" <> encode (efExports ef) <>
+    encodeString "efImports" <> encode (efImports ef) <>
+    encodeString "efFixities" <> encode (efFixities ef) <>
+    encodeString "efTypeFixities" <> encode (efTypeFixities ef) <>
+    encodeString "efDeclarations" <> encode (efDeclarations ef) <>
+    encodeString "efSourceSpan" <> encode (efSourceSpan ef) <>
+    encodeString "efUpstreamCacheShapes" <> encode (efUpstreamCacheShapes ef) <>
+    encodeString "efOurCacheShapes" <> encode (efOurCacheShapes ef)
+  decode = do
+     "efVersion" <- decodeString
+     efVersion <- decode
+     "efModuleName" <- decodeString
+     efModuleName <- decode
+     "efExports" <- decodeString
+     efExports <- decode
+     "efImports" <- decodeString
+     efImports <- decode
+     "efFixities" <- decodeString
+     efFixities <- decode
+     "efTypeFixities" <- decodeString
+     efTypeFixities <- decode
+     "efDeclarations" <- decodeString
+     efDeclarations <- decode
+     "efSourceSpan" <- decodeString
+     efSourceSpan <- decode
+     "efUpstreamCacheShapes" <- decodeString
+     efUpstreamCacheShapes <- decode
+     "efOurCacheShapes" <- decodeString
+     efOurCacheShapes <- decode
+     pure (ExternsFile efVersion efModuleName efExports efImports efFixities efTypeFixities efDeclarations efSourceSpan efUpstreamCacheShapes efOurCacheShapes)
 
 instance Eq ExternsFile where
   a == b = serialise a == serialise b
