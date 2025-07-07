@@ -8,6 +8,7 @@ import Data.Aeson.TH qualified as A
 import Data.List.NonEmpty qualified as NEL
 import qualified System.Console.ANSI as ANSI
 import Data.Text (Text)
+import Data.Text qualified as T
 
 import Language.PureScript qualified as P
 
@@ -54,7 +55,7 @@ toJSONError maybeCodeColor verbose level files e =
             (P.renderBox (P.prettyPrintSingleError (P.PPEOptions maybeCodeColor verbose level False mempty files) (P.stripModuleAndSpan e)))
             (P.errorCode e)
             (P.errorDocUri e)
-            (P.spanName <$> fmap NEL.head spans)
+            (T.unpack . P.spanName <$> fmap NEL.head spans)
             (P.runModuleName <$> P.errorModule e)
             (toSuggestion e)
             (maybe [] NEL.toList spans)

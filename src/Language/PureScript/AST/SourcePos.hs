@@ -77,7 +77,7 @@ instance A.FromJSON SourcePos where
     return $ SourcePos line col
 
 data SourceSpan = SourceSpan
-  { spanName :: !String
+  { spanName :: !Text
     -- ^ Source name
   , spanStart :: !SourcePos
     -- ^ Start of the span
@@ -96,7 +96,7 @@ displayStartEndPosShort sp =
 
 displaySourceSpan :: FilePath -> SourceSpan -> Text
 displaySourceSpan relPath sp =
-  T.pack (makeRelative relPath (spanName sp)) <> ":" <>
+  T.pack (makeRelative relPath (T.unpack $ spanName sp)) <> ":" <>
     displayStartEndPosShort sp
 
 instance A.ToJSON SourceSpan where
@@ -125,7 +125,7 @@ instance A.FromJSON SourceAnn where
       o .: "ss"  <*>
       o .: "comments"
 
-internalModuleSourceSpan :: String -> SourceSpan
+internalModuleSourceSpan :: T.Text -> SourceSpan
 internalModuleSourceSpan name = SourceSpan name (SourcePos 0 0) (SourcePos 0 0)
 
 nullSourceSpan :: SourceSpan

@@ -8,6 +8,7 @@ import Prelude.Compat
 import qualified Data.Aeson.TH as A
 import qualified Data.List.NonEmpty as NEL
 import Data.Text (Text)
+import Data.Text qualified as T
 
 import qualified Language.PureScript as P
 import Language.PureScript.Erl.Errors.Types
@@ -55,7 +56,7 @@ toJSONError verbose level e =
             (E.renderBox (E.prettyPrintSingleError (E.PPEOptions Nothing verbose level False mempty []) (E.stripModuleAndSpan e)))
             (E.errorCode e)
             (E.errorDocUri e)
-            (P.spanName <$> fmap NEL.head spans)
+            (T.unpack . P.spanName <$> fmap NEL.head spans)
             (P.runModuleName <$> E.errorModule e)
             (maybe [] NEL.toList spans)
   where

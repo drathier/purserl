@@ -1856,10 +1856,10 @@ prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileCo
     . NEL.filter ((> 0) . sourcePosLine . spanStart)
     where
     renderFile :: NonEmpty SourceSpan -> Box.Box
-    renderFile sss = maybe Box.nullBox (linesToBox . T.lines) $ lookup fileName fileContents
+    renderFile sss = maybe Box.nullBox (linesToBox . T.lines) $ lookup (T.unpack fileName) fileContents
       where
       fileName = spanName $ NEL.head sss
-      header = lineS . (<> ":") . makeRelative relPath $ fileName
+      header = lineS . (<> ":") . makeRelative relPath $ T.unpack fileName
       lineBlocks = makeLineBlocks $ NEL.groupWith1 (sourcePosLine . spanStart) sss
 
       linesToBox fileLines = Box.moveUp 1 $ header Box.// body

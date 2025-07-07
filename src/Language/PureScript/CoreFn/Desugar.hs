@@ -10,6 +10,7 @@ import Data.Maybe (mapMaybe)
 import Data.Tuple (swap)
 import Data.List.NonEmpty qualified as NEL
 import Data.Map qualified as M
+import Data.Text qualified as T
 
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.SourcePos (pattern NullSourceSpan, SourceSpan(..))
@@ -40,7 +41,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
       reExps = M.map ordNub $ M.unionsWith (++) (mapMaybe (fmap reExportsToCoreFn . toReExportRef) exps)
       externs = ordNub $ mapMaybe externToCoreFn decls
       decls' = concatMap declToCoreFn decls
-  in Module modSS coms mn (spanName modSS) imports' exps' reExps externs decls'
+  in Module modSS coms mn (T.unpack $ spanName modSS) imports' exps' reExps externs decls'
   where
   -- Creates a map from a module name to the re-export references defined in
   -- that module.

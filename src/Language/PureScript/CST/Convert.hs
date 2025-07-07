@@ -24,6 +24,7 @@ import Data.Functor (($>))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (isJust, fromJust, mapMaybe)
 import Data.Text qualified as Text
+import Data.Text qualified as T
 import Language.PureScript.AST qualified as AST
 import Language.PureScript.AST.Declarations.ChainId (mkChainId)
 import Language.PureScript.AST.SourcePos qualified as Pos
@@ -51,7 +52,7 @@ comments = mapMaybe comment
 sourcePos :: SourcePos -> Pos.SourcePos
 sourcePos (SourcePos line col) = Pos.SourcePos line col
 
-sourceSpan :: String -> SourceRange -> Pos.SourceSpan
+sourceSpan :: T.Text -> SourceRange -> Pos.SourceSpan
 sourceSpan name (SourceRange start end) = Pos.SourceSpan name (sourcePos start) (sourcePos end)
 
 widenLeft :: TokenAnn -> Pos.SourceAnn -> Pos.SourceAnn
@@ -60,22 +61,22 @@ widenLeft ann (Pos.SourceAnn sp _) =
   ( Pos.widenSourceSpan (sourceSpan (Pos.spanName sp) $ tokRange ann) sp)
   (comments $ tokLeadingComments ann)
 
-sourceAnnCommented :: String -> SourceToken -> SourceToken -> Pos.SourceAnn
+sourceAnnCommented :: T.Text -> SourceToken -> SourceToken -> Pos.SourceAnn
 sourceAnnCommented fileName (SourceToken ann1 _) (SourceToken ann2 _) =
   Pos.SourceAnn
   ( Pos.SourceSpan fileName (sourcePos $ srcStart $ tokRange ann1) (sourcePos $ srcEnd $ tokRange ann2))
   (comments $ tokLeadingComments ann1)
 
-sourceAnn :: String -> SourceToken -> SourceToken -> Pos.SourceAnn
+sourceAnn :: T.Text -> SourceToken -> SourceToken -> Pos.SourceAnn
 sourceAnn fileName (SourceToken ann1 _) (SourceToken ann2 _) =
   Pos.SourceAnn
   ( Pos.SourceSpan fileName (sourcePos $ srcStart $ tokRange ann1) (sourcePos $ srcEnd $ tokRange ann2))
   ([])
 
-sourceName :: String -> Name a -> Pos.SourceAnn
+sourceName :: T.Text -> Name a -> Pos.SourceAnn
 sourceName fileName a = sourceAnnCommented fileName (nameTok a) (nameTok a)
 
-sourceQualName :: String -> QualifiedName a -> Pos.SourceAnn
+sourceQualName :: T.Text -> QualifiedName a -> Pos.SourceAnn
 sourceQualName fileName a = sourceAnnCommented fileName (qualTok a) (qualTok a)
 
 moduleName :: Token -> Maybe N.ModuleName
@@ -97,13 +98,13 @@ qualified q = N.Qualified qb (qualName q)
 ident :: Ident -> N.Ident
 ident = N.Ident . getIdent
 
-convertType :: String -> Type a -> T.SourceType
+convertType :: T.Text -> Type a -> T.SourceType
 convertType = convertType' False
 
-convertVtaType :: String -> Type a -> T.SourceType
+convertVtaType :: T.Text -> Type a -> T.SourceType
 convertVtaType = convertType' True
 
-convertType' :: Bool -> String -> Type a -> T.SourceType
+convertType' :: Bool -> T.Text -> Type a -> T.SourceType
 convertType' withinVta fileName = go
   where
   goRow (Row labels tl) b = do
@@ -201,7 +202,7 @@ convertType' withinVta fileName = go
         ann = uncurry (sourceAnnCommented fileName) rng
       T.setAnnForType ann $ Env.kindRow a'
 
-convertConstraint :: Bool -> String -> Constraint a -> T.SourceConstraint
+convertConstraint :: Bool -> T.Text -> Constraint a -> T.SourceConstraint
 convertConstraint withinVta fileName = go
   where
   go = \case
@@ -210,7 +211,7 @@ convertConstraint withinVta fileName = go
       T.Constraint ann (qualified name) [] (convertType' withinVta fileName <$> args) Nothing
     ConstraintParens _ (Wrapped _ c _) -> go c
 
-convertGuarded :: String -> Guarded a -> [AST.GuardedExpr]
+convertGuarded :: T.Text -> Guarded a -> [AST.GuardedExpr]
 convertGuarded fileName = \case
   Unconditional _ x -> [AST.GuardedExpr [] (convertWhere fileName x)]
   Guarded gs -> (\(GuardedExpr _ ps _ x) -> AST.GuardedExpr (p <$> toList ps) (convertWhere fileName x)) <$> NE.toList gs
@@ -219,7 +220,7 @@ convertGuarded fileName = \case
   p (PatternGuard Nothing x) = AST.ConditionGuard (go x)
   p (PatternGuard (Just (b, _)) x) = AST.PatternGuard (convertBinder fileName b) (go x)
 
-convertWhere :: String -> Where a -> AST.Expr
+convertWhere :: T.Text -> Where a -> AST.Expr
 convertWhere fileName = \case
   Where expr Nothing -> convertExpr fileName expr
   Where expr (Just (_, bs)) -> do
@@ -227,7 +228,7 @@ convertWhere fileName = \case
     let Pos.SourceAnn q1 q2 = ann
     AST.PositionedValue q1 q2 . AST.Let AST.FromWhere (convertLetBinding fileName <$> NE.toList bs) $ convertExpr fileName expr
 
-convertLetBinding :: String -> LetBinding a -> AST.Declaration
+convertLetBinding :: T.Text -> LetBinding a -> AST.Declaration
 convertLetBinding fileName = \case
   LetBindingSignature _ lbl ->
     convertSignature fileName lbl
@@ -238,7 +239,7 @@ convertLetBinding fileName = \case
     let ann = uncurry (sourceAnnCommented fileName) $ letBindingRange binding
     AST.BoundValueDeclaration ann (convertBinder fileName a) (convertWhere fileName b)
 
-convertExpr :: forall a. String -> Expr a -> AST.Expr
+convertExpr :: forall a. T.Text -> Expr a -> AST.Expr
 convertExpr fileName = go
   where
   positioned =
@@ -378,7 +379,7 @@ convertExpr fileName = go
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
       positionedSA ann . AST.Ado (moduleName $ tokValue kw) (goDoStatement <$> stms) $ go a
 
-convertBinder :: String -> Binder a -> AST.Binder
+convertBinder :: T.Text -> Binder a -> AST.Binder
 convertBinder fileName = go
   where
   positioned =
@@ -450,7 +451,7 @@ convertBinder fileName = go
           binder' -> k binder'
       positionedSA ann $ loop go binder
 
-convertDeclaration :: String -> Declaration a -> [AST.Declaration]
+convertDeclaration :: T.Text -> Declaration a -> [AST.Declaration]
 convertDeclaration fileName decl = case decl of
   DeclData _ (DataHead _ a vars) bd -> do
     let
@@ -626,14 +627,14 @@ convertDeclaration fileName decl = case decl of
     else
       (fst $ qualRange cls, snd $ typeRange $ last args)
 
-convertSignature :: String -> Labeled (Name Ident) (Type a) -> AST.Declaration
+convertSignature :: T.Text -> Labeled (Name Ident) (Type a) -> AST.Declaration
 convertSignature fileName (Labeled a _ b) = do
   let
     b' = convertType fileName b
     ann = widenLeft (tokAnn $ nameTok a) $ T.getAnnForType b'
   AST.TypeDeclaration $ AST.TypeDeclarationData ann (ident $ nameValue a) b'
 
-convertValueBindingFields :: String -> Pos.SourceAnn -> ValueBindingFields a -> AST.Declaration
+convertValueBindingFields :: T.Text -> Pos.SourceAnn -> ValueBindingFields a -> AST.Declaration
 convertValueBindingFields fileName ann (ValueBindingFields a bs c) = do
   let
     bs' = convertBinder fileName <$> bs
@@ -641,7 +642,7 @@ convertValueBindingFields fileName ann (ValueBindingFields a bs c) = do
   AST.ValueDeclaration $ AST.ValueDeclarationData ann (ident $ nameValue a) Env.Public bs' cs'
 
 convertImportDecl
-  :: String
+  :: T.Text
   -> ImportDecl a
   -> (Pos.SourceAnn, N.ModuleName, AST.ImportDeclarationType, Maybe N.ModuleName)
 convertImportDecl fileName decl@(ImportDecl _ _ modName mbNames mbQual) = do
@@ -656,7 +657,7 @@ convertImportDecl fileName decl@(ImportDecl _ _ modName mbNames mbQual) = do
           else AST.Explicit imps'
   (ann, nameValue modName, importTy, nameValue . snd <$> mbQual)
 
-convertImport :: String -> Import a -> AST.DeclarationRef
+convertImport :: T.Text -> Import a -> AST.DeclarationRef
 convertImport fileName imp = case imp of
   ImportValue _ a ->
     AST.ValueRef ann . ident $ nameValue a
@@ -678,7 +679,7 @@ convertImport fileName imp = case imp of
   where
   ann = sourceSpan fileName . toSourceRange $ importRange imp
 
-convertExport :: String -> Export a -> AST.DeclarationRef
+convertExport :: T.Text -> Export a -> AST.DeclarationRef
 convertExport fileName export = case export of
   ExportValue _ a ->
     AST.ValueRef ann . ident $ nameValue a
@@ -702,7 +703,7 @@ convertExport fileName export = case export of
   where
   ann = sourceSpan fileName . toSourceRange $ exportRange export
 
-convertModule :: String -> Module a -> AST.Module
+convertModule :: T.Text -> Module a -> AST.Module
 convertModule fileName module'@(Module _ _ modName exps _ imps decls _) = do
   let
     -- ann = let Pos.SourceAnn a b = moduleRange module' in sourceAnnCommented fileName a b
