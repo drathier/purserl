@@ -6,6 +6,7 @@ module Language.PureScript.AST.SourcePos where
 
 import Prelude
 
+import Data.Store (Store)
 import Codec.Serialise (Serialise, encode, decode)
 import Codec.Serialise.Encoding (encodeSimple)
 import Codec.Serialise.Decoding (decodeSimple)
@@ -22,6 +23,7 @@ import System.FilePath (makeRelative)
 data SourceAnn = SourceAnn !SourceSpan ![Comment]
   deriving (Show, Eq, Ord, Generic, NFData)
 
+instance Store SourceAnn
 instance Serialise SourceAnn where
   encode sa =
     case sa of
@@ -56,7 +58,7 @@ data SourcePos = SourcePos
     -- ^ Line number
   , sourcePosColumn :: !Int
     -- ^ Column number
-  } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Show, Eq, Ord, Generic, NFData, Serialise, Store)
 
 displaySourcePos :: SourcePos -> Text
 displaySourcePos sp =
@@ -84,7 +86,7 @@ data SourceSpan = SourceSpan
     -- ^ Start of the span
   , spanEnd :: !SourcePos
     -- ^ End of the span
-  } deriving (Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Eq, Ord, Generic, NFData, Serialise, Store)
 
 instance Show SourceSpan where
   show NullSourceSpan = "s0"

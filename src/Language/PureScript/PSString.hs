@@ -14,6 +14,7 @@ module Language.PureScript.PSString
 
 import Prelude
 import GHC.Generics (Generic)
+import Data.Store (Store)
 import Codec.Serialise (Serialise, encode, decode)
 import Codec.Serialise qualified as Serialise
 import Codec.Serialise.Encoding (encodeSimple)
@@ -58,6 +59,7 @@ newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
   deriving (Eq, Ord, Semigroup, Monoid, Generic)
 
 instance NFData PSString
+instance Store PSString
 instance Serialise PSString where
   encode ps =
     case decodeString ps of

@@ -6,6 +6,7 @@ module Language.PureScript.AST.Declarations.ChainId
 import Prelude
 import Language.PureScript.AST.SourcePos qualified as Pos
 import Control.DeepSeq (NFData)
+import Data.Store (Store)
 import Codec.Serialise (Serialise)
 import Data.Text qualified as T
 
@@ -15,7 +16,7 @@ import Data.Text qualified as T
 -- This data is used to determine which instances are part of
 -- the same instance chain.
 newtype ChainId = ChainId (T.Text, Pos.SourcePos)
-  deriving (Eq, Ord, Show, NFData, Serialise)
+  deriving (Eq, Ord, Show, NFData, Serialise, Store)
 
 mkChainId :: T.Text -> Pos.SourcePos -> ChainId
 mkChainId fileName startingSourcePos = ChainId (fileName, startingSourcePos)

@@ -10,6 +10,7 @@ import Codec.Serialise (Serialise)
 import Control.DeepSeq (NFData)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import Data.Store (Store)
 
 import Data.Aeson.TH (Options(..), SumEncoding(..), defaultOptions, deriveJSON)
 
@@ -19,6 +20,7 @@ data Comment
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Comment
+instance Store Comment
 instance Serialise Comment
 
 $(deriveJSON (defaultOptions { sumEncoding = ObjectWithSingleField }) ''Comment)
