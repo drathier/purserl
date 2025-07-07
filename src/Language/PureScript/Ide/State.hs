@@ -312,19 +312,19 @@ resolveDocumentationForModule (P.Module _ moduleComments moduleName sdecls _) =
   where
   extractDeclComments :: P.Declaration -> [(P.Name, [P.Comment])]
   extractDeclComments = \case
-    P.DataDeclaration (_, cs) _ ctorName _ ctors ->
+    P.DataDeclaration (P.SourceAnn _ cs) _ ctorName _ ctors ->
       (P.TyName ctorName, cs) : map dtorComments ctors
-    P.TypeClassDeclaration (_, cs) tyClassName _ _ _ members ->
+    P.TypeClassDeclaration (P.SourceAnn _ cs) tyClassName _ _ _ members ->
       (P.TyClassName tyClassName, cs) : concatMap extractDeclComments members
     decl ->
-      maybe [] (\name' -> [(name', snd (P.declSourceAnn decl))]) (name decl)
+      maybe [] (\name' -> [(name', P.sasnd (P.declSourceAnn decl))]) (name decl)
 
   comments :: Map P.Name [P.Comment]
   comments = Map.insert (P.ModName moduleName) moduleComments $
     Map.fromListWith (flip (<>)) $ concatMap extractDeclComments sdecls
 
   dtorComments :: P.DataConstructorDeclaration -> (P.Name, [P.Comment])
-  dtorComments dcd = (P.DctorName (P.dataCtorName dcd), snd (P.dataCtorAnn dcd))
+  dtorComments dcd = (P.DctorName (P.dataCtorName dcd), P.sasnd (P.dataCtorAnn dcd))
 
   name :: P.Declaration -> Maybe P.Name
   name (P.TypeDeclaration d) = Just $ P.IdentName $ P.tydeclIdent d

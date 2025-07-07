@@ -14,7 +14,7 @@ import Data.Maybe (fromJust)
 import Data.List qualified as List
 import Data.Graph (SCC(..), graphFromEdges, reachable, stronglyConnComp, dfs, Vertex, edges)
 import Data.Set qualified as S
-import Language.PureScript.AST (Declaration(..), ErrorMessageHint(..), Module(..), SourceSpan)
+import Language.PureScript.AST (Declaration(..), ErrorMessageHint(..), Module(..), SourceSpan, SourceAnn(..))
 import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', errorMessage'', parU)
@@ -74,7 +74,7 @@ sortModules dependencyDepth toSig ms = do
 usedModules :: Declaration -> Maybe (ModuleName, SourceSpan)
 -- Regardless of whether an imported module is qualified we still need to
 -- take into account its import to build an accurate list of dependencies.
-usedModules (ImportDeclaration (ss, _) mn _ _) = pure (mn, ss)
+usedModules (ImportDeclaration (SourceAnn ss _) mn _ _) = pure (mn, ss)
 usedModules _ = Nothing
 
 -- | Convert a strongly connected component of the module graph to a module

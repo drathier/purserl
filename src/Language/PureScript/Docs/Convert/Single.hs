@@ -143,7 +143,7 @@ getDeclarationTitle _ = Nothing
 
 -- | Create a basic Declaration value.
 mkDeclaration :: P.SourceAnn -> Text -> DeclarationInfo -> Declaration
-mkDeclaration (ss, com) title info =
+mkDeclaration (P.SourceAnn ss com) title info =
   Declaration { declTitle      = title
               , declComments   = convertComments com
               , declSourceSpan = Just ss -- TODO: make this non-optional when we next break the format
@@ -171,7 +171,7 @@ convertDeclaration (P.DataDeclaration sa dtype _ args ctors) title =
   children = map convertCtor ctors
   convertCtor :: P.DataConstructorDeclaration -> ChildDeclaration
   convertCtor P.DataConstructorDeclaration{..} =
-    let (sourceSpan, comments) = dataCtorAnn
+    let P.SourceAnn sourceSpan comments = dataCtorAnn
     in ChildDeclaration (P.runProperName dataCtorName) (convertComments comments) (Just sourceSpan) (ChildDataConstructor (fmap (($> ()) . snd) dataCtorFields))
 convertDeclaration (P.ExternDataDeclaration sa _ kind') title =
   basicDeclaration sa title (ExternDataDeclaration (kind' $> ()) [])
@@ -183,11 +183,11 @@ convertDeclaration (P.TypeClassDeclaration sa _ args implies fundeps ds) title =
   args' = fmap (fmap (fmap ($> ()))) args
   info = TypeClassDeclaration args' (fmap ($> ()) implies) (convertFundepsToStrings args' fundeps)
   children = map convertClassMember ds
-  convertClassMember (P.TypeDeclaration (P.TypeDeclarationData (ss, com) ident' ty)) =
+  convertClassMember (P.TypeDeclaration (P.TypeDeclarationData (P.SourceAnn ss com) ident' ty)) =
     ChildDeclaration (P.showIdent ident') (convertComments com) (Just ss) (ChildTypeClassMember (ty $> ()))
   convertClassMember _ =
     P.internalError "convertDeclaration: Invalid argument to convertClassMember."
-convertDeclaration (P.TypeInstanceDeclaration (ss, com) _ _ _ _ constraints className tys _) title =
+convertDeclaration (P.TypeInstanceDeclaration (P.SourceAnn ss com) _ _ _ _ constraints className tys _) title =
   Just (Left ((classNameString, AugmentClass) : map (, AugmentType) typeNameStrings, AugmentChild childDecl))
   where
   classNameString = unQual className
@@ -206,12 +206,12 @@ convertDeclaration (P.TypeFixityDeclaration sa fixity (P.Qualified mn alias) _) 
 convertDeclaration (P.KindDeclaration sa keyword _ kind) title =
   Just $ Left ([(title, AugmentType), (title, AugmentClass)], AugmentKindSig ksi)
   where
-    comms = convertComments $ snd sa
+    comms = convertComments $ P.sasnd sa
     ksi = KindSignatureInfo { ksiComments = comms, ksiKeyword = keyword, ksiKind = kind $> () }
 convertDeclaration (P.RoleDeclaration P.RoleDeclarationData{..}) title =
   Just $ Left ([(title, AugmentType)], AugmentRole comms rdeclRoles)
   where
-    comms = convertComments $ snd rdeclSourceAnn
+    comms = convertComments $ P.sasnd rdeclSourceAnn
 
 convertDeclaration _ _ = Nothing
 

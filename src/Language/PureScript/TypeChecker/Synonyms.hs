@@ -17,7 +17,7 @@ import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
 import Data.Text (Text)
 import Language.PureScript.Environment (Environment(..), TypeKind)
-import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), SourceSpan, errorMessage')
+import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), SourceSpan, errorMessage', safst)
 import Language.PureScript.Names (ProperName, ProperNameType(..), Qualified)
 import Language.PureScript.TypeChecker.Monad (CheckState, getEnv)
 import Language.PureScript.Types (SourceType, Type(..), completeBinderList, everywhereOnTypesTopDownM, getAnnForType, replaceAllTypeVars)
@@ -35,7 +35,7 @@ replaceAllTypeSynonyms'
 replaceAllTypeSynonyms' syns kinds = everywhereOnTypesTopDownM try
   where
   try :: SourceType -> Either MultipleErrors SourceType
-  try t = fromMaybe t <$> go (fst $ getAnnForType t) 0 [] [] t
+  try t = fromMaybe t <$> go (safst $ getAnnForType t) 0 [] [] t
 
   go :: SourceSpan -> Int -> [SourceType] -> [SourceType] -> SourceType -> Either MultipleErrors (Maybe SourceType)
   go ss c kargs args (TypeConstructor _ ctor)

@@ -39,25 +39,25 @@ findExportable (Module _ _ mn ds _) =
     }
 
   updateExports :: Exports -> Declaration -> m Exports
-  updateExports exps (TypeClassDeclaration (ss, _) tcn _ _ _ ds') = do
+  updateExports exps (TypeClassDeclaration (SourceAnn ss _) tcn _ _ _ ds') = do
     exps' <- rethrowWithPosition ss $ exportTypeClass ss Internal exps tcn source
     foldM go exps' ds'
     where
-    go exps'' (TypeDeclaration (TypeDeclarationData (ss', _) name _)) = exportValue ss' exps'' name source
+    go exps'' (TypeDeclaration (TypeDeclarationData (SourceAnn ss' _) name _)) = exportValue ss' exps'' name source
     go _ _ = internalError "Invalid declaration in TypeClassDeclaration"
-  updateExports exps (DataDeclaration (ss, _) _ tn _ dcs) =
+  updateExports exps (DataDeclaration (SourceAnn ss _) _ tn _ dcs) =
     exportType ss Internal exps tn (map dataCtorName dcs) source
-  updateExports exps (TypeSynonymDeclaration (ss, _) tn _ _) =
+  updateExports exps (TypeSynonymDeclaration (SourceAnn ss _) tn _ _) =
     exportType ss Internal exps tn [] source
-  updateExports exps (ExternDataDeclaration (ss, _) tn _) =
+  updateExports exps (ExternDataDeclaration (SourceAnn ss _) tn _) =
     exportType ss Internal exps tn [] source
   updateExports exps (ValueDeclaration vd) =
-    exportValue (fst (valdeclSourceAnn vd)) exps (valdeclIdent vd) source
-  updateExports exps (ValueFixityDeclaration (ss, _) _ _ op) =
+    exportValue (safst (valdeclSourceAnn vd)) exps (valdeclIdent vd) source
+  updateExports exps (ValueFixityDeclaration (SourceAnn ss _) _ _ op) =
     exportValueOp ss exps op source
-  updateExports exps (TypeFixityDeclaration (ss, _) _ _ op) =
+  updateExports exps (TypeFixityDeclaration (SourceAnn ss _) _ _ op) =
     exportTypeOp ss exps op source
-  updateExports exps (ExternDeclaration (ss, _) name _) =
+  updateExports exps (ExternDeclaration (SourceAnn ss _) name _) =
     exportValue ss exps name source
   updateExports exps _ = return exps
 

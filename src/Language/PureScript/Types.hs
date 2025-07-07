@@ -23,7 +23,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
-import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn, SourceSpan)
+import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn(..), SourceSpan)
 import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName)
 import Language.PureScript.Label (Label)
@@ -686,7 +686,7 @@ srcInstanceType
   -> [SourceType]
   -> SourceType
 srcInstanceType ss vars className tys
-  = setAnnForType (ss, [])
+  = setAnnForType (SourceAnn ss [])
   . flip (foldr $ \(tv, k) ty -> srcForAll TypeVarInvisible tv (Just k) ty Nothing) vars
   . flip (foldl' srcTypeApp) tys
   $ srcTypeConstructor $ coerceProperName <$> className

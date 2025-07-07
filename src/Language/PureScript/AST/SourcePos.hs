@@ -17,7 +17,11 @@ import Data.Text qualified as T
 import System.FilePath (makeRelative)
 
 -- | Source annotation - position information and comments.
-type SourceAnn = (SourceSpan, [Comment])
+data SourceAnn = SourceAnn !SourceSpan ![Comment]
+  deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+
+safst (SourceAnn a _) = a
+sasnd (SourceAnn _ b) = b
 
 -- | Source position information
 data SourcePos = SourcePos
@@ -53,7 +57,6 @@ data SourceSpan = SourceSpan
     -- ^ Start of the span
   , spanEnd :: SourcePos
     -- ^ End of the span
-  -- } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
   } deriving (Eq, Ord, Generic, NFData, Serialise)
 
 instance Show SourceSpan where
@@ -84,6 +87,18 @@ instance A.FromJSON SourceSpan where
       o .: "start" <*>
       o .: "end"
 
+instance A.ToJSON SourceAnn where
+  toJSON (SourceAnn ss c) =
+    A.object [ "ss"  .= ss
+             , "comments" .= c
+             ]
+
+instance A.FromJSON SourceAnn where
+  parseJSON = A.withObject "SourceAnn" $ \o ->
+    SourceAnn     <$>
+      o .: "ss"  <*>
+      o .: "comments"
+
 internalModuleSourceSpan :: String -> SourceSpan
 internalModuleSourceSpan name = SourceSpan name (SourcePos 0 0) (SourcePos 0 0)
 
@@ -91,17 +106,17 @@ nullSourceSpan :: SourceSpan
 nullSourceSpan = internalModuleSourceSpan ""
 
 nullSourceAnn :: SourceAnn
-nullSourceAnn = (nullSourceSpan, [])
+nullSourceAnn = SourceAnn nullSourceSpan []
 
 pattern NullSourceSpan :: SourceSpan
 pattern NullSourceSpan = SourceSpan "" (SourcePos 0 0) (SourcePos 0 0)
 
 pattern NullSourceAnn :: SourceAnn
-pattern NullSourceAnn = (NullSourceSpan, [])
+pattern NullSourceAnn = SourceAnn NullSourceSpan []
 
 nonEmptySpan :: SourceAnn -> Maybe SourceSpan
-nonEmptySpan (NullSourceSpan, _) = Nothing
-nonEmptySpan (ss, _) = Just ss
+nonEmptySpan (SourceAnn NullSourceSpan _) = Nothing
+nonEmptySpan (SourceAnn ss _) = Just ss
 
 widenSourceSpan :: SourceSpan -> SourceSpan -> SourceSpan
 widenSourceSpan NullSourceSpan b = b
@@ -113,4 +128,4 @@ widenSourceSpan (SourceSpan n1 s1 e1) (SourceSpan n2 s2 e2) =
     | otherwise = n1
 
 widenSourceAnn :: SourceAnn -> SourceAnn -> SourceAnn
-widenSourceAnn (s1, _) (s2, _) = (widenSourceSpan s1 s2, [])
+widenSourceAnn (SourceAnn s1 _) (SourceAnn s2 _) = SourceAnn (widenSourceSpan s1 s2) []

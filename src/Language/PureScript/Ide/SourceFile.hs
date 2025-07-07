@@ -71,32 +71,32 @@ extractSpans
   -> [(IdeNamespaced, P.SourceSpan)]
   -- ^ Declarations and their source locations
 extractSpans d = case d of
-  P.ValueDecl (ss, _) i _ _ _ ->
+  P.ValueDecl (P.SourceAnn ss _) i _ _ _ ->
     [(IdeNamespaced IdeNSValue (P.runIdent i), ss)]
-  P.TypeSynonymDeclaration (ss, _) name _ _ ->
+  P.TypeSynonymDeclaration (P.SourceAnn ss _) name _ _ ->
     [(IdeNamespaced IdeNSType (P.runProperName name), ss)]
-  P.TypeClassDeclaration (ss, _) name _ _ _ members ->
+  P.TypeClassDeclaration (P.SourceAnn ss _) name _ _ _ members ->
     (IdeNamespaced IdeNSType (P.runProperName name), ss) : concatMap extractSpans' members
-  P.DataDeclaration (ss, _) _ name _ ctors ->
+  P.DataDeclaration (P.SourceAnn ss _) _ name _ ctors ->
     (IdeNamespaced IdeNSType (P.runProperName name), ss) : map dtorSpan ctors
-  P.FixityDeclaration (ss, _) (Left (P.ValueFixity _ _ opName)) ->
+  P.FixityDeclaration (P.SourceAnn ss _) (Left (P.ValueFixity _ _ opName)) ->
     [(IdeNamespaced IdeNSValue (P.runOpName opName), ss)]
-  P.FixityDeclaration (ss, _) (Right (P.TypeFixity _ _ opName)) ->
+  P.FixityDeclaration (P.SourceAnn ss _) (Right (P.TypeFixity _ _ opName)) ->
     [(IdeNamespaced IdeNSType (P.runOpName opName), ss)]
-  P.ExternDeclaration (ss, _) ident _ ->
+  P.ExternDeclaration (P.SourceAnn ss _) ident _ ->
     [(IdeNamespaced IdeNSValue (P.runIdent ident), ss)]
-  P.ExternDataDeclaration (ss, _) name _ ->
+  P.ExternDataDeclaration (P.SourceAnn ss _) name _ ->
     [(IdeNamespaced IdeNSType (P.runProperName name), ss)]
   _ -> []
   where
     dtorSpan :: P.DataConstructorDeclaration -> (IdeNamespaced, P.SourceSpan)
-    dtorSpan P.DataConstructorDeclaration{ P.dataCtorName = name, P.dataCtorAnn = (ss, _) } =
+    dtorSpan P.DataConstructorDeclaration{ P.dataCtorName = name, P.dataCtorAnn = (P.SourceAnn ss _) } =
       (IdeNamespaced IdeNSValue (P.runProperName name), ss)
     -- We need this special case to be able to also get the position info for
     -- typeclass member functions. Typedeclarations would clash with value
     -- declarations for non-typeclass members, which is why we can't handle them
     -- in extractSpans.
     extractSpans' dP = case dP of
-      P.TypeDeclaration (P.TypeDeclarationData (ss', _) ident _) ->
+      P.TypeDeclaration (P.TypeDeclarationData (P.SourceAnn ss' _) ident _) ->
         [(IdeNamespaced IdeNSValue (P.runIdent ident), ss')]
       _ -> []

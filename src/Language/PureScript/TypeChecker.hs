@@ -88,7 +88,7 @@ checkRoleDeclaration
   => ModuleName
   -> RoleDeclarationData
   -> m ()
-checkRoleDeclaration moduleName (RoleDeclarationData (ss, _) name declaredRoles) = do
+checkRoleDeclaration moduleName (RoleDeclarationData (SourceAnn ss _) name declaredRoles) = do
   warnAndRethrow (addHint (ErrorInRoleDeclaration name) . addHint (positionedError ss)) $ do
     env <- getEnv
     let qualName = Qualified (ByModuleName moduleName) name
@@ -257,7 +257,7 @@ typeCheckAll
 typeCheckAll moduleName = traverse go
   where
   go :: Declaration -> m Declaration
-  go (DataDeclaration sa@(ss, _) dtype name args dctors) = do
+  go (DataDeclaration sa@(SourceAnn ss _) dtype name args dctors) = do
     warnAndRethrow (addHint (ErrorInTypeConstructor name) . addHint (positionedError ss)) $ do
       when (dtype == Newtype) $ void $ checkNewtype name dctors
       checkDuplicateTypeArguments $ map fst args
@@ -296,7 +296,7 @@ typeCheckAll moduleName = traverse go
       for_ roleDecls $ checkRoleDeclaration moduleName
       for_ (zip clss cls_ks) $ \((deps, (sa, pn, _, _, _)), (args', implies', tys', kind)) -> do
         let qualifiedClassName = Qualified (ByModuleName moduleName) pn
-        guardWith (errorMessage (DuplicateTypeClass pn (fst sa))) $
+        guardWith (errorMessage (DuplicateTypeClass pn (safst sa))) $
           not (M.member qualifiedClassName (typeClasses env))
         addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
     return d
@@ -309,14 +309,14 @@ typeCheckAll moduleName = traverse go
     toRoleDecl _ = Nothing
     toClassDecl (TypeClassDeclaration sa nm args implies deps decls) = Just (deps, (sa, nm, args, implies, decls))
     toClassDecl _ = Nothing
-  go (TypeSynonymDeclaration sa@(ss, _) name args ty) = do
+  go (TypeSynonymDeclaration sa@(SourceAnn ss _) name args ty) = do
     warnAndRethrow (addHint (ErrorInTypeSynonym name) . addHint (positionedError ss) ) $ do
       checkDuplicateTypeArguments $ map fst args
       (elabTy, kind) <- kindOfTypeSynonym moduleName (sa, name, args, ty)
       let args' = args `withKinds` kind
       addTypeSynonym moduleName name args' elabTy kind
     return $ TypeSynonymDeclaration sa name args ty
-  go (KindDeclaration sa@(ss, _) kindFor name ty) = do
+  go (KindDeclaration sa@(SourceAnn ss _) kindFor name ty) = do
     warnAndRethrow (addHint (ErrorInKindDeclaration name) . addHint (positionedError ss)) $ do
       elabTy <- withFreshSubstitution $ checkKindDeclaration moduleName ty
       env <- getEnv
@@ -327,7 +327,7 @@ typeCheckAll moduleName = traverse go
     return d
   go TypeDeclaration{} =
     internalError "Type declarations should have been removed before typeCheckAlld"
-  go (ValueDecl sa@(ss, _) name nameKind [] [MkUnguarded val]) = do
+  go (ValueDecl sa@(SourceAnn ss _) name nameKind [] [MkUnguarded val]) = do
     env <- getEnv
     let declHint = if isPlainIdent name then addHint (ErrorInValueDeclaration name) else id
     warnAndRethrow (declHint . addHint (positionedError ss)) $ do
@@ -342,10 +342,10 @@ typeCheckAll moduleName = traverse go
   go BoundValueDeclaration{} = internalError "BoundValueDeclaration should be desugared"
   go (BindingGroupDeclaration vals) = do
     env <- getEnv
-    let sss = fmap (\(((ss, _), _), _, _) -> ss) vals
+    let sss = fmap (\(((SourceAnn ss _), _), _, _) -> ss) vals
     warnAndRethrow (addHint (ErrorInBindingGroup (fmap (\((_, ident), _, _) -> ident) vals)) . addHint (PositionedError sss)) $ do
       for_ vals $ \((_, ident), _, _) -> valueIsNotDefined moduleName ident
-      vals' <- NEL.toList <$> traverse (\(sai@((ss, _), _), nk, expr) -> (sai, nk,) <$> checkExhaustiveExpr ss env moduleName expr) vals
+      vals' <- NEL.toList <$> traverse (\(sai@((SourceAnn ss _), _), nk, expr) -> (sai, nk,) <$> checkExhaustiveExpr ss env moduleName expr) vals
       tys <- typesOf RecursiveBindingGroup moduleName $ fmap (\(sai, _, ty) -> (sai, ty)) vals'
       vals'' <- forM [ (sai, val, nameKind, ty)
                      | (sai@(_, name), nameKind, _) <- vals'
@@ -355,7 +355,7 @@ typeCheckAll moduleName = traverse go
         addValue moduleName name ty nameKind
         return (sai, nameKind, val)
       return . BindingGroupDeclaration $ NEL.fromList vals''
-  go d@(ExternDataDeclaration (ss, _) name kind) = do
+  go d@(ExternDataDeclaration (SourceAnn ss _) name kind) = do
     warnAndRethrow (addHint (ErrorInForeignImportData name) . addHint (positionedError ss)) $ do
       elabKind <- withFreshSubstitution $ checkKindDeclaration moduleName kind
       env <- getEnv
@@ -363,7 +363,7 @@ typeCheckAll moduleName = traverse go
           roles = nominalRolesForKind elabKind
       putEnv $ env { types = M.insert qualName (elabKind, ExternData roles) (types env) }
       return d
-  go d@(ExternDeclaration (ss, _) name ty) = do
+  go d@(ExternDeclaration (SourceAnn ss _) name ty) = do
     warnAndRethrow (addHint (ErrorInForeignImport name) . addHint (positionedError ss)) $ do
       env <- getEnv
       (elabTy, kind) <- withFreshSubstitution $ do
@@ -377,7 +377,7 @@ typeCheckAll moduleName = traverse go
     return d
   go d@FixityDeclaration{} = return d
   go d@ImportDeclaration{} = return d
-  go d@(TypeClassDeclaration sa@(ss, _) pn args implies deps tys) = do
+  go d@(TypeClassDeclaration sa@(SourceAnn ss _) pn args implies deps tys) = do
     warnAndRethrow (addHint (ErrorInTypeClassDeclaration pn) . addHint (positionedError ss)) $ do
       env <- getEnv
       let qualifiedClassName = Qualified (ByModuleName moduleName) pn
@@ -387,7 +387,7 @@ typeCheckAll moduleName = traverse go
       addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
       return d
   go (TypeInstanceDeclaration _ _ _ _ (Left _) _ _ _ _) = internalError "typeCheckAll: type class instance generated name should have been desugared"
-  go d@(TypeInstanceDeclaration sa@(ss, _) _ ch idx (Right dictName) deps className tys body) =
+  go d@(TypeInstanceDeclaration sa@(SourceAnn ss _) _ ch idx (Right dictName) deps className tys body) =
     rethrow (addHint (ErrorInInstance className tys) . addHint (positionedError ss)) $ do
       env <- getEnv
       let qualifiedDictName = Qualified (ByModuleName moduleName) dictName

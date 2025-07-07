@@ -28,7 +28,7 @@ import Data.Text qualified as T
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as E
-import Language.PureScript.Errors (ErrorMessageHint(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, internalCompilerError, onErrorMessages, rethrow, warnWithPosition, withoutPosition)
+import Language.PureScript.Errors (ErrorMessageHint(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, internalCompilerError, onErrorMessages, rethrow, warnWithPosition, withoutPosition, safst)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
@@ -241,7 +241,7 @@ replaceTypeWildcards = everywhereOnTypesM replace
             -- Just $ WildcardInferredType t ctx
             Nothing
           IgnoredWildcard -> Nothing
-    forM_ err $ warnWithPosition (fst ann) . tell . errorMessage
+    forM_ err $ warnWithPosition (safst ann) . tell . errorMessage
     return t
   replace other = return other
 

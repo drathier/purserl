@@ -63,14 +63,14 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
 
   -- Desugars member declarations from AST to CoreFn representation.
   declToCoreFn :: A.Declaration -> [Bind Ann]
-  declToCoreFn (A.DataDeclaration (ss, com) Newtype _ _ [ctor]) =
+  declToCoreFn (A.DataDeclaration (A.SourceAnn ss com) Newtype _ _ [ctor]) =
     [NonRec (ss, [], declMeta) (properToIdent $ A.dataCtorName ctor) $
       Abs (ss, com, Just IsNewtype) (Ident "x") (Var (ssAnn ss) $ Qualified ByNullSourcePos (Ident "x"))]
     where
     declMeta = isDictTypeName (A.dataCtorName ctor) `orEmpty` IsTypeClassConstructor
   declToCoreFn d@(A.DataDeclaration _ Newtype _ _ _) =
     error $ "Found newtype with multiple constructors: " ++ show d
-  declToCoreFn (A.DataDeclaration (ss, com) Data tyName _ ctors) =
+  declToCoreFn (A.DataDeclaration (A.SourceAnn ss com) Data tyName _ ctors) =
     flip fmap ctors $ \ctorDecl ->
       let
         ctor = A.dataCtorName ctorDecl
@@ -78,10 +78,10 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
       in NonRec (ssA ss) (properToIdent ctor) $ Constructor (ss, com, Nothing) tyName ctor fields
   declToCoreFn (A.DataBindingGroupDeclaration ds) =
     concatMap declToCoreFn ds
-  declToCoreFn (A.ValueDecl (ss, com) name _ _ [A.MkUnguarded e]) =
+  declToCoreFn (A.ValueDecl (A.SourceAnn ss com) name _ _ [A.MkUnguarded e]) =
     [NonRec (ssA ss) name (exprToCoreFn ss com Nothing e)]
   declToCoreFn (A.BindingGroupDeclaration ds) =
-    [Rec . NEL.toList $ fmap (\(((ss, com), name), _, e) -> ((ssA ss, name), exprToCoreFn ss com Nothing e)) ds]
+    [Rec . NEL.toList $ fmap (\(((A.SourceAnn ss com), name), _, e) -> ((ssA ss, name), exprToCoreFn ss com Nothing e)) ds]
   declToCoreFn _ = []
 
   -- Desugars expressions from AST to CoreFn representation.
@@ -245,7 +245,7 @@ findQualModules decls =
 
 -- | Desugars import declarations from AST to CoreFn representation.
 importToCoreFn :: A.Declaration -> Maybe (Ann, ModuleName)
-importToCoreFn (A.ImportDeclaration (ss, com) name _ _) = Just ((ss, com, Nothing), name)
+importToCoreFn (A.ImportDeclaration (A.SourceAnn ss com) name _ _) = Just ((ss, com, Nothing), name)
 importToCoreFn _ = Nothing
 
 -- | Desugars foreign declarations from AST to CoreFn representation.

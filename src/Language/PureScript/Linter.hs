@@ -48,7 +48,7 @@ lint modl@(Module _ _ mn ds _) = do
     f' :: S.Set Text -> Declaration -> MultipleErrors
     f' s dec@(ValueDeclaration vd) =
       addHint (ErrorInValueDeclaration (valdeclIdent vd)) (warningsInDecl moduleNames dec <> checkTypeVarsInDecl s dec)
-    f' s (TypeDeclaration td@(TypeDeclarationData (ss, _) _ _)) =
+    f' s (TypeDeclaration td@(TypeDeclarationData (SourceAnn ss _) _ _)) =
       addHint (ErrorInTypeDeclaration (tydeclIdent td)) (checkTypeVars ss s (tydeclType td))
     f' s dec = warningsInDecl moduleNames dec <> checkTypeVarsInDecl s dec
 
@@ -257,7 +257,7 @@ lintUnused (Module modSS _ mn modDecls exports) =
 
     -- (non-recursively, recursively) bound idents in decl
     declIdents :: Declaration -> (S.Set (SourceSpan, Ident), S.Set (SourceSpan, Ident))
-    declIdents (ValueDecl (ss,_) ident _ _ _) = (S.empty, S.singleton (ss, ident))
+    declIdents (ValueDecl (SourceAnn ss _) ident _ _ _) = (S.empty, S.singleton (ss, ident))
     declIdents (BoundValueDeclaration _ binders _) = (S.fromList $ binderNamesWithSpans binders, S.empty)
     declIdents _ = (S.empty, S.empty)
 

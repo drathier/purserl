@@ -466,7 +466,7 @@ replaceUnknowns = everywhereOnTypesTopDownM replaceTypes where
     case M.lookup s (umSkolemMap m) of
       Nothing -> do
         let s' = umNextIndex m
-        put $ m { umSkolemMap = M.insert s (T.unpack name, s', Just (fst ann)) (umSkolemMap m), umNextIndex = s' + 1 }
+        put $ m { umSkolemMap = M.insert s (T.unpack name, s', Just (safst ann)) (umSkolemMap m), umNextIndex = s' + 1 }
         return (Skolem ann name Nothing s' sko)
       Just (_, s', _) -> return (Skolem ann name Nothing s' sko)
   replaceTypes other = return other
@@ -1842,7 +1842,7 @@ prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileCo
         Box.<> "with type "
         Box.<> markCodeBox (prettyType ty)
         Box.<> " "
-        Box.<> (line . displayStartEndPosShort . fst $ getAnnForType ty)
+        Box.<> (line . displayStartEndPosShort . safst $ getAnnForType ty)
     Qualified mn (Right inst) -> line . markCode . showQualified showIdent $ Qualified mn inst
 
   -- As of this writing, this function assumes that all provided SourceSpans

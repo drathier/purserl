@@ -37,7 +37,7 @@ import Data.Set qualified as S
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), TypeKind(..), unapplyKinds)
-import Language.PureScript.Errors (DeclarationRef(..), ErrorMessageHint(..), ExportSource, ImportDeclarationType(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, UnknownsHint(..))
+import Language.PureScript.Errors (DeclarationRef(..), ErrorMessageHint(..), ExportSource, ImportDeclarationType(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, UnknownsHint(..), SourceAnn(..))
 import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), byMaybeModuleName, toMaybeModuleName)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, freshKindWithKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..))
@@ -564,7 +564,7 @@ canonUnsaturatedHigherKindedType env a b
       ak' <- lift $ do
         let (kvs, ak') = fromMaybe (internalError "canonUnsaturatedHigherKindedType: unkinded forall binder") $ completeBinderList ak
             instantiatedKinds = zipWith (\(_, (kv, _)) k -> (kv, k)) kvs akapps
-        unknownKinds <- traverse (\((ss, _), (kv, k)) -> (kv,) <$> freshKindWithKind ss k) $ drop (length akapps) kvs
+        unknownKinds <- traverse (\((SourceAnn ss _), (kv, k)) -> (kv,) <$> freshKindWithKind ss k) $ drop (length akapps) kvs
         pure $ replaceAllTypeVars (instantiatedKinds <> unknownKinds) ak'
       let (aks', _) = unapplyKinds ak'
       tys <- traverse freshTypeWithKind $ drop (length axs) aks'

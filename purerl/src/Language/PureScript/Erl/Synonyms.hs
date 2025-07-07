@@ -51,7 +51,7 @@ replaceAllTypeSynonyms'
 replaceAllTypeSynonyms' syns kinds = everywhereOnTypesTopDownM try
   where
   try :: SourceType -> Either MultipleErrors SourceType
-  try t = fromMaybe t <$> go (fst $ getAnnForType t) 0 [] [] t
+  try t = fromMaybe t <$> go (safst $ getAnnForType t) 0 [] [] t
 
   go :: SourceSpan -> Int -> [SourceType] -> [SourceType] -> SourceType -> Either MultipleErrors (Maybe SourceType)
   go _ c kargs args (TypeConstructor _ ctor)

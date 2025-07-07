@@ -16,7 +16,7 @@ import Data.Map qualified as M
 import Data.These (These(..), mergeTheseWith, these)
 
 import Control.Monad.Supply.Class (MonadSupply)
-import Language.PureScript.AST (Binder(..), CaseAlternative(..), ErrorMessageHint(..), Expr(..), InstanceDerivationStrategy(..), Literal(..), SourceSpan, nullSourceSpan)
+import Language.PureScript.AST (Binder(..), CaseAlternative(..), ErrorMessageHint(..), Expr(..), InstanceDerivationStrategy(..), Literal(..), SourceSpan, nullSourceSpan, SourceAnn(..))
 import Language.PureScript.AST.Utils (UnwrappedTypeConstructor(..), lam, lamCase, lamCase2, mkBinder, mkCtor, mkCtorBinder, mkLit, mkRef, mkVar, unguarded, unwrapTypeConstructor, utcQTyCon)
 import Language.PureScript.Constants.Libs qualified as Libs
 import Language.PureScript.Constants.Prim qualified as Prim
@@ -473,7 +473,7 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
 
     assertParamNotUsedIn :: Text -> SourceType -> Writer [SourceSpan] ()
     assertParamNotUsedIn param = everythingOnTypes (*>) $ \case
-      TypeVar (ss, _) name | name == param -> tell [ss]
+      TypeVar (SourceAnn ss _) name | name == param -> tell [ss]
       _ -> pure ()
 
     tryBiClasses ht tyLArg tyArg
@@ -515,7 +515,7 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
       TypeApp _ tyFn tyArg ->
         assertNoParamUsedIn tyFn *> tryMonoClasses (headOfTypeWithSubst tyFn) tyArg
 
-      TypeVar (ss, _) name -> mergeTheseWith (checkName lparamIsContra IsLParam) (checkName paramIsContra IsParam) (liftA2 (<|>)) params
+      TypeVar (SourceAnn ss _) name -> mergeTheseWith (checkName lparamIsContra IsLParam) (checkName paramIsContra IsParam) (liftA2 (<|>)) params
         where
         checkName thisParamIsContra usage param
           | name == param = when (thisParamIsContra /= isNegative) (tell [ss]) $> Just usage

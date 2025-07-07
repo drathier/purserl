@@ -96,7 +96,7 @@ typesOf bindingGroupType moduleName vals = withFreshSubstitution $ do
       ds2 <- forM untyped $ \e -> withoutWarnings $ typeForBindingGroupElement e dict
       return (map (False, ) ds1 ++ map (True, ) ds2, w)
 
-    inferred <- forM tys $ \(shouldGeneralize, ((sai@((ss, _), ident), (val, ty)), _)) -> do
+    inferred <- forM tys $ \(shouldGeneralize, ((sai@((SourceAnn ss _), ident), (val, ty)), _)) -> do
       -- Replace type class dictionary placeholders with actual dictionaries
       (val', unsolved) <- replaceTypeClassDictionaries shouldGeneralize val
       -- Generalize and constrain the type
@@ -266,7 +266,7 @@ typeDictionaryForBindingGroup moduleName vals = do
     -- Create the dictionary of all name/type pairs, which will be added to the
     -- environment during type checking
     let dict = M.fromList [ (Qualified (maybe (BySourcePos $ spanStart ss) ByModuleName moduleName) ident, (ty, Private, Undefined))
-                          | (((ss, _), ident), ty) <- typedDict <> untypedDict
+                          | (((SourceAnn ss _), ident), ty) <- typedDict <> untypedDict
                           ]
     return (SplitBindingGroup untyped' typed' dict)
   where
@@ -581,7 +581,7 @@ inferLetBinding
   -> (Expr -> m TypedValue')
   -> m ([Declaration], TypedValue')
 inferLetBinding seen [] ret j = (seen, ) <$> withBindingGroupVisible (j ret)
-inferLetBinding seen (ValueDecl sa@(ss, _) ident nameKind [] [MkUnguarded (TypedValue checkType val ty)] : rest) ret j = do
+inferLetBinding seen (ValueDecl sa@(SourceAnn ss _) ident nameKind [] [MkUnguarded (TypedValue checkType val ty)] : rest) ret j = do
   moduleName <- unsafeCheckCurrentModule
   TypedValue' _ val' ty'' <- warnAndRethrowWithPositionTC ss $ do
     ((args, elabTy), kind) <- kindOfWithScopedVars ty
@@ -593,7 +593,7 @@ inferLetBinding seen (ValueDecl sa@(ss, _) ident nameKind [] [MkUnguarded (Typed
       else return (TypedValue' checkType val elabTy)
   bindNames (M.singleton (Qualified (BySourcePos $ spanStart ss) ident) (ty'', nameKind, Defined))
     $ inferLetBinding (seen ++ [ValueDecl sa ident nameKind [] [MkUnguarded (TypedValue checkType val' ty'')]]) rest ret j
-inferLetBinding seen (ValueDecl sa@(ss, _) ident nameKind [] [MkUnguarded val] : rest) ret j = do
+inferLetBinding seen (ValueDecl sa@(SourceAnn ss _) ident nameKind [] [MkUnguarded val] : rest) ret j = do
   valTy <- freshTypeWithKind kindType
   TypedValue' _ val' valTy' <- warnAndRethrowWithPositionTC ss $ do
     let dict = M.singleton (Qualified (BySourcePos $ spanStart ss) ident) (valTy, nameKind, Undefined)
@@ -773,7 +773,7 @@ check' val (ForAll ann vis ident mbK ty _) = do
   scope <- newSkolemScope
   sko <- newSkolemConstant
   let ss = case val of
-             PositionedValue pos c _ -> (pos, c)
+             PositionedValue pos c _ -> SourceAnn pos c
              _ -> NullSourceAnn
       sk = skolemize ss ident mbK sko scope ty
       -- We should only skolemize types in values when the type variable

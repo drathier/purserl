@@ -83,7 +83,7 @@ parseModuleHeader src = do
   let
     mn = CST.nameValue $ CST.modNamespace md
     decls = flip fmap (CST.modImports md) $ \decl -> do
-      let ((ss, _), mn', it, qual) = CST.convertImportDecl "<purs-ide>" decl
+      let ((P.SourceAnn ss _), mn', it, qual) = CST.convertImportDecl "<purs-ide>" decl
       (ss, Import mn' it qual)
   case (head decls, lastMay decls) of
     (Just hd, Just ls) -> do

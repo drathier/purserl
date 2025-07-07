@@ -10,7 +10,7 @@ import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.Supply.Class (MonadSupply)
 import Data.Maybe (fromMaybe)
 import Data.Monoid (First(..))
-import Language.PureScript.AST (Binder(..), CaseAlternative(..), Declaration, DoNotationElement(..), Expr(..), pattern MkUnguarded, Module(..), SourceSpan, pattern ValueDecl, WhereProvenance(..), binderNames, declSourceSpan, everywhereOnValuesM)
+import Language.PureScript.AST (Binder(..), CaseAlternative(..), Declaration, DoNotationElement(..), Expr(..), pattern MkUnguarded, Module(..), SourceSpan, pattern ValueDecl, WhereProvenance(..), binderNames, declSourceSpan, everywhereOnValuesM, SourceAnn(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', parU, rethrowWithPosition)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Qualified(..), byMaybeModuleName, freshIdent')
@@ -74,7 +74,7 @@ desugarDo d =
   go _ _ [DoNotationLet _] = throwError . errorMessage $ InvalidDoLet
   go pos m (DoNotationLet ds : rest) = do
     let checkBind :: Declaration -> m ()
-        checkBind (ValueDecl (ss, _) i@(Ident name) _ _ _)
+        checkBind (ValueDecl (SourceAnn ss _) i@(Ident name) _ _ _)
           | name `elem` [ C.S_bind, C.S_discard ] = throwError . errorMessage' ss $ CannotUseBindWithDo i
         checkBind _ = pure ()
     mapM_ checkBind ds

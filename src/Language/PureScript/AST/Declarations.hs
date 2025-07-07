@@ -22,7 +22,7 @@ import GHC.Generics (Generic)
 import Language.PureScript.AST.Binders (Binder)
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.Operators (Fixity)
-import Language.PureScript.AST.SourcePos (SourceAnn, SourceSpan)
+import Language.PureScript.AST.SourcePos (SourceAnn(..), SourceSpan)
 import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Types (SourceConstraint, SourceType)
 import Language.PureScript.PSString (PSString)
@@ -143,7 +143,7 @@ getModuleDeclarations (Module _ _ _ declarations _) = declarations
 addDefaultImport :: Qualified ModuleName -> Module -> Module
 addDefaultImport (Qualified toImportAs toImport) m@(Module ss coms mn decls exps) =
   if isExistingImport `any` decls || mn == toImport then m
-  else Module ss coms mn (ImportDeclaration (ss, []) toImport Implicit toImportAs' : decls) exps
+  else Module ss coms mn (ImportDeclaration (SourceAnn ss []) toImport Implicit toImportAs' : decls) exps
   where
   toImportAs' = toMaybeModuleName toImportAs
 
@@ -508,7 +508,7 @@ declSourceAnn (TypeClassDeclaration sa _ _ _ _ _) = sa
 declSourceAnn (TypeInstanceDeclaration sa _ _ _ _ _ _ _ _) = sa
 
 declSourceSpan :: Declaration -> SourceSpan
-declSourceSpan = fst . declSourceAnn
+declSourceSpan x = let (SourceAnn a _) = declSourceAnn x in a
 
 -- Note: Kind Declarations' names can refer to either a `TyClassName`
 -- or a `TypeName`. Use a helper function for handling `KindDeclaration`s

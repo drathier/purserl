@@ -3,7 +3,7 @@ module Language.PureScript.Sugar.Operators.Types where
 import Prelude
 
 import Control.Monad.Except (MonadError)
-import Language.PureScript.AST (Associativity, SourceSpan)
+import Language.PureScript.AST (Associativity, SourceSpan, SourceAnn(..))
 import Language.PureScript.Errors (MultipleErrors)
 import Language.PureScript.Names (OpName(..), OpNameType(..), Qualified(..))
 import Language.PureScript.Sugar.Operators.Common (matchOperators)
@@ -31,4 +31,4 @@ matchTypeOperators ss = matchOperators isBinOp extractOp fromOp reapply id
   fromOp _ = Nothing
 
   reapply :: a -> Qualified (OpName 'TypeOpName) -> SourceType -> SourceType -> SourceType
-  reapply _ op = srcTypeApp . srcTypeApp (TypeOp (ss, []) op)
+  reapply _ op = srcTypeApp . srcTypeApp (TypeOp (SourceAnn ss []) op)

@@ -7,7 +7,7 @@ import Protolude (note)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.Supply.Class (MonadSupply)
 import Data.List (foldl', find, unzip5)
-import Language.PureScript.AST (Binder(..), CaseAlternative(..), DataConstructorDeclaration(..), Declaration(..), Expr(..), pattern MkUnguarded, Module(..), SourceSpan(..), TypeInstanceBody(..), pattern ValueDecl)
+import Language.PureScript.AST (Binder(..), CaseAlternative(..), DataConstructorDeclaration(..), Declaration(..), Expr(..), pattern MkUnguarded, Module(..), SourceSpan(..), TypeInstanceBody(..), pattern ValueDecl, SourceAnn(..))
 import Language.PureScript.AST.Utils (UnwrappedTypeConstructor(..), lamCase, unguarded, unwrapTypeConstructor)
 import Language.PureScript.Constants.Libs qualified as Libs
 import Language.PureScript.Crash (internalError)
@@ -45,7 +45,7 @@ deriveInstance
   -> m Declaration
 deriveInstance mn ds decl =
   case decl of
-    TypeInstanceDeclaration sa@(ss, _) na ch idx nm deps className tys DerivedInstance -> let
+    TypeInstanceDeclaration sa@(SourceAnn ss _) na ch idx nm deps className tys DerivedInstance -> let
       binaryWildcardClass :: (Declaration -> [SourceType] -> m ([Declaration], SourceType)) -> m Declaration
       binaryWildcardClass f = case tys of
         [ty1, ty2] -> case unwrapTypeConstructor ty1 of
@@ -73,19 +73,19 @@ deriveGenericRep
   -> m ([Declaration], SourceType)
 deriveGenericRep ss mn tyCon tyConArgs =
   case tyCon of
-    DataDeclaration (ss', _) _ _ args dctors -> do
+    DataDeclaration (SourceAnn ss' _) _ _ args dctors -> do
       x <- freshIdent "x"
       (reps, to, from) <- unzip3 <$> traverse makeInst dctors
       let rep = toRepTy reps
           inst | null reps =
                    -- If there are no cases, spin
-                   [ ValueDecl (ss', []) (Ident "to") Public [] $ unguarded $
+                   [ ValueDecl (SourceAnn ss' []) (Ident "to") Public [] $ unguarded $
                       lamCase x
                         [ CaseAlternative
                             [NullBinder]
                             (unguarded (App (Var ss Libs.I_to) (Var ss' (Qualified ByNullSourcePos x))))
                         ]
-                   , ValueDecl (ss', []) (Ident "from") Public [] $ unguarded $
+                   , ValueDecl (SourceAnn ss' []) (Ident "from") Public [] $ unguarded $
                       lamCase x
                         [ CaseAlternative
                             [NullBinder]
@@ -93,9 +93,9 @@ deriveGenericRep ss mn tyCon tyConArgs =
                         ]
                    ]
                | otherwise =
-                   [ ValueDecl (ss', []) (Ident "to") Public [] $ unguarded $
+                   [ ValueDecl (SourceAnn ss' []) (Ident "to") Public [] $ unguarded $
                        lamCase x (zipWith ($) (map underBinder (sumBinders (length dctors))) to)
-                   , ValueDecl (ss', []) (Ident "from") Public [] $ unguarded $
+                   , ValueDecl (SourceAnn ss' []) (Ident "from") Public [] $ unguarded $
                        lamCase x (zipWith ($) (map underExpr (sumExprs (length dctors))) from)
                    ]
 
@@ -186,7 +186,7 @@ deriveNewtype
   -> m ([Declaration], SourceType)
 deriveNewtype tyCon tyConArgs =
   case tyCon of
-    DataDeclaration (ss', _) Data name _ _ ->
+    DataDeclaration (SourceAnn ss' _) Data name _ _ ->
       throwError . errorMessage' ss' $ CannotDeriveNewtypeForData name
     DataDeclaration _ Newtype name args dctors -> do
       (_, (_, ty)) <- checkNewtype name dctors
