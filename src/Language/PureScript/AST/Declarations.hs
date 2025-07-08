@@ -174,36 +174,36 @@ data DeclarationRef
   -- |
   -- A type class
   --
-  = TypeClassRef SourceSpan (ProperName 'ClassName)
+  = TypeClassRef !SourceSpan !(ProperName 'ClassName)
   -- |
   -- A type operator
   --
-  | TypeOpRef SourceSpan (OpName 'TypeOpName)
+  | TypeOpRef !SourceSpan !(OpName 'TypeOpName)
   -- |
   -- A type constructor with data constructors
   --
-  | TypeRef SourceSpan (ProperName 'TypeName) (Maybe [ProperName 'ConstructorName])
+  | TypeRef !SourceSpan !(ProperName 'TypeName) (Maybe [ProperName 'ConstructorName])
   -- |
   -- A value
   --
-  | ValueRef SourceSpan Ident
+  | ValueRef !SourceSpan !Ident
   -- |
   -- A value-level operator
   --
-  | ValueOpRef SourceSpan (OpName 'ValueOpName)
+  | ValueOpRef !SourceSpan !(OpName 'ValueOpName)
   -- |
   -- A type class instance, created during typeclass desugaring
   --
-  | TypeInstanceRef SourceSpan Ident NameSource
+  | TypeInstanceRef !SourceSpan !Ident !NameSource
   -- |
   -- A module, in its entirety
   --
-  | ModuleRef SourceSpan ModuleName
+  | ModuleRef !SourceSpan !ModuleName
   -- |
   -- A value re-exported from another module. These will be inserted during
   -- elaboration in name desugaring.
   --
-  | ReExportRef SourceSpan ExportSource DeclarationRef
+  | ReExportRef !SourceSpan !ExportSource !DeclarationRef
   deriving (Show, Generic, NFData, Serialise)
 
 instance Eq DeclarationRef where
@@ -385,19 +385,19 @@ data Declaration
   -- |
   -- A data type declaration (data or newtype, name, arguments, data constructors)
   --
-  = DataDeclaration SourceAnn DataDeclType (ProperName 'TypeName) [(Text, Maybe SourceType)] [DataConstructorDeclaration]
+  = DataDeclaration !SourceAnn !DataDeclType !(ProperName 'TypeName) ![(Text, Maybe SourceType)] ![DataConstructorDeclaration]
   -- |
   -- A minimal mutually recursive set of data type declarations
   --
-  | DataBindingGroupDeclaration (NEL.NonEmpty Declaration)
+  | DataBindingGroupDeclaration !(NEL.NonEmpty Declaration)
   -- |
   -- A type synonym declaration (name, arguments, type)
   --
-  | TypeSynonymDeclaration SourceAnn (ProperName 'TypeName) [(Text, Maybe SourceType)] SourceType
+  | TypeSynonymDeclaration !SourceAnn !(ProperName 'TypeName) ![(Text, Maybe SourceType)] !SourceType
   -- |
   -- A kind signature declaration
   --
-  | KindDeclaration SourceAnn KindSignatureFor (ProperName 'TypeName) SourceType
+  | KindDeclaration !SourceAnn !KindSignatureFor !(ProperName 'TypeName) !SourceType
   -- |
   -- A role declaration (name, roles)
   --
@@ -412,31 +412,31 @@ data Declaration
   | ValueDeclaration {-# UNPACK #-} !(ValueDeclarationData [GuardedExpr])
   -- |
   -- A declaration paired with pattern matching in let-in expression (binder, optional guard, value)
-  | BoundValueDeclaration SourceAnn Binder Expr
+  | BoundValueDeclaration !SourceAnn !Binder !Expr
   -- |
   -- A minimal mutually recursive set of value declarations
   --
-  | BindingGroupDeclaration (NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
+  | BindingGroupDeclaration !(NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr))
   -- |
   -- A foreign import declaration (name, type)
   --
-  | ExternDeclaration SourceAnn Ident SourceType
+  | ExternDeclaration !SourceAnn !Ident !SourceType
   -- |
   -- A data type foreign import (name, kind)
   --
-  | ExternDataDeclaration SourceAnn (ProperName 'TypeName) SourceType
+  | ExternDataDeclaration !SourceAnn !(ProperName 'TypeName) !SourceType
   -- |
   -- A fixity declaration
   --
-  | FixityDeclaration SourceAnn (Either ValueFixity TypeFixity)
+  | FixityDeclaration !SourceAnn !(Either ValueFixity TypeFixity)
   -- |
   -- A module import (module name, qualified/unqualified/hiding, optional "qualified as" name)
   --
-  | ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
+  | ImportDeclaration !SourceAnn !ModuleName !ImportDeclarationType !(Maybe ModuleName)
   -- |
   -- A type class declaration (name, argument, implies, member declarations)
   --
-  | TypeClassDeclaration SourceAnn (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
+  | TypeClassDeclaration !SourceAnn !(ProperName 'ClassName) ![(Text, Maybe SourceType)] ![SourceConstraint] ![FunctionalDependency] ![Declaration]
   -- |
   -- A type instance declaration (instance chain, chain index, name,
   -- dependencies, class name, instance types, member declarations)
@@ -444,13 +444,13 @@ data Declaration
   -- The first @SourceAnn@ serves as the annotation for the entire
   -- declaration, while the second @SourceAnn@ serves as the
   -- annotation for the type class and its arguments.
-  | TypeInstanceDeclaration SourceAnn SourceAnn ChainId Integer (Either Text Ident) [SourceConstraint] (Qualified (ProperName 'ClassName)) [SourceType] TypeInstanceBody
+  | TypeInstanceDeclaration !SourceAnn !SourceAnn !ChainId !Integer !(Either Text Ident) ![SourceConstraint] !(Qualified (ProperName 'ClassName)) ![SourceType] !TypeInstanceBody
   deriving (Show, Generic, NFData)
 
-data ValueFixity = ValueFixity Fixity (Qualified (Either Ident (ProperName 'ConstructorName))) (OpName 'ValueOpName)
+data ValueFixity = ValueFixity !Fixity !(Qualified (Either Ident (ProperName 'ConstructorName))) (OpName 'ValueOpName)
   deriving (Eq, Ord, Show, Generic, NFData)
 
-data TypeFixity = TypeFixity Fixity (Qualified (ProperName 'TypeName)) (OpName 'TypeOpName)
+data TypeFixity = TypeFixity !Fixity !(Qualified (ProperName 'TypeName)) (OpName 'TypeOpName)
   deriving (Eq, Ord, Show, Generic, NFData)
 
 pattern ValueFixityDeclaration :: SourceAnn -> Fixity -> Qualified (Either Ident (ProperName 'ConstructorName)) -> OpName 'ValueOpName -> Declaration
@@ -470,7 +470,7 @@ data TypeInstanceBody
   -- ^ This is a derived instance
   | NewtypeInstance
   -- ^ This is an instance derived from a newtype
-  | ExplicitInstance [Declaration]
+  | ExplicitInstance ![Declaration]
   -- ^ This is a regular (explicit) instance
   deriving (Show, Generic, NFData)
 
@@ -623,14 +623,14 @@ flattenDecls = concatMap flattenOne
 -- |
 -- A guard is just a boolean-valued expression that appears alongside a set of binders
 --
-data Guard = ConditionGuard Expr
-           | PatternGuard Binder Expr
+data Guard = ConditionGuard !Expr
+           | PatternGuard !Binder !Expr
            deriving (Show, Generic, NFData)
 
 -- |
 -- The right hand side of a binder in value declarations
 -- and case expressions.
-data GuardedExpr = GuardedExpr [Guard] Expr
+data GuardedExpr = GuardedExpr ![Guard] !Expr
                  deriving (Show, Generic, NFData)
 
 pattern MkUnguarded :: Expr -> GuardedExpr
@@ -643,16 +643,16 @@ data Expr
   -- |
   -- A literal value
   --
-  = Literal SourceSpan (Literal Expr)
+  = Literal !SourceSpan !(Literal Expr)
   -- |
   -- A prefix -, will be desugared
   --
-  | UnaryMinus SourceSpan Expr
+  | UnaryMinus !SourceSpan !Expr
   -- |
   -- Binary operator application. During the rebracketing phase of desugaring, this data constructor
   -- will be removed.
   --
-  | BinaryNoParens Expr Expr Expr
+  | BinaryNoParens !Expr !Expr !Expr
   -- |
   -- Explicit parentheses. During the rebracketing phase of desugaring, this data constructor
   -- will be removed.
@@ -660,78 +660,78 @@ data Expr
   -- Note: although it seems this constructor is not used, it _is_ useful, since it prevents
   -- certain traversals from matching.
   --
-  | Parens Expr
+  | Parens !Expr
   -- |
   -- An record property accessor expression (e.g. `obj.x` or `_.x`).
   -- Anonymous arguments will be removed during desugaring and expanded
   -- into a lambda that reads a property from a record.
   --
-  | Accessor PSString Expr
+  | Accessor !PSString !Expr
   -- |
   -- Partial record update
   --
-  | ObjectUpdate Expr [(PSString, Expr)]
+  | ObjectUpdate !Expr ![(PSString, Expr)]
   -- |
   -- Object updates with nested support: `x { foo { bar = e } }`
   -- Replaced during desugaring into a `Let` and nested `ObjectUpdate`s
   --
-  | ObjectUpdateNested Expr (PathTree Expr)
+  | ObjectUpdateNested !Expr !(PathTree Expr)
   -- |
   -- Function introduction
   --
-  | Abs Binder Expr
+  | Abs !Binder !Expr
   -- |
   -- Function application
   --
-  | App Expr Expr
+  | App !Expr !Expr
   -- |
   -- A type application (e.g. `f @Int`)
   --
-  | VisibleTypeApp Expr SourceType
+  | VisibleTypeApp !Expr !SourceType
   -- |
   -- Hint that an expression is unused.
   -- This is used to ignore type class dictionaries that are necessarily empty.
   -- The inner expression lets us solve subgoals before eliminating the whole expression.
   -- The code gen will render this as `undefined`, regardless of what the inner expression is.
-  | Unused Expr
+  | Unused !Expr
   -- |
   -- Variable
   --
-  | Var SourceSpan (Qualified Ident)
+  | Var !SourceSpan !(Qualified Ident)
   -- |
   -- An operator. This will be desugared into a function during the "operators"
   -- phase of desugaring.
   --
-  | Op SourceSpan (Qualified (OpName 'ValueOpName))
+  | Op !SourceSpan !(Qualified (OpName 'ValueOpName))
   -- |
   -- Conditional (if-then-else expression)
   --
-  | IfThenElse Expr Expr Expr
+  | IfThenElse !Expr !Expr !Expr
   -- |
   -- A data constructor
   --
-  | Constructor SourceSpan (Qualified (ProperName 'ConstructorName))
+  | Constructor !SourceSpan !(Qualified (ProperName 'ConstructorName))
   -- |
   -- A case expression. During the case expansion phase of desugaring, top-level binders will get
   -- desugared into case expressions, hence the need for guards and multiple binders per branch here.
   --
-  | Case [Expr] [CaseAlternative]
+  | Case ![Expr] ![CaseAlternative]
   -- |
   -- A value with a type annotation
   --
-  | TypedValue Bool Expr SourceType
+  | TypedValue !Bool !Expr !SourceType
   -- |
   -- A let binding
   --
-  | Let WhereProvenance [Declaration] Expr
+  | Let !WhereProvenance ![Declaration] !Expr
   -- |
   -- A do-notation block
   --
-  | Do (Maybe ModuleName) [DoNotationElement]
+  | Do !(Maybe ModuleName) ![DoNotationElement]
   -- |
   -- An ado-notation block
   --
-  | Ado (Maybe ModuleName) [DoNotationElement] Expr
+  | Ado !(Maybe ModuleName) ![DoNotationElement] !Expr
   -- |
   -- A placeholder for a type class dictionary to be inserted later. At the end of type checking, these
   -- placeholders will be replaced with actual expressions representing type classes dictionaries which
@@ -739,17 +739,17 @@ data Expr
   -- at superclass implementations when searching for a dictionary, the type class name and
   -- instance type, and the type class dictionaries in scope.
   --
-  | TypeClassDictionary SourceConstraint
-                        (M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
-                        [ErrorMessageHint]
+  | TypeClassDictionary !SourceConstraint
+                        !(M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
+                        ![ErrorMessageHint]
   -- |
   -- A placeholder for a superclass dictionary to be turned into a TypeClassDictionary during typechecking
   --
-  | DeferredDictionary (Qualified (ProperName 'ClassName)) [SourceType]
+  | DeferredDictionary !(Qualified (ProperName 'ClassName)) ![SourceType]
   -- |
   -- A placeholder for a type class instance to be derived during typechecking
   --
-  | DerivedInstancePlaceholder (Qualified (ProperName 'ClassName)) InstanceDerivationStrategy
+  | DerivedInstancePlaceholder !(Qualified (ProperName 'ClassName)) !InstanceDerivationStrategy
   -- |
   -- A placeholder for an anonymous function argument
   --
@@ -757,11 +757,11 @@ data Expr
   -- |
   -- A typed hole that will be turned into a hint/error during typechecking
   --
-  | Hole Text
+  | Hole !Text
   -- |
   -- A value with source position information
   --
-  | PositionedValue SourceSpan [Comment] Expr
+  | PositionedValue !SourceSpan ![Comment] !Expr
   deriving (Show, Generic, NFData)
 
 -- |
@@ -785,11 +785,11 @@ data CaseAlternative = CaseAlternative
   { -- |
     -- A collection of binders with which to match the inputs
     --
-    caseAlternativeBinders :: [Binder]
+    caseAlternativeBinders :: ![Binder]
     -- |
     -- The result expression or a collect of guarded expressions
     --
-  , caseAlternativeResult :: [GuardedExpr]
+  , caseAlternativeResult :: ![GuardedExpr]
   } deriving (Show, Generic, NFData)
 
 -- |
@@ -799,19 +799,19 @@ data DoNotationElement
   -- |
   -- A monadic value without a binder
   --
-  = DoNotationValue Expr
+  = DoNotationValue !Expr
   -- |
   -- A monadic value with a binder
   --
-  | DoNotationBind Binder Expr
+  | DoNotationBind !Binder !Expr
   -- |
   -- A let statement, i.e. a pure value with a binder
   --
-  | DoNotationLet [Declaration]
+  | DoNotationLet ![Declaration]
   -- |
   -- A do notation element with source position information
   --
-  | PositionedDoNotationElement SourceSpan [Comment] DoNotationElement
+  | PositionedDoNotationElement !SourceSpan ![Comment] !DoNotationElement
   deriving (Show, Generic, NFData)
 
 

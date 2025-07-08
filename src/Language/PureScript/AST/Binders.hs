@@ -25,25 +25,25 @@ data Binder
   -- |
   -- A binder which matches a literal
   --
-  | LiteralBinder SourceSpan (Literal Binder)
+  | LiteralBinder !SourceSpan !(Literal Binder)
   -- |
   -- A binder which binds an identifier
   --
-  | VarBinder SourceSpan Ident
+  | VarBinder !SourceSpan !Ident
   -- |
   -- A binder which matches a data constructor
   --
-  | ConstructorBinder SourceSpan (Qualified (ProperName 'ConstructorName)) [Binder]
+  | ConstructorBinder !SourceSpan !(Qualified (ProperName 'ConstructorName)) [Binder]
   -- |
   -- A operator alias binder. During the rebracketing phase of desugaring,
   -- this data constructor will be removed.
   --
-  | OpBinder SourceSpan (Qualified (OpName 'ValueOpName))
+  | OpBinder !SourceSpan !(Qualified (OpName 'ValueOpName))
   -- |
   -- Binary operator application. During the rebracketing phase of desugaring,
   -- this data constructor will be removed.
   --
-  | BinaryNoParensBinder Binder Binder Binder
+  | BinaryNoParensBinder !Binder !Binder !Binder
   -- |
   -- Explicit parentheses. During the rebracketing phase of desugaring, this
   -- data constructor will be removed.
@@ -51,19 +51,19 @@ data Binder
   -- Note: although it seems this constructor is not used, it _is_ useful,
   -- since it prevents certain traversals from matching.
   --
-  | ParensInBinder Binder
+  | ParensInBinder !Binder
   -- |
   -- A binder which binds its input to an identifier
   --
-  | NamedBinder SourceSpan Ident Binder
+  | NamedBinder !SourceSpan !Ident !Binder
   -- |
   -- A binder with source position information
   --
-  | PositionedBinder SourceSpan [Comment] Binder
+  | PositionedBinder !SourceSpan ![Comment] !Binder
   -- |
   -- A binder with a type annotation
   --
-  | TypedBinder SourceType Binder
+  | TypedBinder !SourceType !Binder
   deriving (Show, Generic, NFData)
 
 -- Manual Eq and Ord instances for `Binder` were added on 2018-03-05. Comparing

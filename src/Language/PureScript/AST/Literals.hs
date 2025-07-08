@@ -17,25 +17,25 @@ data Literal a
   -- |
   -- A numeric literal
   --
-  = NumericLiteral (Either Integer Double)
+  = NumericLiteral !(Either Integer Double)
   -- |
   -- A string literal
   --
-  | StringLiteral PSString
+  | StringLiteral !PSString
   -- |
   -- A character literal
   --
-  | CharLiteral Char
+  | CharLiteral {-# UNPACK #-} !Char
   -- |
   -- A boolean literal
   --
-  | BooleanLiteral Bool
+  | BooleanLiteral {-# UNPACK #-} !Bool
   -- |
   -- An array literal
   --
-  | ArrayLiteral [a]
+  | ArrayLiteral ![a]
   -- |
   -- An object literal
   --
-  | ObjectLiteral [(PSString, a)]
+  | ObjectLiteral ![(PSString, a)]
   deriving (Eq, Ord, Show, Functor, Generic, NFData)

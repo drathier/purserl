@@ -19,7 +19,7 @@ import Data.Text qualified as T
 import System.FilePath (makeRelative)
 
 -- | Source annotation - position information and comments.
-data SourceAnn = SourceAnn !SourceSpan ![Comment]
+data SourceAnn = SourceAnn {-# UNPACK #-} !SourceSpan ![Comment]
   deriving (Show, Eq, Ord, Generic, NFData)
 
 instance Serialise SourceAnn where
@@ -52,9 +52,9 @@ sasnd (SourceAnn _ b) = b
 
 -- | Source position information
 data SourcePos = SourcePos
-  { sourcePosLine :: !Int
+  { sourcePosLine :: {-# UNPACK #-} !Int
     -- ^ Line number
-  , sourcePosColumn :: !Int
+  , sourcePosColumn :: {-# UNPACK #-} !Int
     -- ^ Column number
   } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
 
@@ -78,11 +78,11 @@ instance A.FromJSON SourcePos where
     return $ SourcePos line col
 
 data SourceSpan = SourceSpan
-  { spanName :: !Text
+  { spanName :: {-# UNPACK #-} !Text
     -- ^ Source name
-  , spanStart :: !SourcePos
+  , spanStart :: {-# UNPACK #-} !SourcePos
     -- ^ Start of the span
-  , spanEnd :: !SourcePos
+  , spanEnd :: {-# UNPACK #-} !SourcePos
     -- ^ End of the span
   } deriving (Eq, Ord, Generic, NFData, Serialise)
 

@@ -47,7 +47,7 @@ instance A.FromJSON Associativity where
 -- |
 -- Fixity data for infix operators
 --
-data Fixity = Fixity Associativity Precedence
+data Fixity = Fixity !Associativity !Precedence
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData Fixity
