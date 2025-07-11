@@ -340,10 +340,10 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
     let mn = CF.moduleName m
     lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
-    when (S.member CoreFn codegenTargets) $ do
-      let coreFnFile = targetFilename mn CoreFn
-          json = CFJ.moduleToJSON Paths.version m
-      lift $ writeJSONFile coreFnFile json
+    -- when (S.member CoreFn codegenTargets) $ do
+    --   let coreFnFile = targetFilename mn CoreFn
+    --       json = CFJ.moduleToJSON Paths.version m
+    --   lift $ writeJSONFile coreFnFile json
     when (S.member JS codegenTargets) $ do
       foreignInclude <- case mn `M.lookup` foreigns of
         Just _
@@ -378,9 +378,9 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           Just v -> pure v
 
       -- generate the corefn
-      let coreFnFile = targetFilename mn CoreFn
-          json = CFJ.moduleToJSON Paths.version m
-      lift $ writeJSONFile coreFnFile json
+      -- let coreFnFile = targetFilename mn CoreFn
+      --     json = CFJ.moduleToJSON Paths.version m
+      -- lift $ writeJSONFile coreFnFile json
 
       let externsFiles = exts
 
