@@ -467,9 +467,9 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
       dir <- lift $ makeIO "get file info: ." getCurrentDirectory
       let makeAbsFile file = dir </> file
       let pretty = prettyPrintErl makeAbsFile optimized
-          prettyChecked = prettyPrintErl makeAbsFile checked
-          prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
-          prettyDecls = prettyPrintErl makeAbsFile typeDecls
+          -- prettyChecked = prettyPrintErl makeAbsFile checked
+          -- prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
+          -- prettyDecls = prettyPrintErl makeAbsFile typeDecls
 
       let
           prefix :: [T.Text]
@@ -486,17 +486,17 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
             "-compile(nowarn_obsolete_guard).",
             "-compile(nowarn_opportunistic).",
             "-compile(nowarn_unused_function).",
-            "-compile(no_auto_import).",
-            includeHrl,
-            "-ifndef(PURERL_MEMOIZE).",
-            "-define(MEMOIZE(X), X).",
-            "-else.",
-            "-define(MEMOIZE, memoize).",
-            "memoize(X) -> X.",
-            "-endif."
+            "-compile(no_auto_import)."
+            -- includeHrl,
+            -- "-ifndef(PURERL_MEMOIZE).",
+            -- "-define(MEMOIZE(X), X).",
+            -- "-else.",
+            -- "-define(MEMOIZE, memoize).",
+            -- "memoize(X) -> X.",
+            -- "-endif."
             ]
-          includeHrl :: T.Text
-          includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
+          -- includeHrl :: T.Text
+          -- includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
       let erl :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives exports PureScriptModule ++  [ pretty ]
       lift $ writeTextFile (outFile mn) $ TE.encodeUtf8 erl
 
@@ -504,11 +504,11 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
       --   let erlchecked :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives checkedExports PureScriptCheckedModule ++  [ prettyChecked ]
       --   lift $ writeTextFile (outFileChecked mn) $ TE.encodeUtf8 erlchecked
 
-      let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
-      lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
+      -- let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
+      -- lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
 
-      let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
-      lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
+      -- let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
+      -- lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
 
   ffiCodegen :: CF.Module CF.Ann -> Make ()
   ffiCodegen m = do
