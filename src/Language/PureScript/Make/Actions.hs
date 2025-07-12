@@ -241,6 +241,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
     :: ModuleName
     -> Make (Either RebuildPolicy (M.Map FilePath (UTCTime, Make ContentHash)))
   getInputTimestampsAndHashes mn = do
+    -- TODO[drathier]: split timestamp and hash generation into two steps, so we don't have to open unchanged files?
     let path = fromMaybe (internalError "Module has no filename in 'make'") $ M.lookup mn filePathMap
     case path of
       Left policy ->

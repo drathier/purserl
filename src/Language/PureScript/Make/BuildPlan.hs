@@ -1,13 +1,17 @@
 module Language.PureScript.Make.BuildPlan
   ( BuildPlan(bpEnv, bpIndex)
   , BuildJobResult(..)
-  , buildJobSuccess
+  , bpExterns
   , construct
+  , construct2
+  , anyDepChanged
+  , RebuildInstructions(..)
   , getResult
-  , getCacheFilesAvailable
+  , fetchMissingExtern
   , shouldRecompile
   , collectResults
   , markComplete
+  , markComplete2
   , needsRebuild
   ) where
 
@@ -40,6 +44,13 @@ import qualified Data.Text as T
 import Debug.Trace
 import PrettyPrint
 
+scratchpad = do
+  -- did any dep input file hashes change?
+  -- if so, did their hashes change?
+  -- inputInfo <- getInputTimestampsAndHashes moduleName
+  -- cacheChanged <- A.forConcurrently sortedModuleNames getRebuildStatusIsUpToDate
+  Just 42
+
 -- | The BuildPlan tracks information about our build progress, and holds all
 -- prebuilt modules for incremental builds.
 data BuildPlan = BuildPlan
@@ -48,7 +59,20 @@ data BuildPlan = BuildPlan
   , bpBuildJobs :: M.Map ModuleName BuildJob
   , bpEnv :: C.MVar Env
   , bpIndex :: C.MVar Int
+  -- todo[drathier]: mvar map of mvars is slow
+  , bpCacheResult :: M.Map ModuleName (MVar (Maybe CacheResult))
+  , bpExterns :: M.Map ModuleName (MVar (Maybe ExternsFile))
   }
+
+data CacheResult
+  = InputFilesUnchanged
+  | RebuiltButNoExternsChange
+  | ExternsChanged
+
+data RebuildInstructions
+  = DepsChangedPleaseRebuild
+  | FailRebuildDepsFailed
+  | FullDepsCacheHit
 
 data Prebuilt = Prebuilt
   { pbModificationTime :: UTCTime
@@ -71,9 +95,8 @@ data BuildJobResult
   | BuildJobSkipped
   -- ^ The build job was not run, because an upstream build job failed
 
-buildJobSuccess :: BuildJobResult -> Maybe (MultipleErrors, ExternsFile)
-buildJobSuccess (BuildJobSucceeded warnings externs) = Just (warnings, externs)
-buildJobSuccess _ = Nothing
+  | BuildJobSkippedFullCacheHit
+  -- ^ The build job was not run, because no upstream files changed
 
 -- | Information obtained about a particular module while constructing a build
 -- plan; used to decide whether a module needs rebuilding.
@@ -107,8 +130,43 @@ markComplete buildPlan moduleName result = do
         "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
       BuildJobSkipped ->
         "### CS.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
+      BuildJobSkippedFullCacheHit ->
+        "### CS.BuildJobSkippedFullCacheHit[" <> T.unpack (runModuleName moduleName) <> "]"
   let BuildJob rVar = fromMaybe (internalError "make: markComplete no barrier") $ M.lookup moduleName (bpBuildJobs buildPlan)
   putMVar rVar result
+
+  markComplete2 buildPlan moduleName result
+
+
+-- | Called when we finished compiling a module and want to report back the
+-- compilation result, as well as any potential errors that were thrown.
+markComplete2
+  :: (MonadBaseControl IO m)
+  => BuildPlan
+  -> ModuleName
+  -> BuildJobResult
+  -> m ()
+markComplete2 buildPlan moduleName result = do
+  -- liftBase $ putStrLn $ case result of
+  --     BuildJobSucceeded _ _ ->
+  --       "### CS.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
+  --     BuildJobFailed _ ->
+  --       "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
+  --     BuildJobSkipped ->
+  --       "### CS.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
+
+  let cfa = getCacheFilesAvailable buildPlan moduleName
+  putMVar
+    (fromMaybe (internalError (show ("BuildPlan: bpCacheResult mvar not found for module", moduleName))) $ M.lookup moduleName (bpCacheResult buildPlan))
+    (case result of
+      BuildJobFailed _ -> Nothing
+      BuildJobSkipped -> Just InputFilesUnchanged
+      BuildJobSkippedFullCacheHit -> Just InputFilesUnchanged
+      BuildJobSucceeded _ newExt ->
+        case (pbExternsFile <$> cfaPrebuilt cfa) == Just newExt of
+           True -> Just RebuiltButNoExternsChange
+           False -> Just ExternsChanged
+    )
 
 -- | Whether or not the module with the given ModuleName needs to be rebuilt
 needsRebuild :: BuildPlan -> ModuleName -> Bool
@@ -133,44 +191,63 @@ getResult
   => BuildPlan
   -> ModuleName
   -> m (Maybe (MultipleErrors, ExternsFile))
-getResult buildPlan moduleName =
+getResult buildPlan moduleName = do
   case M.lookup moduleName (bpPrebuilt buildPlan) of
     Just es ->
       pure (Just (MultipleErrors [], pbExternsFile es))
     Nothing -> do
       r <- readMVar $ bjResult $ fromMaybe (internalError "make: no barrier") $ M.lookup moduleName (bpBuildJobs buildPlan)
-      pure $ buildJobSuccess r
+      pure $
+        case r of
+          BuildJobSucceeded warnings externs  -> Just (warnings, externs)
+--          BuildJobSkippedFullCacheHit -> do
+--            let cfa = getCacheFilesAvailable buildPlan moduleName
+--            externs <- pbExternsFile <$> cfaPrebuilt cfa
+--            Just (MultipleErrors [], externs)
+          BuildJobSkippedFullCacheHit -> Nothing
+          BuildJobFailed _ -> Nothing
+          BuildJobSkipped -> Nothing
 
+fetchMissingExtern :: Show meta => MonadBaseControl IO m => meta -> MakeActions m -> BuildPlan -> ModuleName -> m (MultipleErrors, ExternsFile)
+fetchMissingExtern meta MakeActions{..} buildPlan moduleName = do
+  progress $ CompileMeta (T.pack $ show ("### ME.0 fetchMissingExterns"))
+  mExts <- getResult buildPlan moduleName
+  case mExts of
+    Just v -> pure v
+    Nothing -> do
+      let mvar = fromMaybe (internalError "BuildPlan: fetchMissingExtern") $ M.lookup moduleName (bpExterns buildPlan)
+      progress $ CompileMeta (T.pack $ show ("### ME.1 fetching", meta, "needs->", moduleName))
+      e <- readMVar mvar
+      -- read mvar, it's probably already filled and we don't want to interrupt anyone
+      case e of
+        -- Maybe wrapped value instead of tryReadMVar so that we don't have two threads decoding the same externs file, wasting work
+        Just ext -> pure (MultipleErrors [], ext)
+        Nothing -> do
+          progress $ CompileMeta (T.pack $ show ("### ME.2", moduleName))
+          -- oops, better fill in the mvar
+          mv <- takeMVar mvar
+          progress $ CompileMeta (T.pack $ show ("### ME.3", moduleName))
+          case mv of
+            -- nope, someone did it before us
+            Just extern -> do
+              progress $ CompileMeta (T.pack $ show ("### ME.4", moduleName))
+              putMVar mvar mv
+              progress $ CompileMeta (T.pack $ show ("### ME.5", moduleName))
+              pure (MultipleErrors [], extern)
 
-data CacheFilesAvailable = DepChanged Prebuilt | SourceChanged | UpToDate Prebuilt
-  -- TODO[drathier]: duplicate ExternsFile if UpToDate? Also stored in Prebuilt?
-  --deriving (Show)
-instance Show CacheFilesAvailable where
-  show cfa =
-    case cfa of
-      UpToDate _ -> "UpToDate.."
-      SourceChanged -> "SourceChanged"
-      DepChanged _ -> "DepChanged.."
+            Nothing -> do
+              -- fill it in
+              progress $ CompileMeta (T.pack $ show ("### ME.6", moduleName))
+              mextern <- snd <$> readExterns moduleName
+              progress $ CompileMeta (T.pack $ show ("### ME.7", moduleName))
+              let extern = fromMaybe (internalError (show ("BuildPlan readExterns", moduleName, meta))) mextern
+              putMVar mvar (Just extern)
+              progress $ CompileMeta (T.pack $ show ("### ME.8", moduleName))
+              pure (MultipleErrors [], extern)
 
-cfaPrebuilt :: CacheFilesAvailable -> Maybe Prebuilt
-cfaPrebuilt cfa =
-  case cfa of
-    DepChanged pb -> Just pb
-    SourceChanged -> Nothing
-    UpToDate pb -> Just pb
-
-shouldRecompile :: ModuleName -> CacheFilesAvailable -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile
-shouldRecompile mn cfa externs = do
-  -- let cfatag =
-  --       case cfa of
-  --         UpToDate _ -> "UpToDate"
-  --         SourceChanged -> "SourceChanged"
-  --         DepChanged _ -> "DepChanged"
-  -- let !_ =
-  --       case cfa of
-  --         DepChanged _ -> ()
-  --         _ -> trace (T.unpack (runModuleName mn) <> " shouldRecompile? " <> show cfatag) ()
-  case cfa of
+shouldRecompile :: BuildPlan -> ModuleName -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile
+shouldRecompile buildPlan mn externs = do
+  case getCacheFilesAvailable buildPlan mn of
     UpToDate pb ->
           -- caching trace ("ooo UpToDate:  " <> T.unpack (runModuleName mn)) $
       Right (pbExternsFile pb)
@@ -178,6 +255,7 @@ shouldRecompile mn cfa externs = do
           -- caching trace ("ooo SourceChanged stale:  " <> T.unpack (runModuleName mn)) $
       Left Nothing
     DepChanged pb ->
+      -- TODO[drathier]: keep this interesting diff logic
       let oldExts = pbExternsFile pb in
       let old = efUpstreamCacheShapes oldExts in
       let shapesMap = M.intersectionWith (\_ s -> s) old $ M.fromList $ (\ef -> (efModuleName ef, efOurCacheShapes ef)) <$> externs in
@@ -196,13 +274,28 @@ shouldRecompile mn cfa externs = do
       in
       case interestingDiff5 == mempty of
         True ->
-          -- caching trace ("ooo DepChanged stale:  " <> T.unpack (runModuleName mn)) $
           Right oldExts
         False ->
-          -- caching trace ("ooo DepChanged hit:  " <> T.unpack (runModuleName mn)) $
-          -- trace (T.unpack (runModuleName mn) <> ": cache miss: " <> sShow interestingDiff5) $
           Left (Just oldExts)
 
+data CacheFilesAvailable
+  = DepChanged Prebuilt
+  | SourceChanged
+  | UpToDate Prebuilt
+
+instance Show CacheFilesAvailable where
+  show cfa =
+    case cfa of
+      UpToDate _ -> "UpToDate.."
+      SourceChanged -> "SourceChanged"
+      DepChanged _ -> "DepChanged.."
+
+cfaPrebuilt :: CacheFilesAvailable -> Maybe Prebuilt
+cfaPrebuilt cfa =
+  case cfa of
+    DepChanged pb -> Just pb
+    SourceChanged -> Nothing
+    UpToDate pb -> Just pb
 
 -- | Gets the the build result for a given module name independent of whether it
 -- was rebuilt or prebuilt. Prebuilt modules always return no warnings.
@@ -214,6 +307,7 @@ getCacheFilesAvailable buildPlan moduleName =
   case M.lookup moduleName (bpDirtyExterns buildPlan) of
     Just v -> v
     Nothing -> SourceChanged
+
 
 -- | Constructs a BuildPlan for the given module graph.
 --
@@ -236,7 +330,7 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
       env <- C.newMVar primEnv
       idx <- C.newMVar 1
       pure
-        ( BuildPlan prebuilt M.empty M.empty env idx
+        ( BuildPlan prebuilt M.empty M.empty env idx M.empty M.empty
         , cacheDb
         )
     False -> do
@@ -248,10 +342,12 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
               mapMaybe (\s -> (statusModuleName s, statusRebuildNever s,) <$> statusPrebuilt s) rebuildStatuses
       let toBeRebuilt = filter (not . flip M.member prebuilt) sortedModuleNames
       buildJobs <- foldM makeBuildJob M.empty toBeRebuilt
+      cacheResults <- foldM (\m mn -> (\mvar -> M.insert mn mvar m) <$> newEmptyMVar) M.empty toBeRebuilt
+      externsResults <- foldM (\m mn -> (\mvar -> M.insert mn mvar m) <$> newMVar Nothing) M.empty toBeRebuilt
       env <- C.newMVar primEnv
       idx <- C.newMVar 1
       pure
-        ( BuildPlan prebuilt dirty buildJobs env idx
+        ( BuildPlan prebuilt dirty buildJobs env idx cacheResults externsResults
         , let
             update = flip $ \s ->
               M.alter (const (statusNewCacheInfo s)) (statusModuleName s)
@@ -354,6 +450,55 @@ construct MakeActions{..} cacheDb (sorted, graph) = do
                 Just depModTime | pbModificationTime pb < depModTime ->
                   M.insert moduleName (DepChanged pb) prev -- NOTE[drathier]: hard-coded source changed to depchanged, so we can skip the transitive timestamp check here and only rely on the later timestamp+hash+externs caching
                 _ -> M.insert moduleName (UpToDate pb) prev
+
+
+anyDepChanged :: forall m. (MonadBaseControl IO m) => ModuleName -> [(ModuleName, [ModuleName])] -> BuildPlan -> m RebuildInstructions
+anyDepChanged moduleName graphDirect buildPlan2 = do
+  let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graphDirect)
+  let f things =
+        case things of
+          [] -> pure FullDepsCacheHit
+          a:ax -> do
+            let mvar =
+                  fromMaybe (internalError (show ("BuildPlan: module not in deps", a, moduleName, deps)))
+                    $ M.lookup a (bpCacheResult buildPlan2)
+            cacheResult <- readMVar mvar
+            case cacheResult of
+              Nothing -> pure FailRebuildDepsFailed
+              Just InputFilesUnchanged -> f ax
+              Just RebuiltButNoExternsChange -> f ax
+              Just ExternsChanged -> pure DepsChangedPleaseRebuild
+  f deps
+
+-- | Constructs a BuildPlan for the given module graph.
+--
+-- The given MakeActions are used to collect various timestamps in order to
+-- determine whether a module needs rebuilding.
+construct2
+  :: forall m. MonadBaseControl IO m
+  => MakeActions m
+  -> CacheDb
+  -> ([CST.PartialResult Module], [(ModuleName, [ModuleName])])
+  -> m (BuildPlan, CacheDb)
+construct2 MakeActions{..} cacheDb (sorted, graph) = do
+  let sortedModuleNames = map (getModuleName . CST.resPartial) sorted
+  let buildJobs = M.empty
+  let dirty = M.empty
+  let prebuilt = M.empty
+  env <- C.newMVar primEnv
+  idx <- C.newMVar 1
+  let makeBuildJob prev moduleName = do
+        buildJob <- BuildJob <$> C.newEmptyMVar
+        pure (M.insert moduleName buildJob prev)
+  buildJobs <- foldM makeBuildJob M.empty sortedModuleNames
+  mapOfEmptyCacheResults <- foldM (\m mn -> (\v -> M.insert mn v m) <$> newEmptyMVar) M.empty sortedModuleNames
+  mapOfEmptyExternResults <- foldM (\m mn -> (\v -> M.insert mn v m) <$> newMVar Nothing) M.empty sortedModuleNames
+  pure
+    ( BuildPlan prebuilt M.empty buildJobs env idx mapOfEmptyCacheResults mapOfEmptyExternResults
+    , cacheDb
+    )
+
+
 
 maximumMaybe :: Ord a => [a] -> Maybe a
 maximumMaybe [] = Nothing
