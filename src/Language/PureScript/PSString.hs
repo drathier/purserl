@@ -58,21 +58,22 @@ newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
   deriving (Eq, Ord, Semigroup, Monoid, Generic)
 
 instance NFData PSString
-instance Serialise PSString where
-  encode ps =
-    case decodeString ps of
-      Just t -> encodeSimple 0 <> encode t
-      Nothing -> encodeSimple 1 <> encode (toUTF16CodeUnits ps)
-
-  decode = do
-    tag <- decodeSimple
-    case tag of
-      0 -> do
-        t <- decode
-        pure $ fromText t
-      1 -> do
-        words <- decode
-        pure $ PSString words
+instance Serialise PSString
+--instance Serialise PSString where
+--  encode ps =
+--    case decodeString ps of
+--      Just t -> encodeSimple 0 <> encode t
+--      Nothing -> encodeSimple 1 <> encode (toUTF16CodeUnits ps)
+--
+--  decode = do
+--    tag <- decodeSimple
+--    case tag of
+--      0 -> do
+--        t <- decode
+--        pure $ fromText t
+--      1 -> do
+--        words <- decode
+--        pure $ PSString words
 
 instance Show PSString where
   show = show . codePoints

@@ -22,29 +22,30 @@ import System.FilePath (makeRelative)
 data SourceAnn = SourceAnn {-# UNPACK #-} !SourceSpan ![Comment]
   deriving (Show, Eq, Ord, Generic, NFData)
 
-instance Serialise SourceAnn where
-  encode sa =
-    case sa of
-      SourceAnn NullSourceSpan [] -> encodeSimple 0
-      SourceAnn ss [] -> encodeSimple 1 <> encode ss
-      SourceAnn NullSourceSpan comments -> encodeSimple 2 <> encode comments
-      SourceAnn ss comments -> encodeSimple 3 <> encode ss <> encode comments
-
-  decode = do
-    tag <- decodeSimple
-    case tag of
-      0 ->
-        pure $ SourceAnn NullSourceSpan []
-      1 -> do
-        ss <- decode
-        pure $ SourceAnn ss []
-      2 -> do
-        comments <- decode
-        pure $ SourceAnn NullSourceSpan comments
-      3 -> do
-        ss <- decode
-        comments <- decode
-        pure $ SourceAnn ss comments
+instance Serialise SourceAnn
+--instance Serialise SourceAnn where
+--  encode sa =
+--    case sa of
+--      SourceAnn NullSourceSpan [] -> encodeSimple 0
+--      SourceAnn ss [] -> encodeSimple 1 <> encode ss
+--      SourceAnn NullSourceSpan comments -> encodeSimple 2 <> encode comments
+--      SourceAnn ss comments -> encodeSimple 3 <> encode ss <> encode comments
+--
+--  decode = do
+--    tag <- decodeSimple
+--    case tag of
+--      0 ->
+--        pure $ SourceAnn NullSourceSpan []
+--      1 -> do
+--        ss <- decode
+--        pure $ SourceAnn ss []
+--      2 -> do
+--        comments <- decode
+--        pure $ SourceAnn NullSourceSpan comments
+--      3 -> do
+--        ss <- decode
+--        comments <- decode
+--        pure $ SourceAnn ss comments
 
 
 safst (SourceAnn a _) = a

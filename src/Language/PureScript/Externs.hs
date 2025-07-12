@@ -95,6 +95,10 @@ data ExternsFile = ExternsFile
   -- ^ The externs version
   , efModuleName :: ModuleName
   -- ^ Module name
+  , efUpstreamCacheShapes :: M.Map ModuleName DBOpaque
+  -- ^ Shapes of things dependend upon by this module
+  , efOurCacheShapes :: DBOpaque
+  -- ^ Shapes of things in this module
   , efExports :: [DeclarationRef]
   -- ^ List of module exports
   , efImports :: [ExternsImport]
@@ -107,47 +111,43 @@ data ExternsFile = ExternsFile
   -- ^ List of type and value declaration
   , efSourceSpan :: SourceSpan
   -- ^ Source span for error reporting
-  , efUpstreamCacheShapes :: M.Map ModuleName DBOpaque
-  -- ^ Shapes of things dependend upon by this module
-  , efOurCacheShapes :: DBOpaque
-  -- ^ Shapes of things in this module
   } deriving (Show, Generic, NFData)
 
--- instance Serialise ExternsFile
-instance Serialise ExternsFile where
-  encode ef =
-    encodeString "efVersion" <> encode (efVersion ef) <>
-    encodeString "efModuleName" <> encode (efModuleName ef) <>
-    encodeString "efExports" <> encode (efExports ef) <>
-    encodeString "efImports" <> encode (efImports ef) <>
-    encodeString "efFixities" <> encode (efFixities ef) <>
-    encodeString "efTypeFixities" <> encode (efTypeFixities ef) <>
-    encodeString "efDeclarations" <> encode (efDeclarations ef) <>
-    encodeString "efSourceSpan" <> encode (efSourceSpan ef) <>
-    encodeString "efUpstreamCacheShapes" <> encode (efUpstreamCacheShapes ef) <>
-    encodeString "efOurCacheShapes" <> encode (efOurCacheShapes ef)
-  decode = do
-     "efVersion" <- decodeString
-     efVersion <- decode
-     "efModuleName" <- decodeString
-     efModuleName <- decode
-     "efExports" <- decodeString
-     efExports <- decode
-     "efImports" <- decodeString
-     efImports <- decode
-     "efFixities" <- decodeString
-     efFixities <- decode
-     "efTypeFixities" <- decodeString
-     efTypeFixities <- decode
-     "efDeclarations" <- decodeString
-     efDeclarations <- decode
-     "efSourceSpan" <- decodeString
-     efSourceSpan <- decode
-     "efUpstreamCacheShapes" <- decodeString
-     efUpstreamCacheShapes <- decode
-     "efOurCacheShapes" <- decodeString
-     efOurCacheShapes <- decode
-     pure (ExternsFile efVersion efModuleName efExports efImports efFixities efTypeFixities efDeclarations efSourceSpan efUpstreamCacheShapes efOurCacheShapes)
+instance Serialise ExternsFile
+--instance Serialise ExternsFile where
+--  encode ef =
+--    encodeString "efVersion" <> encode (efVersion ef) <>
+--    encodeString "efModuleName" <> encode (efModuleName ef) <>
+--    encodeString "efExports" <> encode (efExports ef) <>
+--    encodeString "efImports" <> encode (efImports ef) <>
+--    encodeString "efFixities" <> encode (efFixities ef) <>
+--    encodeString "efTypeFixities" <> encode (efTypeFixities ef) <>
+--    encodeString "efDeclarations" <> encode (efDeclarations ef) <>
+--    encodeString "efSourceSpan" <> encode (efSourceSpan ef) <>
+--    encodeString "efUpstreamCacheShapes" <> encode (efUpstreamCacheShapes ef) <>
+--    encodeString "efOurCacheShapes" <> encode (efOurCacheShapes ef)
+--  decode = do
+--     "efVersion" <- decodeString
+--     efVersion <- decode
+--     "efModuleName" <- decodeString
+--     efModuleName <- decode
+--     "efExports" <- decodeString
+--     efExports <- decode
+--     "efImports" <- decodeString
+--     efImports <- decode
+--     "efFixities" <- decodeString
+--     efFixities <- decode
+--     "efTypeFixities" <- decodeString
+--     efTypeFixities <- decode
+--     "efDeclarations" <- decodeString
+--     efDeclarations <- decode
+--     "efSourceSpan" <- decodeString
+--     efSourceSpan <- decode
+--     "efUpstreamCacheShapes" <- decodeString
+--     efUpstreamCacheShapes <- decode
+--     "efOurCacheShapes" <- decodeString
+--     efOurCacheShapes <- decode
+--     pure (ExternsFile efVersion efModuleName efExports efImports efFixities efTypeFixities efDeclarations efSourceSpan efUpstreamCacheShapes efOurCacheShapes)
 
 instance Eq ExternsFile where
   a == b = serialise a == serialise b
