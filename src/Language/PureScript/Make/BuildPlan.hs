@@ -123,15 +123,16 @@ markComplete
   -> BuildJobResult
   -> m ()
 markComplete buildPlan moduleName result = do
-  liftBase $ putStrLn $ case result of
+  liftBase $ case result of
       BuildJobSucceeded _ _ ->
-        "### CS.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
+        putStrLn $ "### CS.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
       BuildJobFailed _ ->
-        "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
+        putStrLn $ "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
       BuildJobSkipped ->
-        "### CS.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
+        putStrLn $ "### CS.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
       BuildJobSkippedFullCacheHit ->
-        "### CS.BuildJobSkippedFullCacheHit[" <> T.unpack (runModuleName moduleName) <> "]"
+        -- putStrLn $ "### CS.BuildJobSkippedFullCacheHit[" <> T.unpack (runModuleName moduleName) <> "]"
+        pure ()
   let BuildJob rVar = fromMaybe (internalError "make: markComplete no barrier") $ M.lookup moduleName (bpBuildJobs buildPlan)
   putMVar rVar result
 
@@ -210,39 +211,39 @@ getResult buildPlan moduleName = do
 
 fetchMissingExtern :: Show meta => MonadBaseControl IO m => meta -> MakeActions m -> BuildPlan -> ModuleName -> m (MultipleErrors, ExternsFile)
 fetchMissingExtern meta MakeActions{..} buildPlan moduleName = do
-  progress $ CompileMeta (T.pack $ show ("### ME.0 fetchMissingExterns"))
+  -- progress $ CompileMeta ("-- ME.0 fetchMissingExterns")
   mExts <- getResult buildPlan moduleName
   case mExts of
     Just v -> pure v
     Nothing -> do
       let mvar = fromMaybe (internalError "BuildPlan: fetchMissingExtern") $ M.lookup moduleName (bpExterns buildPlan)
-      progress $ CompileMeta (T.pack $ show ("### ME.1 fetching", meta, "needs->", moduleName))
+      --progress $ CompileMeta (T.pack $ show ("-- ME.1 fetching", meta, "needs->", moduleName))
       e <- readMVar mvar
       -- read mvar, it's probably already filled and we don't want to interrupt anyone
       case e of
         -- Maybe wrapped value instead of tryReadMVar so that we don't have two threads decoding the same externs file, wasting work
         Just ext -> pure (MultipleErrors [], ext)
         Nothing -> do
-          progress $ CompileMeta (T.pack $ show ("### ME.2", moduleName))
+          -- progress $ CompileMeta (T.pack $ show ("-- ME.2", moduleName))
           -- oops, better fill in the mvar
           mv <- takeMVar mvar
-          progress $ CompileMeta (T.pack $ show ("### ME.3", moduleName))
+          -- progress $ CompileMeta (T.pack $ show ("-- ME.3", moduleName))
           case mv of
             -- nope, someone did it before us
             Just extern -> do
-              progress $ CompileMeta (T.pack $ show ("### ME.4", moduleName))
+              progress $ CompileMeta (T.pack $ show ("-- ME.4", moduleName))
               putMVar mvar mv
-              progress $ CompileMeta (T.pack $ show ("### ME.5", moduleName))
+              progress $ CompileMeta (T.pack $ show ("-- ME.5", moduleName))
               pure (MultipleErrors [], extern)
 
             Nothing -> do
               -- fill it in
-              progress $ CompileMeta (T.pack $ show ("### ME.6", moduleName))
+              -- progress $ CompileMeta (T.pack $ show ("-- ME.6", moduleName))
               mextern <- snd <$> readExterns moduleName
-              progress $ CompileMeta (T.pack $ show ("### ME.7", moduleName))
+              -- progress $ CompileMeta (T.pack $ show ("-- ME.7", moduleName))
               let extern = fromMaybe (internalError (show ("BuildPlan readExterns", moduleName, meta))) mextern
               putMVar mvar (Just extern)
-              progress $ CompileMeta (T.pack $ show ("### ME.8", moduleName))
+              -- progress $ CompileMeta (T.pack $ show ("-- ME.8", moduleName))
               pure (MultipleErrors [], extern)
 
 shouldRecompile :: BuildPlan -> ModuleName -> [ExternsFile] -> Either (Maybe ExternsFile) ExternsFile

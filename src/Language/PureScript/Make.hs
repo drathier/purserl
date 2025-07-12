@@ -205,6 +205,8 @@ make ma@MakeActions{..} ms = do
   let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
   progress $ CompileMeta (T.pack $ show ("### CS.toBeRebuilt", length toBeRebuilt))
   let totalModuleCount = length toBeRebuilt
+  newCacheDbMVar <- newMVar cacheDb
+
   for_ toBeRebuilt $ \m -> fork $ do
     -- for each module:
     -- do I need to rebuild myself?
@@ -215,7 +217,7 @@ make ma@MakeActions{..} ms = do
 
 
     let moduleName = getModuleName . CST.resPartial $ m
-    -- progress $ CompileMeta (T.pack $ show (moduleName, "### DR.1"))
+    -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.1"))
     -- for each module:
     -- do I need to rebuild myself?
     -- did my source files change?
@@ -224,49 +226,51 @@ make ma@MakeActions{..} ms = do
       case inputInfo of
         Left RebuildNever -> do
           -- built-in module, nothing to do
-          progress $ CompileMeta (T.pack $ show (moduleName, "### DR.2.1", "Left RebuildNever"))
+          progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.2.1", "Left RebuildNever"))
           pure True
         Left RebuildAlways -> do
           -- file not yet built
-          progress $ CompileMeta (T.pack $ show (moduleName, "### DR.2.2", "Left RebuildAlways"))
+          progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.2.2", "Left RebuildAlways"))
           pure False
         Right cacheInfo -> do
-          -- progress $ CompileMeta (T.pack $ show (moduleName, "### DR.2.3", "Right cacheInfo"))
+          -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.2.3", "Right cacheInfo"))
           -- file has been built before
           cwd <- liftBase getCurrentDirectory
-          (_newCacheInfo, isUpToDate) <- Cache.checkChanged cacheDb moduleName cwd cacheInfo
+          (newCacheInfo, isUpToDate) <- Cache.checkChanged cacheDb moduleName cwd cacheInfo
+          modifyMVar_ newCacheDbMVar (\db -> pure $ M.insert moduleName newCacheInfo db)
+          -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.4.2.1", ("writeNewCacheDb", newCacheInfo)))
           pure isUpToDate
 
     shouldRebuild <-
       case areMyOwnFilesUpToDate of
         False -> do
-          progress $ CompileMeta (T.pack $ show (moduleName, "### DR.3.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
+          progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
           pure True
         True -> do
-          -- progress $ CompileMeta (T.pack $ show (moduleName, "### DR.3.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
+          -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.3.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
           -- did any of my deps change?
           anyDepChanged <- BuildPlan.anyDepChanged moduleName graph buildPlan
           case anyDepChanged of
             BuildPlan.FailRebuildDepsFailed -> do
-              progress $ CompileMeta (T.pack $ show (moduleName, "### DR.3.2.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FailRebuildDepsFailed"))
+              progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.2.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FailRebuildDepsFailed"))
               BuildPlan.markComplete buildPlan moduleName BuildJobSkipped
               pure False
 
             BuildPlan.FullDepsCacheHit -> do
-              -- progress $ CompileMeta (T.pack $ show (moduleName, "### DR.3.2.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FullDepsCacheHit"))
+              -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.3.2.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FullDepsCacheHit"))
               BuildPlan.markComplete buildPlan moduleName BuildJobSkippedFullCacheHit
               pure False
 
             BuildPlan.DepsChangedPleaseRebuild -> do
-              progress $ CompileMeta (T.pack $ show (moduleName, "### DR.3.2.3", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "DepsChangedPleaseRebuild"))
+              progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.2.3", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "DepsChangedPleaseRebuild"))
               pure True
 
     case shouldRebuild of
       False -> do
-        -- progress $ CompileMeta (T.pack $ show (moduleName, "### DR.4.1", ("shouldRebuild", shouldRebuild)))
+        -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.4.1", ("shouldRebuild", shouldRebuild)))
         pure ()
       True -> do
-        progress $ CompileMeta (T.pack $ show (moduleName, "### DR.4.2", ("shouldRebuild", shouldRebuild)))
+        progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.4.2", ("shouldRebuild", shouldRebuild)))
         let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
         buildModule lock buildPlan moduleName totalModuleCount
           (T.unpack . spanName . getModuleSourceSpan . CST.resPartial $ m)
@@ -278,9 +282,9 @@ make ma@MakeActions{..} ms = do
           -- (the exception is thrown, but other threads waiting on MVars are released)
           -- `onException` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
 
-  progress $ CompileMeta (T.pack $ show ("### DR.5", "all solo modules done, pre collection"))
+  progress $ CompileMeta (T.pack $ show ("-- DR.5", "all solo modules done, pre collection"))
   externs <- traverse tryReadMVar $ M.elems $ BuildPlan.bpExterns buildPlan
-  progress $ CompileMeta (T.pack $ show ("### DR.5", "all solo modules done, counts", length (filter ((==) Nothing) externs), "/", length externs, "unchanged"))
+  progress $ CompileMeta (T.pack $ show ("-- DR.5", "all solo modules done, counts", length (filter ((==) Nothing) externs), "/", length externs, "unchanged"))
   -- Wait for all threads to complete, and collect results (and errors).
   (failures, successes) <-
     let
@@ -300,6 +304,7 @@ make ma@MakeActions{..} ms = do
   -- Write the updated build cache database to disk
   -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
 
+  newCacheDb <- takeMVar newCacheDbMVar
   writeCacheDb $ M.unionWith (\new _old -> new) (Cache.removeModules (M.keysSet failures) $ newCacheDb) cacheDb
   progress $ CompileMeta ("### CS.wroteCacheDB32")
   -- case () of
@@ -372,12 +377,12 @@ make ma@MakeActions{..} ms = do
       -- We need to wait for dependencies to be built, before checking if the current
       -- module should be rebuilt, so the first thing to do is to wait on the
       -- MVars for the module's dependencies.
-      progress $ CompileMeta ("### DR.preWaitForResults[" <> runModuleName moduleName <> "]")
-      -- progress $ CompileMeta ("### DR.preWaitForResults[" <> runModuleName moduleName <> "] deps:" <> T.pack (show deps))
+      progress $ CompileMeta ("-- DR.preWaitForResults[" <> runModuleName moduleName <> "]")
+      -- progress $ CompileMeta -- DR.preWaitForResults[" <> runModuleName moduleName <> "] deps:" <> T.pack (show deps))
       results <- M.fromList <$> traverse (\dep -> (dep,) <$> BuildPlan.fetchMissingExtern ("mod", moduleName) ma buildPlan dep) deps
-      -- progress $ CompileMeta ("### DR.preWaitForResults[" <> runModuleName moduleName <> "] results:" <> T.pack (show (results)))
+      -- progress $ CompileMeta -- DR.preWaitForResults[" <> runModuleName moduleName <> "] results:" <> T.pack (show (results)))
       -- mexterns <- fmap unzip . sequence <$> traverse (getResult buildPlan) deps
-      progress $ CompileMeta ("### DR.endWaitForResults[" <> runModuleName moduleName <> "]")
+      progress $ CompileMeta ("-- DR.endWaitForResults[" <> runModuleName moduleName <> "]")
 
       case Just (42, 121) of
         Just (_, _) -> do
@@ -400,7 +405,7 @@ make ma@MakeActions{..} ms = do
                   -- Bracket all of the per-module work behind the semaphore, including
                   -- forcing the result. This is done to limit concurrency and keep
                   -- memory usage down; see comments above.
-                  (exts, warnings) <- do -- bracket_ (C.waitQSem lock) (C.signalQSem lock) $ do
+                  (exts, warnings) <- bracket_ (C.waitQSem lock) (C.signalQSem lock) $ do
                       -- Eventlog markers for profiling; see debug/eventlog.js
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " start"
                       -- liftBase $ traceM $ T.unpack (runModuleName moduleName) <> " start"
@@ -441,7 +446,7 @@ make ma@MakeActions{..} ms = do
 --            Right badExts -> doCompile WasCacheHit (Just badExts)
 --            Left badExts -> doCompile WasCacheMiss badExts
         Nothing -> do
-          progress $ CompileMeta ("### DR.mexternsNothing[" <> runModuleName moduleName <> "]")
+          progress $ CompileMeta ("-- DR.mexternsNothing[" <> runModuleName moduleName <> "]")
           return BuildJobSkipped
 
     BuildPlan.markComplete buildPlan moduleName result
