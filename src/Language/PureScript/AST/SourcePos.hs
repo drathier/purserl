@@ -22,7 +22,12 @@ import System.FilePath (makeRelative)
 data SourceAnn = SourceAnn {-# UNPACK #-} !SourceSpan ![Comment]
   deriving (Show, Eq, Ord, Generic, NFData)
 
-instance Serialise SourceAnn
+-- instance Serialise SourceAnn
+instance Serialise SourceAnn where
+  encode sa = encode ()
+  decode = do
+    () <- decode
+    pure NullSourceAnn
 --instance Serialise SourceAnn where
 --  encode sa =
 --    case sa of
@@ -57,7 +62,14 @@ data SourcePos = SourcePos
     -- ^ Line number
   , sourcePosColumn :: {-# UNPACK #-} !Int
     -- ^ Column number
-  } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Show, Eq, Ord, Generic, NFData)--, Serialise)
+
+instance Serialise SourcePos where
+  encode sa = encode ()
+  decode = do
+    () <- decode
+    pure (SourcePos 0 0)
+
 
 displaySourcePos :: SourcePos -> Text
 displaySourcePos sp =
@@ -85,7 +97,14 @@ data SourceSpan = SourceSpan
     -- ^ Start of the span
   , spanEnd :: {-# UNPACK #-} !SourcePos
     -- ^ End of the span
-  } deriving (Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Eq, Ord, Generic, NFData)--, Serialise)
+
+instance Serialise SourceSpan where
+  encode sa = encode ()
+  decode = do
+    () <- decode
+    pure NullSourceSpan
+
 
 instance Show SourceSpan where
   show NullSourceSpan = "s0"
