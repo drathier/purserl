@@ -15,7 +15,7 @@ module Language.PureScript.Externs
   , moduleToExternsFile
   , applyExternsFileToEnvironment
   , externsFileName
-  , DB
+  , DB(..)
   , dbDiffDiff
   , dbOpaqueDiffDiff
   ) where
@@ -95,10 +95,6 @@ data ExternsFile = ExternsFile
   -- ^ The externs version
   , efModuleName :: ModuleName
   -- ^ Module name
-  , efUpstreamCacheShapes :: M.Map ModuleName DBOpaque
-  -- ^ Shapes of things dependend upon by this module
-  , efOurCacheShapes :: DBOpaque
-  -- ^ Shapes of things in this module
   , efExports :: [DeclarationRef]
   -- ^ List of module exports
   , efImports :: [ExternsImport]
@@ -111,6 +107,10 @@ data ExternsFile = ExternsFile
   -- ^ List of type and value declaration
   , efSourceSpan :: SourceSpan
   -- ^ Source span for error reporting
+  , efUpstreamCacheShapes :: M.Map ModuleName DBOpaque
+  -- ^ Shapes of things dependend upon by this module
+  , efOurCacheShapes :: DBOpaque
+  -- ^ Shapes of things in this module
   } deriving (Show, Generic, NFData)
 
 instance Serialise ExternsFile
@@ -607,7 +607,7 @@ instance ToCS [Declaration] () where
     & traverse_ toCS
 
 instance ToCS DB () where
-  toCS (DB dataOrNewtypeDeclsTypeOnly dataOrNewtypeDeclsWithCtors ctorTypes typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls) = do
+  toCS (DB dataOrNewtypeDeclsTypeOnly dataOrNewtypeDeclsWithCtors ctorTypes typeSynonymDecls valueDecls externDecls externDataDecls opFixity ctorFixity tyOpFixity tyClassDecls tyClassInstanceDecls _exports) = do
     dataOrNewtypeDeclsTypeOnly & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
     dataOrNewtypeDeclsWithCtors & traverse_ (traverse_ (\(csdb, _) -> modify (<> csdb)))
     typeSynonymDecls & traverse_ (traverse_ (\(CSTypeSynonymDeclaration _ _ _ csdb _) -> modify (<> csdb)))
@@ -972,17 +972,18 @@ data DB
     , _tyOpFixity :: M.Map (OpName 'TypeOpName) [CSTyOpFixity]
     , _tyClassDecls :: M.Map (ProperName 'ClassName) [CSTypeClassDeclaration]
     , _tyClassInstanceDecls :: M.Map RunIdent [CSTypeInstanceDeclaration]
+    , _exports :: ExportSummary
     }
   deriving (Show, Eq, Generic, NFData)
 
 instance Semigroup DB where
-  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
+  DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 <> DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 = DB (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12) (a13 <> b13)
 
 instance Monoid DB where
-  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
+  mempty = DB mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 dbToOpaque :: DB -> DBOpaque
-dbToOpaque (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+dbToOpaque (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
   DBOpaque
   (a1 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
   (a2 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
@@ -996,6 +997,7 @@ dbToOpaque (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
   (a10 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
   (a11 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
   (a12 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
+  (a13 & serialise & cacheShapeHashFromByteString)
 
 data DBOpaque
   = DBOpaque
@@ -1016,16 +1018,17 @@ data DBOpaque
     , _tyOpFixity_opaque :: M.Map (OpName 'TypeOpName) CacheShapeHash
     , _tyClassDecls_opaque :: M.Map (ProperName 'ClassName) CacheShapeHash
     , _tyClassInstanceDecls_opaque :: M.Map RunIdent CacheShapeHash
+    , _exports_opaque :: CacheShapeHash
     }
   deriving (Show, Eq, Generic, NFData)
 
 instance Serialise DBOpaque
 
 instance Semigroup DBOpaque where
-  DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 <> DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 = DBOpaque (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12)
+  DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 <> DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 = DBOpaque (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9) (a10 <> b10) (a11 <> b11) (a12 <> b12) (a13 <> b13)
 
 instance Monoid DBOpaque where
-  mempty = DBOpaque mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
+  mempty = DBOpaque mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty mempty
 
 cacheShapeHashFromByteString :: ByteString -> CacheShapeHash
 cacheShapeHashFromByteString b =
@@ -1037,11 +1040,13 @@ cacheShapeHashFromByteString b =
 
 newtype CacheShapeHash = CacheShapeHash BS8.ByteString
   deriving (Show, Eq, Generic, NFData)
+  deriving (Semigroup, Monoid) via BS8.ByteString
+
 
 instance Serialise CacheShapeHash
 
 dbIsctExports :: M.Map ModuleName DB -> ExportSummary -> DB -> DB
-dbIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
   let
     upstreamReExports =
       M.intersectionWith
@@ -1050,18 +1055,20 @@ dbIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeCla
         upstreamDBs
     ourDB =
       DB
-        (M.intersectionWith (\_ b -> b) typeName a1)
-        a2
-        a3
-        (M.intersectionWith (\_ b -> b) typeName a4)
-        a5
-        a6
-        (M.intersectionWith (\_ b -> b) typeName a7)
-        (M.intersectionWith (\_ b -> b) valueOpName a8)
-        (M.intersectionWith (\_ b -> b) valueOpName a9)
-        (M.intersectionWith (\_ b -> b) typeOpName a10)
-        (M.intersectionWith (\_ b -> b) typeClass a11)
-        (M.intersectionWith (\_ b -> b) typeClassInstance a12)
+        { _dataOrNewtypeDeclsTypeOnly = M.intersectionWith (\_ b -> b) typeName a1
+        , _dataOrNewtypeDeclsFull = a2
+        , _ctorTypes = a3
+        , _typeSynonymDecls = M.intersectionWith (\_ b -> b) typeName a4
+        , _valueDecls = M.intersectionWith (\_ b -> b) (M.fromList $ map (\(k,v) -> (toRunIdent k, v)) $ M.toList values) a5
+        , _externDecls = a6
+        , _externDataDecls = M.intersectionWith (\_ b -> b) typeName a7
+        , _opFixity = M.intersectionWith (\_ b -> b) valueOpName a8
+        , _ctorFixity = M.intersectionWith (\_ b -> b) valueOpName a9
+        , _tyOpFixity = M.intersectionWith (\_ b -> b) typeOpName a10
+        , _tyClassDecls = M.intersectionWith (\_ b -> b) typeClass a11
+        , _tyClassInstanceDecls = M.intersectionWith (\_ b -> b) typeClassInstance a12
+        , _exports = a13
+        }
   in
   foldl'
     (\dbSoFar upstreamDB ->
@@ -1072,7 +1079,7 @@ dbIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeCla
     upstreamReExports
 
 dbOpaqueIsctExports :: M.Map ModuleName DBOpaque -> ExportSummary -> DBOpaque -> DBOpaque
-dbOpaqueIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) =
+dbOpaqueIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
   let
     upstreamReExports =
       M.intersectionWith
@@ -1093,6 +1100,7 @@ dbOpaqueIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass t
         (M.intersectionWith (\_ b -> b) typeOpName a10)
         (M.intersectionWith (\_ b -> b) typeClass a11)
         (M.intersectionWith (\_ b -> b) typeClassInstance a12)
+        a13
   in
   foldl'
     (\dbSoFar upstreamDB ->
@@ -1103,35 +1111,37 @@ dbOpaqueIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass t
     upstreamReExports
 
 
-dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
+dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13) =
     DB
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12))
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12)
+      (if a13 == b13 then mempty else a13)
 
-dbOpaqueDiffDiff (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) (DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12) =
+dbOpaqueDiffDiff (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) (DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13) =
     DBOpaque
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11))
-      ((M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12))
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11)
+      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12)
+      (if a13 == b13 then mempty else a13)
 
 
 findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]
@@ -1342,7 +1352,7 @@ data ExportSummary =
     , _refOpName :: M.Map (OpName 'ValueOpName) ()
     -- [drathier]: re-exports of whole modules are desugared to one-by-one export refs, so we don't have to handle them here
     , _reExportRef :: M.Map ModuleName ExportSummary
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Generic, NFData, Serialise)
 
 instance Monoid ExportSummary where
   mempty = ExportSummary mempty mempty mempty mempty mempty mempty mempty
@@ -1500,7 +1510,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   let exportedThings = findExportedThings exps in
   -- let !importedThings = findImportedThings exps in
   let findDepsRes = if shouldCache == False then [] else findDeps mn env ds in
-  let dbDeps = foldl (<>) mempty (snd <$> findDepsRes) in
+  let dbDeps = foldl (<>) (mempty { _exports = exportedThings }) (snd <$> findDepsRes) in
   let csdbDeps = flip execState mempty $ toCS $ dbDeps in
   let efOurCacheShapes = dbDeps & dbToOpaque & dbOpaqueIsctExports upstreamDBs exportedThings in
   -- let !_ = trace (sShow ("###moduleToExternsFile findExportedThings", mn, exportedThings)) () in
@@ -1608,6 +1618,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                 (M.intersectionWith (\_ b -> b) typeOp (_tyOpFixity_opaque up))
                 (M.intersectionWith (\_ b -> b) typeClasses (_tyClassDecls_opaque up))
                 (M.intersectionWith (\_ b -> b) values (_tyClassInstanceDecls_opaque up))
+                (_exports_opaque up)
         ))
         upstreamDBs
         currentDeps
