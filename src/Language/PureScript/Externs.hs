@@ -1066,18 +1066,8 @@ newtype CacheShapeHash = CacheShapeHash BS8.ByteString
 
 instance Serialise CacheShapeHash
 
-flat m = (foldl' (\acc (k,v) -> M.insertWith (<>) k v acc) M.empty)  (map (\((_mn,n),v) -> (n,v)) (M.toList m))
-
 dbIsctExports :: M.Map ModuleName DB -> ExportSummary -> DB -> DB
 dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
-  let
-    flatValues = flat values
-    flatTypeName = flat typeName
-    flatTypeOpName = flat typeOpName
-    flatTypeClass = flat typeClass
-    flatTypeClassInstance = flat typeClassInstance
-    flatValueOpName = flat valueOpName
-  in
   let
     upstreamReExports =
       M.intersectionWith
@@ -1086,18 +1076,18 @@ dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass ty
         upstreamDBs
     ourDB =
       DB
-        { _dataOrNewtypeDeclsTypeOnly = M.intersectionWith (\_ b -> b) flatTypeName a1
+        { _dataOrNewtypeDeclsTypeOnly = M.intersectionWith (\_ b -> b) typeName a1
         , _dataOrNewtypeDeclsFull = a2
-        , _ctorTypes = M.intersectionWith (\_ b -> b) flatValues a3
-        , _typeSynonymDecls = M.intersectionWith (\_ b -> b) flatTypeName a4
-        , _valueDecls = M.intersectionWith (\_ b -> b) flatValues a5
-        , _externDecls = M.intersectionWith (\_ b -> b) flatValues a6
-        , _externDataDecls = M.intersectionWith (\_ b -> b) flatTypeName a7
-        , _opFixity = M.intersectionWith (\_ b -> b) flatValueOpName a8
-        , _ctorFixity = M.intersectionWith (\_ b -> b) flatValueOpName a9
-        , _tyOpFixity = M.intersectionWith (\_ b -> b) flatTypeOpName a10
-        , _tyClassDecls = M.intersectionWith (\_ b -> b) flatTypeClass a11
-        , _tyClassInstanceDecls = M.intersectionWith (\_ b -> b) flatTypeClassInstance a12
+        , _ctorTypes = M.intersectionWith (\_ b -> b) values a3
+        , _typeSynonymDecls = M.intersectionWith (\_ b -> b) typeName a4
+        , _valueDecls = M.intersectionWith (\_ b -> b) values a5
+        , _externDecls = M.intersectionWith (\_ b -> b) values a6
+        , _externDataDecls = M.intersectionWith (\_ b -> b) typeName a7
+        , _opFixity = M.intersectionWith (\_ b -> b) valueOpName a8
+        , _ctorFixity = M.intersectionWith (\_ b -> b) valueOpName a9
+        , _tyOpFixity = M.intersectionWith (\_ b -> b) typeOpName a10
+        , _tyClassDecls = M.intersectionWith (\_ b -> b) typeClass a11
+        , _tyClassInstanceDecls = M.intersectionWith (\_ b -> b) typeClassInstance a12
         , _exports = a13
         }
   in
@@ -1112,14 +1102,6 @@ dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass ty
 dbOpaqueIsctExports :: Show meta => meta -> M.Map ModuleName DBOpaque -> ExportSummary -> DBOpaque -> DBOpaque
 dbOpaqueIsctExports meta upstreamDBs (ExportSummary valueName typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
   let
-    flatValueName = flat valueName
-    flatTypeName = flat typeName
-    flatTypeOpName = flat typeOpName
-    flatTypeClass = flat typeClass
-    flatTypeClassInstance = flat typeClassInstance
-    flatValueOpName = flat valueOpName
-  in
-  let
     upstreamReExports =
       M.intersectionWith
         (\innerExportSummary innerDB -> dbOpaqueIsctExports ("inner") upstreamDBs innerExportSummary innerDB)
@@ -1127,22 +1109,21 @@ dbOpaqueIsctExports meta upstreamDBs (ExportSummary valueName typeName typeOpNam
         upstreamDBs
     ourDB =
       DBOpaque
-        { _dataOrNewtypeDeclsTypeOnly_opaque = M.intersectionWith (\_ b -> b) flatTypeName a1
+        { _dataOrNewtypeDeclsTypeOnly_opaque = M.intersectionWith (\_ b -> b) typeName a1
         , _dataOrNewtypeDeclsFull_opaque = a2
         , _ctorTypes_opaque = a3
-        , _typeSynonymDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeName a4
-        , _valueDecls_opaque = M.intersectionWith (\_ b -> b) flatValueName a5
+        , _typeSynonymDecls_opaque = M.intersectionWith (\_ b -> b) typeName a4
+        , _valueDecls_opaque = M.intersectionWith (\_ b -> b) valueName a5
         , _externDecls_opaque = a6
-        , _externDataDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeName a7
-        , _opFixity_opaque = M.intersectionWith (\_ b -> b) flatValueOpName a8
-        , _ctorFixity_opaque = M.intersectionWith (\_ b -> b) flatValueOpName a9
-        , _tyOpFixity_opaque = M.intersectionWith (\_ b -> b) flatTypeOpName a10
-        , _tyClassDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeClass a11
-        , _tyClassInstanceDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeClassInstance a12
+        , _externDataDecls_opaque = M.intersectionWith (\_ b -> b) typeName a7
+        , _opFixity_opaque = M.intersectionWith (\_ b -> b) valueOpName a8
+        , _ctorFixity_opaque = M.intersectionWith (\_ b -> b) valueOpName a9
+        , _tyOpFixity_opaque = M.intersectionWith (\_ b -> b) typeOpName a10
+        , _tyClassDecls_opaque = M.intersectionWith (\_ b -> b) typeClass a11
+        , _tyClassInstanceDecls_opaque = M.intersectionWith (\_ b -> b) typeClassInstance a12
         , _exports_opaque = a13
         }
   in
-  -- (\res -> trace (show ("dbOpaqueIsctExports", meta, "upstreamReExports", upstreamReExports, "res", res)) res) $
   foldl'
     (\dbSoFar upstreamDB ->
       -- [drathier]: <> is Map union; it keeps left arg on conflict
@@ -1486,10 +1467,10 @@ findExportedThingsImpl exsum declRef =
     TypeClassRef _ className -> exsumPutTypeClassRef className exsum
     TypeOpRef _ tyOpName -> exsumPutTypeOpName tyOpName exsum
     TypeRef _ tyName mCtorNames -> exsumPutTypeName tyName exsum
-    ValueRef _ ident -> exsumPutValue ident exsum
+    ValueRef _ ident -> exsumPutValue (toRunIdent ident) exsum
     ValueOpRef _ opName -> exsumPutOpName opName exsum
     TypeInstanceRef _ ident _ -> exsumPutTypeClassInstance (toRunIdent ident) exsum
-    ReExportRef _ src ref -> findExportedThingsImpl (exportSourceDefinedIn src) exsum ref
+    ReExportRef _ src ref -> findExportedThingsImpl exsum ref
     ModuleRef _ modu ->
       -- [drathier]: re-exports of whole modules are desugared to one-by-one export refs, so we don't have to handle them here. However, they're still left in, so we have to ignore them here, rather than assert that we never see any value like this here
       exsum
@@ -1558,7 +1539,7 @@ moduleToExternsFile upstreamDBs (Module ss _comments mn decls (Just exports)) en
         <&> (,())
         & M.fromList
   in
-  let exportedThings = findExportedThings mn exports in
+  let exportedThings = findExportedThings exports in
   -- let safeImports = findQualifiedImportedModules mn efImports upstreamDBs in
   let findDepsRes = if shouldCache == False then [] else findDeps mn env decls in
   let dbDeps = foldl (<>) (mempty { _exports = exportedThings }) (snd <$> findDepsRes) in
