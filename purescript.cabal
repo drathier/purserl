@@ -453,6 +453,8 @@ library
     Paths_purescript
     -- purerl
     -- Paths_purerl
+  if flag(static)
+    ld-options: -static -pthread
 
 executable purs
   import: defaults
@@ -539,3 +541,9 @@ test-suite tests
     TestSourceMaps
     TestUtils
     Paths_purescript
+
+
+flag static
+  description: Builds a statically-linked version of the PureScript compiler.
+  manual: True
+  default: False
