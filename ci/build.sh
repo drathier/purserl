@@ -170,11 +170,11 @@ $STACK build --only-snapshot $STACK_OPTS
 (echo "::endgroup::"; echo "::group::Build source distributions") 2>/dev/null
 
 ## Test in a source distribution (see above)
-#$STACK sdist . --tar-dir sdist-test;
-#tar -xzf sdist-test/purescript-*.tar.gz -C sdist-test --strip-components=1
-#
-#(echo "::endgroup::"; echo "::group::Build and test PureScript") 2>/dev/null
-#
+$STACK sdist . --tar-dir sdist-test;
+tar -xzf sdist-test/purescript-*.tar.gz -C sdist-test --strip-components=1
+
+(echo "::endgroup::"; echo "::group::Build and test PureScript") 2>/dev/null
+
 #pushd sdist-test
 # Haddock -Werror goes here to keep us honest but prevent failing on
 # documentation errors in dependencies
