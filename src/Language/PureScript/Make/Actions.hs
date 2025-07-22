@@ -9,6 +9,7 @@ module Language.PureScript.Make.Actions
   , readCacheDb'
   , writeCacheDb'
   , ffiCodegen'
+  , RecompileReason(..)
   ) where
 
 import Prelude
@@ -117,18 +118,24 @@ data RebuildPolicy
 -- | Progress messages from the make process
 data ProgressMessage
   -- = CompilingModule ModuleName (Maybe (Int, Int)) String
-  = CompilingModule ModuleName (Maybe (Int, Int))
+  = CompilingModule ModuleName (Maybe (Int, Int)) RecompileReason
   -- ^ Compilation started for the specified module
   | CompileMeta T.Text
   -- ^ [drathier]: Various stuff we want to print to describe to purerlex where we are in the compilation flow
+  deriving (Show, Eq, Ord)
+
+data RecompileReason
+  = UnknownRecompileReason
+  | SourceChangedOrDependencyFailedToBuildInPreviousCompilationOrSomethingElse
+  | DependencyChanged ModuleName
   deriving (Show, Eq, Ord)
 
 -- | Render a progress message
 renderProgressMessage :: T.Text -> ProgressMessage -> T.Text
 --renderProgressMessage infx (CompilingModule mn mi ms) =
 renderProgressMessage infx (CompileMeta t) = t
-renderProgressMessage infx (CompilingModule mn mi) =
-  T.concat
+renderProgressMessage infx (CompilingModule mn mi causedByModule) =
+  T.concat $
     [ renderProgressIndex mi
     -- , " "
     -- , T.pack (show ms)
@@ -136,6 +143,11 @@ renderProgressMessage infx (CompilingModule mn mi) =
     , infx
     , runModuleName mn
     ]
+    <>
+    case causedByModule of
+      DependencyChanged causeModule -> [" (", runModuleName causeModule, " changed)"]
+      SourceChangedOrDependencyFailedToBuildInPreviousCompilationOrSomethingElse -> []
+      UnknownRecompileReason -> []
   where
   renderProgressIndex :: Maybe (Int, Int) -> T.Text
   renderProgressIndex = maybe "" $ \(start, end) ->

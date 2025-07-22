@@ -16,8 +16,9 @@ module Language.PureScript.Externs
   , applyExternsFileToEnvironment
   , externsFileName
   , DB(..)
+  , DBOpaque(..)
   , dbDiffDiff
-  , dbOpaqueDiffDiff
+  , dbOpaqueDiffDiffIgnoringExportsListChanges
   ) where
 
 import Prelude
@@ -28,7 +29,7 @@ import Codec.Serialise.Decoding (decodeString)
 import Control.DeepSeq (NFData)
 import Control.Monad (join)
 import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
-import Data.List (foldl', find)
+import Data.List (foldl', find, intercalate)
 import Data.Foldable (fold)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -425,7 +426,7 @@ instance Monoid ToCSDB where
 data ToCSDBInner
   = ToCSDBInner
     -- TODO[drathier]: all these Qualified contain SourcePos if it's referring to something in the current module. We generally don't want to store SourcePos, but since it's only local, we're already rebuilding the module at that point, so I'll leave it in.
-    { _referencedCtors :: M.Map (ProperName 'ConstructorName) ()
+    { _referencedCtors :: M.Map RunIdent ()
     -- NOTE[drathier]: it's likely that we only care about the types of ctors, not types themselves, as using ctors means we care about the type shape changing, but if we just refer to the type we probably don't care what its internal structure is.
     , _referencedTypes :: M.Map (ProperName 'TypeName) ()
     , _referencedTypeOp :: M.Map (OpName 'TypeOpName) ()
@@ -600,7 +601,7 @@ instance ToCS CaseAlternative () where
 instance ToCS [Declaration] () where
   toCS ds = do
     let env = internalError "TODO[drathier]: missing env in ToCS"
-    let mn = internalError "TODO[drathier]: missing mn in ToCS"
+    let mn = ModuleName "TODO[drathier]: missing mn in ToCS"
     -- TODO[drathier]: lifting CSDB values out of DB like this feels weird. Should CSDB and DB be the same type? Should we use ToCS for e.g. findDeps too?
     findDeps mn env ds
     <&> snd
@@ -647,7 +648,7 @@ csdbPutCtor =
       v {
         _referencedCtors =
          M.insert
-          refCtor
+          (RunIdent $ runProperName refCtor)
           ()
           (_referencedCtors v)
        }
@@ -758,7 +759,7 @@ dbPutDataDeclaration tname nctorsDB csDataDeclaration@(CSDataDeclarationWithCtor
          foldr
            (\(CSDataConstructorDeclaration ctorName _) m ->
              M.insert
-              ctorName
+              (RunIdent $ runProperName ctorName)
               tname
               m
             )
@@ -962,7 +963,7 @@ data DB
     -- TODO[drathier]: all that have a ToCSDB should have it separately like in this first row below, and the e.g. CSDataDeclaration should only contain the things that, if they change, should cause a recompile of things depending on this thing
     { _dataOrNewtypeDeclsTypeOnly :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclarationTypeOnly)]
     , _dataOrNewtypeDeclsFull :: M.Map (ProperName 'TypeName) [(ToCSDB, CSDataDeclarationWithCtors)]
-    , _ctorTypes :: M.Map (ProperName 'ConstructorName) (ProperName 'TypeName)
+    , _ctorTypes :: M.Map RunIdent (ProperName 'TypeName)
     , _typeSynonymDecls :: M.Map (ProperName 'TypeName) [CSTypeSynonymDeclaration]
     , _valueDecls :: M.Map RunIdent [CSValueDeclaration] -- TODO[drathier]: ToCSDB here too?
     , _externDecls :: M.Map RunIdent [CSExternDeclaration]
@@ -997,7 +998,7 @@ dbToOpaque (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
   (a10 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
   (a11 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
   (a12 & M.map (\v -> v & serialise & cacheShapeHashFromByteString))
-  (a13 & serialise & cacheShapeHashFromByteString)
+  a13 -- & serialise & cacheShapeHashFromByteString)
 
 data DBOpaque
   = DBOpaque
@@ -1008,7 +1009,7 @@ data DBOpaque
     -- TODO[drathier]: all that have a ToCSDB should have it separately like in this first row below, and the e.g. CSDataDeclaration should only contain the things that, if they change, should cause a recompile of things depending on this thing
     { _dataOrNewtypeDeclsTypeOnly_opaque :: M.Map (ProperName 'TypeName) CacheShapeHash
     , _dataOrNewtypeDeclsFull_opaque :: M.Map (ProperName 'TypeName) CacheShapeHash
-    , _ctorTypes_opaque :: M.Map (ProperName 'ConstructorName) (ProperName 'TypeName)
+    , _ctorTypes_opaque :: M.Map RunIdent (ProperName 'TypeName)
     , _typeSynonymDecls_opaque :: M.Map (ProperName 'TypeName) CacheShapeHash
     , _valueDecls_opaque :: M.Map RunIdent CacheShapeHash
     , _externDecls_opaque :: M.Map RunIdent CacheShapeHash
@@ -1018,9 +1019,29 @@ data DBOpaque
     , _tyOpFixity_opaque :: M.Map (OpName 'TypeOpName) CacheShapeHash
     , _tyClassDecls_opaque :: M.Map (ProperName 'ClassName) CacheShapeHash
     , _tyClassInstanceDecls_opaque :: M.Map RunIdent CacheShapeHash
-    , _exports_opaque :: CacheShapeHash
+    , _exports_opaque :: ExportSummary -- CacheShapeHash
     }
-  deriving (Show, Eq, Generic, NFData)
+  deriving (Eq, Generic, NFData)
+
+instance Show DBOpaque where
+  show db =
+    "DBOpaque{" <>
+    (intercalate ", " $ filter ((/=)"")
+      [ if _dataOrNewtypeDeclsTypeOnly_opaque db == mempty then "" else "_dataOrNewtypeDeclsTypeOnly_opaque=" <> show (_dataOrNewtypeDeclsTypeOnly_opaque db)
+      , if _dataOrNewtypeDeclsFull_opaque db == mempty then "" else "_dataOrNewtypeDeclsFull_opaque=" <> show (_dataOrNewtypeDeclsFull_opaque db)
+      , if _ctorTypes_opaque db == mempty then "" else "_ctorTypes_opaque=" <> show (_ctorTypes_opaque db)
+      , if _typeSynonymDecls_opaque db == mempty then "" else "_typeSynonymDecls_opaque=" <> show (_typeSynonymDecls_opaque db)
+      , if _valueDecls_opaque db == mempty then "" else "_valueDecls_opaque=" <> show (_valueDecls_opaque db)
+      , if _externDecls_opaque db == mempty then "" else "_externDecls_opaque=" <> show (_externDecls_opaque db)
+      , if _externDataDecls_opaque db == mempty then "" else "_externDataDecls_opaque=" <> show (_externDataDecls_opaque db)
+      , if _opFixity_opaque db == mempty then "" else "_opFixity_opaque=" <> show (_opFixity_opaque db)
+      , if _ctorFixity_opaque db == mempty then "" else "_ctorFixity_opaque=" <> show (_ctorFixity_opaque db)
+      , if _tyOpFixity_opaque db == mempty then "" else "_tyOpFixity_opaque=" <> show (_tyOpFixity_opaque db)
+      , if _tyClassDecls_opaque db == mempty then "" else "_tyClassDecls_opaque=" <> show (_tyClassDecls_opaque db)
+      , if _tyClassInstanceDecls_opaque db == mempty then "" else "_tyClassInstanceDecls_opaque=" <> show (_tyClassInstanceDecls_opaque db)
+      , if _exports_opaque db == mempty then "" else "_exports_opaque=" <> show (_exports_opaque db)
+      ])
+    <> "}"
 
 instance Serialise DBOpaque
 
@@ -1045,8 +1066,18 @@ newtype CacheShapeHash = CacheShapeHash BS8.ByteString
 
 instance Serialise CacheShapeHash
 
+flat m = (foldl' (\acc (k,v) -> M.insertWith (<>) k v acc) M.empty)  (map (\((_mn,n),v) -> (n,v)) (M.toList m))
+
 dbIsctExports :: M.Map ModuleName DB -> ExportSummary -> DB -> DB
 dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
+  let
+    flatValues = flat values
+    flatTypeName = flat typeName
+    flatTypeOpName = flat typeOpName
+    flatTypeClass = flat typeClass
+    flatTypeClassInstance = flat typeClassInstance
+    flatValueOpName = flat valueOpName
+  in
   let
     upstreamReExports =
       M.intersectionWith
@@ -1055,18 +1086,18 @@ dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass ty
         upstreamDBs
     ourDB =
       DB
-        { _dataOrNewtypeDeclsTypeOnly = M.intersectionWith (\_ b -> b) typeName a1
+        { _dataOrNewtypeDeclsTypeOnly = M.intersectionWith (\_ b -> b) flatTypeName a1
         , _dataOrNewtypeDeclsFull = a2
-        , _ctorTypes = a3
-        , _typeSynonymDecls = M.intersectionWith (\_ b -> b) typeName a4
-        , _valueDecls = M.intersectionWith (\_ b -> b) (M.fromList $ map (\(k,v) -> (toRunIdent k, v)) $ M.toList values) a5
-        , _externDecls = a6
-        , _externDataDecls = M.intersectionWith (\_ b -> b) typeName a7
-        , _opFixity = M.intersectionWith (\_ b -> b) valueOpName a8
-        , _ctorFixity = M.intersectionWith (\_ b -> b) valueOpName a9
-        , _tyOpFixity = M.intersectionWith (\_ b -> b) typeOpName a10
-        , _tyClassDecls = M.intersectionWith (\_ b -> b) typeClass a11
-        , _tyClassInstanceDecls = M.intersectionWith (\_ b -> b) typeClassInstance a12
+        , _ctorTypes = M.intersectionWith (\_ b -> b) flatValues a3
+        , _typeSynonymDecls = M.intersectionWith (\_ b -> b) flatTypeName a4
+        , _valueDecls = M.intersectionWith (\_ b -> b) flatValues a5
+        , _externDecls = M.intersectionWith (\_ b -> b) flatValues a6
+        , _externDataDecls = M.intersectionWith (\_ b -> b) flatTypeName a7
+        , _opFixity = M.intersectionWith (\_ b -> b) flatValueOpName a8
+        , _ctorFixity = M.intersectionWith (\_ b -> b) flatValueOpName a9
+        , _tyOpFixity = M.intersectionWith (\_ b -> b) flatTypeOpName a10
+        , _tyClassDecls = M.intersectionWith (\_ b -> b) flatTypeClass a11
+        , _tyClassInstanceDecls = M.intersectionWith (\_ b -> b) flatTypeClassInstance a12
         , _exports = a13
         }
   in
@@ -1078,30 +1109,40 @@ dbIsctExports upstreamDBs (ExportSummary values typeName typeOpName typeClass ty
     ourDB
     upstreamReExports
 
-dbOpaqueIsctExports :: M.Map ModuleName DBOpaque -> ExportSummary -> DBOpaque -> DBOpaque
-dbOpaqueIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
+dbOpaqueIsctExports :: Show meta => meta -> M.Map ModuleName DBOpaque -> ExportSummary -> DBOpaque -> DBOpaque
+dbOpaqueIsctExports meta upstreamDBs (ExportSummary valueName typeName typeOpName typeClass typeClassInstance valueOpName reExportedRefs) (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) =
+  let
+    flatValueName = flat valueName
+    flatTypeName = flat typeName
+    flatTypeOpName = flat typeOpName
+    flatTypeClass = flat typeClass
+    flatTypeClassInstance = flat typeClassInstance
+    flatValueOpName = flat valueOpName
+  in
   let
     upstreamReExports =
       M.intersectionWith
-        (\innerExportSummary innerDB -> dbOpaqueIsctExports upstreamDBs innerExportSummary innerDB)
+        (\innerExportSummary innerDB -> dbOpaqueIsctExports ("inner") upstreamDBs innerExportSummary innerDB)
         reExportedRefs
         upstreamDBs
     ourDB =
       DBOpaque
-        (M.intersectionWith (\_ b -> b) typeName a1)
-        a2
-        a3
-        (M.intersectionWith (\_ b -> b) typeName a4)
-        a5
-        a6
-        (M.intersectionWith (\_ b -> b) typeName a7)
-        (M.intersectionWith (\_ b -> b) valueOpName a8)
-        (M.intersectionWith (\_ b -> b) valueOpName a9)
-        (M.intersectionWith (\_ b -> b) typeOpName a10)
-        (M.intersectionWith (\_ b -> b) typeClass a11)
-        (M.intersectionWith (\_ b -> b) typeClassInstance a12)
-        a13
+        { _dataOrNewtypeDeclsTypeOnly_opaque = M.intersectionWith (\_ b -> b) flatTypeName a1
+        , _dataOrNewtypeDeclsFull_opaque = a2
+        , _ctorTypes_opaque = a3
+        , _typeSynonymDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeName a4
+        , _valueDecls_opaque = M.intersectionWith (\_ b -> b) flatValueName a5
+        , _externDecls_opaque = a6
+        , _externDataDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeName a7
+        , _opFixity_opaque = M.intersectionWith (\_ b -> b) flatValueOpName a8
+        , _ctorFixity_opaque = M.intersectionWith (\_ b -> b) flatValueOpName a9
+        , _tyOpFixity_opaque = M.intersectionWith (\_ b -> b) flatTypeOpName a10
+        , _tyClassDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeClass a11
+        , _tyClassInstanceDecls_opaque = M.intersectionWith (\_ b -> b) flatTypeClassInstance a12
+        , _exports_opaque = a13
+        }
   in
+  -- (\res -> trace (show ("dbOpaqueIsctExports", meta, "upstreamReExports", upstreamReExports, "res", res)) res) $
   foldl'
     (\dbSoFar upstreamDB ->
       -- [drathier]: <> is Map union; it keeps left arg on conflict
@@ -1113,42 +1154,49 @@ dbOpaqueIsctExports upstreamDBs (ExportSummary _ typeName typeOpName typeClass t
 
 dbDiffDiff (DB a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) (DB b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13) =
     DB
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12)
-      (if a13 == b13 then mempty else a13)
+      { _dataOrNewtypeDeclsTypeOnly = M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1
+      , _dataOrNewtypeDeclsFull = M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2
+      , _ctorTypes = M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3
+      , _typeSynonymDecls = M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4
+      , _valueDecls = M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5
+      , _externDecls = M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6
+      , _externDataDecls = M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7
+      , _opFixity = M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8
+      , _ctorFixity = M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9
+      , _tyOpFixity = M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10
+      , _tyClassDecls = M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11
+      , _tyClassInstanceDecls = M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12
+      , _exports = if a13 == b13 then mempty else a13
+      }
 
-dbOpaqueDiffDiff (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) (DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13) =
+dbOpaqueDiffDiffIgnoringExportsListChanges (DBOpaque a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) (DBOpaque b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13) =
     DBOpaque
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11)
-      (M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12)
-      (if a13 == b13 then mempty else a13)
+      { _dataOrNewtypeDeclsTypeOnly_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a1 b1
+      , _dataOrNewtypeDeclsFull_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a2 b2
+      , _ctorTypes_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a3 b3
+      , _typeSynonymDecls_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a4 b4
+      , _valueDecls_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a5 b5
+      , _externDecls_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a6 b6
+      , _externDataDecls_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a7 b7
+      , _opFixity_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a8 b8
+      , _ctorFixity_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a9 b9
+      , _tyOpFixity_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a10 b10
+      , _tyClassDecls_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a11 b11
+      , _tyClassInstanceDecls_opaque = M.differenceWith (\x y -> if x == y then Nothing else Just x) a12 b12
+      -- , _exports_opaque = mempty
+      , _exports_opaque =
+        -- let ea13 = mempty {_reExportRef = _reExportRef a13} in
+        -- let eb13 = mempty {_reExportRef = _reExportRef b13} in
+        -- if ea13 == eb13 then mempty else a13 -- TODO[drathier]: only look at reexports?
+        if a13 == b13 then mempty else a13 -- TODO[drathier]: only look at reexports?
+      }
 
 
 findDeps :: ModuleName -> Environment -> [Declaration] -> [(Declaration, DB)]
-findDeps mn env ds =
+findDeps mn env decls =
   let
     (kindsMap, rolesMap, otherDs) =
-      ds
+      decls
       & flattenDecls
       & foldl (\(akind, arole, aother) d ->
         let
@@ -1273,7 +1321,10 @@ findDepsImpl getKind getRole mn env d =
           dbPutTyOpFixity tyOpName (CSTyOpFixity fixity tname)
 
     -- ImportDeclaration SourceAnn ModuleName ImportDeclarationType (Maybe ModuleName)
-    ImportDeclaration _ modu importDeclType mAlias -> pure ()
+    ImportDeclaration _ modu importDeclType mAlias ->
+      -- imports are handled before this function runs, so ignored here
+      -- TODO[drathier]: we can track the import decl types and malias to see if a module is only ever (including transitive re-exports) imported qualified. Then we'll know the exact subset of values which are in scope. Well, values, not necessarily types.
+      pure ()
     -- TypeClassDeclaration SourceAnn (ProperName 'ClassName) [(Text, Maybe SourceType)] [SourceConstraint] [FunctionalDependency] [Declaration]
     TypeClassDeclaration _ className targs constraints fnDeps decls -> do
       ndecls <- decls & traverse (\decl ->
@@ -1344,7 +1395,7 @@ replaceTypeSynonyms typesMap typeSynonymsMap =
 -- TODO[drathier]: this is very similar to ToCSDBInner, but not quite. This tracks exported values, ToCSDBInner tracks used types.
 data ExportSummary =
   ExportSummary
-    { _refValue :: M.Map Ident ()
+    { _refValue :: M.Map RunIdent ()
     , _refTypeName :: M.Map (ProperName 'TypeName) ()
     , _refTypeOpName :: M.Map (OpName 'TypeOpName) ()
     , _refTypeClass :: M.Map (ProperName 'ClassName) ()
@@ -1352,7 +1403,7 @@ data ExportSummary =
     , _refOpName :: M.Map (OpName 'ValueOpName) ()
     -- [drathier]: re-exports of whole modules are desugared to one-by-one export refs, so we don't have to handle them here
     , _reExportRef :: M.Map ModuleName ExportSummary
-    } deriving (Show, Eq, Generic, NFData, Serialise)
+    } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
 
 instance Monoid ExportSummary where
   mempty = ExportSummary mempty mempty mempty mempty mempty mempty mempty
@@ -1438,7 +1489,7 @@ findExportedThingsImpl exsum declRef =
     ValueRef _ ident -> exsumPutValue ident exsum
     ValueOpRef _ opName -> exsumPutOpName opName exsum
     TypeInstanceRef _ ident _ -> exsumPutTypeClassInstance (toRunIdent ident) exsum
-    ReExportRef _ src ref -> exsumPutExportRef src (findExportedThings [ref]) exsum
+    ReExportRef _ src ref -> findExportedThingsImpl (exportSourceDefinedIn src) exsum ref
     ModuleRef _ modu ->
       -- [drathier]: re-exports of whole modules are desugared to one-by-one export refs, so we don't have to handle them here. However, they're still left in, so we have to ignore them here, rather than assert that we never see any value like this here
       exsum
@@ -1451,9 +1502,9 @@ findExportedThingsImpl exsum declRef =
 -- applied to the exported names here also. (The appropriate map is returned by
 -- `L.P.Renamer.renameInModule`.)
 moduleToExternsFile :: M.Map ModuleName DBOpaque -> Module -> Environment -> M.Map Ident Ident -> ExternsFile
-moduleToExternsFile _ (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExternsFile: module exports were not elaborated"
+moduleToExternsFile _upstreamDbs (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExternsFile: module exports were not elaborated"
 -- data Module = Module SourceSpan [Comment] ModuleName [Declaration] (Maybe [DeclarationRef])
-moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdents =
+moduleToExternsFile upstreamDBs (Module ss _comments mn decls (Just exports)) env renamedIdents =
   let
     sortDsByCtor :: Foldable f => f Declaration -> M.Map T.Text [Declaration]
     sortDsByCtor dsx =
@@ -1477,7 +1528,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
         TypeClassDeclaration _ _ _ _ _ _ -> M.insertWith (<>) "TypeClassDeclaration" [d] res
         TypeInstanceDeclaration _ _ _ _ _ _ _ _ _ -> M.insertWith (<>) "TypeInstanceDeclaration" [d] res
 
-    sds = sortDsByCtor ds
+    sds = sortDsByCtor decls
 
 
   in
@@ -1497,7 +1548,7 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
 
   let possiblyImportedTypeAliasesFrom :: M.Map ModuleName () -- [(ProperName 'TypeName)]
       possiblyImportedTypeAliasesFrom =
-        ds
+        decls
         & concatMap (\case
           -- TODO[drathier]: look at importDeclType
           ImportDeclaration _ modu _importDeclType _mAlias ->
@@ -1507,35 +1558,36 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
         <&> (,())
         & M.fromList
   in
-  let exportedThings = findExportedThings exps in
-  -- let !importedThings = findImportedThings exps in
-  let findDepsRes = if shouldCache == False then [] else findDeps mn env ds in
+  let exportedThings = findExportedThings mn exports in
+  -- let safeImports = findQualifiedImportedModules mn efImports upstreamDBs in
+  let findDepsRes = if shouldCache == False then [] else findDeps mn env decls in
   let dbDeps = foldl (<>) (mempty { _exports = exportedThings }) (snd <$> findDepsRes) in
   let csdbDeps = flip execState mempty $ toCS $ dbDeps in
-  let efOurCacheShapes = dbDeps & dbToOpaque & dbOpaqueIsctExports upstreamDBs exportedThings in
+  let efOurCacheShapes = dbDeps & dbToOpaque & dbOpaqueIsctExports ("self", mn) upstreamDBs exportedThings in
+  -- let efUpstreamReExports = buildEfUpstreamReExports upstream exports mempty mempty in
   -- let !_ = trace (sShow ("###moduleToExternsFile findExportedThings", mn, exportedThings)) () in
 {-
   let !_ = trace (show ("###moduleToExternsFile mn", mn)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.BoundValueDeclaration", M.lookup "BoundValueDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.BindingGroupDeclaration", M.lookup "BindingGroupDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.ExternDeclaration", M.lookup "ExternDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.ExternDataDeclaration", M.lookup "ExternDataDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.FixityDeclaration", M.lookup "FixityDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.ImportDeclaration", M.lookup "ImportDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.BoundValueDeclaration", M.lookup "BoundValueDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.BindingGroupDeclaration", M.lookup "BindingGroupDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.ExternDeclaration", M.lookup "ExternDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.ExternDataDeclaration", M.lookup "ExternDataDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.FixityDeclaration", M.lookup "FixityDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.ImportDeclaration", M.lookup "ImportDeclaration" sds)) () in
 -}
-  -- let !_ = trace (sShow ("###moduleToExternsFile ds.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
-  -- let !_ = trace (sShow ("###moduleToExternsFile ds.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile decls.TypeClassDeclaration", M.lookup "TypeClassDeclaration" sds)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile decls.TypeInstanceDeclaration", M.lookup "TypeInstanceDeclaration" sds)) () in
 {-
-  let !_ = trace (show ("###moduleToExternsFile ds.DataDeclaration", M.lookup "DataDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.DataBindingGroupDeclaration", M.lookup "DataBindingGroupDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.TypeSynonymDeclaration", M.lookup "TypeSynonymDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.KindDeclaration", M.lookup "KindDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.RoleDeclaration", M.lookup "RoleDeclaration" sds)) () in
-  let !_ = trace (show ("###moduleToExternsFile ds.TypeDeclaration", M.lookup "TypeDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.DataDeclaration", M.lookup "DataDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.DataBindingGroupDeclaration", M.lookup "DataBindingGroupDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.TypeSynonymDeclaration", M.lookup "TypeSynonymDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.KindDeclaration", M.lookup "KindDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.RoleDeclaration", M.lookup "RoleDeclaration" sds)) () in
+  let !_ = trace (show ("###moduleToExternsFile decls.TypeDeclaration", M.lookup "TypeDeclaration" sds)) () in
 -}
-  -- let !_ = trace (sShow ("###moduleToExternsFile ds.ValueDeclaration", M.lookup "ValueDeclaration" sds)) () in
+  -- let !_ = trace (sShow ("###moduleToExternsFile decls.ValueDeclaration", M.lookup "ValueDeclaration" sds)) () in
 {-
-  let !_ = trace (show ("###moduleToExternsFile exps", exps)) () in
+  let !_ = trace (show ("###moduleToExternsFile exports", exports)) () in
   let !_ = trace (show ("###moduleToExternsFile renamedIdents", renamedIdents)) () in
   let !_ = trace (show ("-------")) () in
   let !_ = trace (show ("###moduleToExternsFile findDeps", findDepsRes)) () in
@@ -1577,16 +1629,18 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
               , "currentDepsKeys", M.keys currentDeps
               , "v", a
               ))))
-            (M.zipWithMatched (\_mnDep up (ToCSDBInner
-                ctors
-                types
-                typeOp
-                typeClasses
-                values
-                valueOp) ->
-
+            (M.zipWithMatched
+              (\mnDep
+                up
+                (ToCSDBInner
+                  ctors
+                  types
+                  typeOp
+                  typeClasses
+                  values
+                  valueOp) ->
                 let
-                    dbCtorToType :: M.Map (ProperName 'TypeName) (ProperName 'ConstructorName)
+                    dbCtorToType :: M.Map (ProperName 'TypeName) RunIdent
                     dbCtorToType =
                       _ctorTypes_opaque up
                       & M.toList
@@ -1601,28 +1655,29 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
                         <&> (,())
                         & M.fromList
                 in
-              -- TODO[drathier]: it would be nice to check that each of the names we tried to look up matched exactly one thing when building this DB
+                -- TODO[drathier]: it would be nice to check that each of the names we tried to look up matched exactly one thing when building this DB
 
-              -- TODO[drathier]: the dry run envvar should still run the caching logic, to see if it would've skipped the recompile, and also compare the rebuilt exts to the cached ones, to see if the rebuild was needed. If there's a mismatch in either direction, print it to stdout so I can debug it later.
-
-              DBOpaque
-                (M.intersectionWith (\_ b -> b) types (_dataOrNewtypeDeclsTypeOnly_opaque up))
-                (M.intersectionWith (\_ b -> b) typesRefByCtors (_dataOrNewtypeDeclsFull_opaque up))
-                (M.intersectionWith (\_ b -> b) ctors (_ctorTypes_opaque up))
-                (_typeSynonymDecls_opaque up) -- (M.intersectionWith (\_ b -> b) types (_typeSynonymDecls up)) -- TODO[drathier]: We don't really know if a type alias was used or not, because type aliases get replaced with the thing they're aliasing before we get here. However, we could look at explicit exports and explicit imports to filter this a bit.
-                (M.intersectionWith (\_ b -> b) values (_valueDecls_opaque up))
-                (M.intersectionWith (\_ b -> b) values (_externDecls_opaque up))
-                (M.intersectionWith (\_ b -> b) types (_externDataDecls_opaque up))
-                (M.intersectionWith (\_ b -> b) valueOp (_opFixity_opaque up))
-                (M.intersectionWith (\_ b -> b) valueOp (_ctorFixity_opaque up))
-                (M.intersectionWith (\_ b -> b) typeOp (_tyOpFixity_opaque up))
-                (M.intersectionWith (\_ b -> b) typeClasses (_tyClassDecls_opaque up))
-                (M.intersectionWith (\_ b -> b) values (_tyClassInstanceDecls_opaque up))
-                (_exports_opaque up)
-        ))
-        upstreamDBs
-        currentDeps
-        & M.filter (/= (mempty :: DBOpaque))
+                -- TODO[drathier]: the dry run envvar should still run the caching logic, to see if it would've skipped the recompile, and also compare the rebuilt exts to the cached ones, to see if the rebuild was needed. If there's a mismatch in either direction, print it to stdout so I can debug it later.
+                -- case fromMaybe (internalError $ show ("Externs: couldn't find safeImport", mn, mnDep)) $ M.lookup mnDep safeImports of
+                   DBOpaque
+                      (M.intersectionWith (\_ b -> b) types (_dataOrNewtypeDeclsTypeOnly_opaque up))
+                      (M.intersectionWith (\_ b -> b) typesRefByCtors (_dataOrNewtypeDeclsFull_opaque up))
+                      (M.intersectionWith (\_ b -> b) ctors (_ctorTypes_opaque up))
+                      (_typeSynonymDecls_opaque up) -- (M.intersectionWith (\_ b -> b) types (_typeSynonymDecls up)) -- TODO[drathier]: We don't really know if a type alias was used or not, because type aliases get replaced with the thing they're aliasing before we get here. However, we could look at explicit exports and explicit imports to filter this a bit.
+                      (M.intersectionWith (\_ b -> b) values (_valueDecls_opaque up))
+                      (M.intersectionWith (\_ b -> b) values (_externDecls_opaque up))
+                      (M.intersectionWith (\_ b -> b) types (_externDataDecls_opaque up))
+                      (M.intersectionWith (\_ b -> b) valueOp (_opFixity_opaque up))
+                      (M.intersectionWith (\_ b -> b) valueOp (_ctorFixity_opaque up))
+                      (M.intersectionWith (\_ b -> b) typeOp (_tyOpFixity_opaque up))
+                      (M.intersectionWith (\_ b -> b) typeClasses (_tyClassDecls_opaque up))
+                      (M.intersectionWith (\_ b -> b) values (_tyClassInstanceDecls_opaque up))
+                      (_exports_opaque up)
+              )
+            )
+            upstreamDBs
+            currentDeps
+          & M.filter (\dbo -> dbo /= (mempty :: DBOpaque))
 
   in
   -- let !_ = trace (sShow ("###moduleToExternsFile efUpstreamCacheShapes", mn, efUpstreamCacheShapes)) () in
@@ -1631,21 +1686,21 @@ moduleToExternsFile upstreamDBs (Module ss _ mn ds (Just exps)) env renamedIdent
   where
   efVersion       = T.pack (showVersion Paths.version)
   efModuleName    = mn
-  efExports       = map renameRef exps
-  efImports       = mapMaybe importDecl ds
-  efFixities      = mapMaybe fixityDecl ds
-  efTypeFixities  = mapMaybe typeFixityDecl ds
-  efDeclarations  = concatMap toExternsDeclaration exps
+  efExports       = map renameRef exports
+  efImports       = mapMaybe importDecl decls
+  efFixities      = mapMaybe fixityDecl decls
+  efTypeFixities  = mapMaybe typeFixityDecl decls
+  efDeclarations  = concatMap toExternsDeclaration exports
   efSourceSpan    = ss
 
   fixityDecl :: Declaration -> Maybe ExternsFixity
   fixityDecl (ValueFixityDeclaration _ (Fixity assoc prec) name op) =
-    fmap (const (ExternsFixity assoc prec op name)) (find ((== Just op) . getValueOpRef) exps)
+    fmap (const (ExternsFixity assoc prec op name)) (find ((== Just op) . getValueOpRef) exports)
   fixityDecl _ = Nothing
 
   typeFixityDecl :: Declaration -> Maybe ExternsTypeFixity
   typeFixityDecl (TypeFixityDeclaration _ (Fixity assoc prec) name op) =
-    fmap (const (ExternsTypeFixity assoc prec op name)) (find ((== Just op) . getTypeOpRef) exps)
+    fmap (const (ExternsTypeFixity assoc prec op name)) (find ((== Just op) . getTypeOpRef) exports)
   typeFixityDecl _ = Nothing
 
   importDecl :: Declaration -> Maybe ExternsImport

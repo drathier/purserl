@@ -439,6 +439,10 @@ library
     Language.PureScript.Erl.Synonyms
     Language.PureScript.Erl
 
+    --
+    DH
+
+
   other-modules:
     Data.Text.PureScript
     Language.PureScript.Constants.TH
