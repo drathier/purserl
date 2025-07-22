@@ -59,6 +59,9 @@ common defaults
     -- -Weverything
     -Wwarn
 
+    -- ghc type equality operators will be a language extension soon
+    -Wno-type-equality-requires-operators
+
     -- missing-exported-signatures turns off the more strict -Wmissing-signatures. See https://ghc.haskell.org/trac/ghc/ticket/14794#ticket
     -Wno-missing-exported-signatures
 
