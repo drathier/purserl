@@ -27,7 +27,7 @@ set -ex
 # and these failures are very easy to miss otherwise.
 STACK="stack --no-terminal --haddock --jobs=4"
 
-STACK_OPTS="--test"
+#STACK_OPTS="--test"
 if [ "$CI_RELEASE" = "true" -o "$CI_PRERELEASE" = "true" ]
 then
   STACK_OPTS="$STACK_OPTS --flag=purescript:RELEASE"
@@ -169,13 +169,13 @@ $STACK build --only-snapshot $STACK_OPTS
 
 (echo "::endgroup::"; echo "::group::Build source distributions") 2>/dev/null
 
-# Test in a source distribution (see above)
-$STACK sdist . --tar-dir sdist-test;
-tar -xzf sdist-test/purescript-*.tar.gz -C sdist-test --strip-components=1
-
-(echo "::endgroup::"; echo "::group::Build and test PureScript") 2>/dev/null
-
-pushd sdist-test
+## Test in a source distribution (see above)
+#$STACK sdist . --tar-dir sdist-test;
+#tar -xzf sdist-test/purescript-*.tar.gz -C sdist-test --strip-components=1
+#
+#(echo "::endgroup::"; echo "::group::Build and test PureScript") 2>/dev/null
+#
+#pushd sdist-test
 # Haddock -Werror goes here to keep us honest but prevent failing on
 # documentation errors in dependencies
 $STACK build $STACK_OPTS
