@@ -105,6 +105,7 @@ rebuildModuleWithIndex
   -> m ExternsFile
 rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex causedByModule = do
   progress $ CompilingModule moduleName moduleIndex causedByModule
+  progress $ CompileMeta ("### CS.goBuildEnv13[" <> runModuleName moduleName <> "]")
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim
@@ -242,6 +243,11 @@ make ma@MakeActions{..} ms = do
           -- -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.4.2.1", ("writeNewCacheDb", newCacheInfo)))
           pure isUpToDate
 
+    let bumpCompilationCounter = do
+          idx <- C.takeMVar (bpIndex buildPlan)
+          C.putMVar (bpIndex buildPlan) (idx + 1)
+
+
     let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
     let goBuild oldExterns results recompileReason = do
           -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.4.3"))
@@ -261,7 +267,7 @@ make ma@MakeActions{..} ms = do
         oldExterns <- BuildPlan.getExternFromLastSuccessfulPreviousBuild ma buildPlan moduleName
         mResults <- BuildPlan.fetchMissingExterns ("mod", "b", moduleName) ma buildPlan deps
         case assertAllExternsExists mResults of
-          Left bjRes -> BuildPlan.markComplete ma buildPlan moduleName Nothing bjRes
+          Left bjRes -> bumpCompilationCounter >> BuildPlan.markComplete ma buildPlan moduleName Nothing bjRes
           Right results -> goBuild oldExterns results SourceChangedOrDependencyFailedToBuildInPreviousCompilationOrSomethingElse
       True -> do
         -- -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.3.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
@@ -270,11 +276,13 @@ make ma@MakeActions{..} ms = do
         case anyDepChanged of
           BuildPlan.FailRebuildDepsFailed causedByModule -> do
             -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.2.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FailRebuildDepsFailed", causedByModule))
+            bumpCompilationCounter
             BuildPlan.markComplete ma buildPlan moduleName Nothing BuildJobSkipped
             pure ()
 
           BuildPlan.FullDepsCacheHit -> do
             -- -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.3.2.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FullDepsCacheHit"))
+            bumpCompilationCounter
             BuildPlan.markComplete ma buildPlan moduleName Nothing BuildJobSkippedFullCacheHit
             pure ()
 
@@ -283,11 +291,12 @@ make ma@MakeActions{..} ms = do
             oldExterns <- BuildPlan.getExternFromLastSuccessfulPreviousBuild ma buildPlan moduleName
             mResults <- BuildPlan.fetchMissingExterns ("mod", "a", moduleName) ma buildPlan deps
             case assertAllExternsExists mResults of
-              Left bjRes -> BuildPlan.markComplete ma buildPlan moduleName Nothing bjRes
+              Left bjRes -> bumpCompilationCounter >> BuildPlan.markComplete ma buildPlan moduleName Nothing bjRes
               Right results ->
                 case BuildPlan.needsRebuildEvenAfterDiffingCacheShapes oldExterns (fmap snd results) of
                   BuildPlan.NoRebuildNeeded -> do
                     -- progress $ CompileMeta ("-- DR 3.2.3.1 upstreamDiffWasEmpty[" <> runModuleName moduleName <> "]")
+                    bumpCompilationCounter
                     BuildPlan.markComplete ma buildPlan moduleName Nothing BuildJobSkippedFullCacheHit
                     pure ()
                   BuildPlan.PleaseRebuild errs -> do
