@@ -15,6 +15,7 @@ import Control.Monad.Writer.Class (MonadWriter(..), censor)
 
 import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
+import Data.IntMap.Strict qualified as IM
 import Data.Set qualified as S
 import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
@@ -46,11 +47,11 @@ instance Ord UnkLevel where
 
 -- | A substitution of unification variables for types.
 data Substitution = Substitution
-  { substType :: M.Map Int SourceType
+  { substType :: IM.IntMap SourceType
   -- ^ Type substitution
-  , substUnsolved :: M.Map Int (UnkLevel, SourceType)
+  , substUnsolved :: IM.IntMap (UnkLevel, SourceType)
   -- ^ Unsolved unification variables with their level (scope ordering) and kind
-  , substNames :: M.Map Int Text
+  , substNames :: IM.IntMap Text
   -- ^ The original names of unknowns
   }
 
@@ -59,17 +60,17 @@ insertUnkName u t = do
   modify (\s ->
             s { checkSubstitution =
                   (checkSubstitution s) { substNames =
-                                            M.insert u t $ substNames $ checkSubstitution s
+                                            IM.insert u t $ substNames $ checkSubstitution s
                                         }
               }
          )
 
 lookupUnkName :: (MonadState CheckState m) => Unknown -> m (Maybe Text)
-lookupUnkName u = gets $ M.lookup u . substNames . checkSubstitution
+lookupUnkName u = gets $ IM.lookup u . substNames . checkSubstitution
 
 -- | An empty substitution
 emptySubstitution :: Substitution
-emptySubstitution = Substitution M.empty M.empty M.empty
+emptySubstitution = Substitution IM.empty IM.empty IM.empty
 
 -- | State required for type checking
 data CheckState = CheckState
@@ -122,7 +123,7 @@ bindNames
   -> m a
 bindNames newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `M.union` (names . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `mUnionLeftBiasRightLarger` (names . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { names = names . checkEnv $ orig } }
   return a
@@ -135,10 +136,12 @@ bindTypes
   -> m a
 bindTypes newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `M.union` (types . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `mUnionLeftBiasRightLarger` (types . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { types = types . checkEnv $ orig } }
   return a
+
+mUnionLeftBiasRightLarger small large = M.unionWith (\_ s -> s) large small
 
 -- | Temporarily bind a collection of names to types
 withScopedTypeVars
@@ -467,13 +470,13 @@ debugValue = init . render . prettyPrintValue 100
 debugSubstitution :: Substitution -> [String]
 debugSubstitution (Substitution solved unsolved names) =
   concat
-    [ fmap go1 (M.toList solved)
-    , fmap go2 (M.toList unsolved')
-    , fmap go3 (M.toList names)
+    [ fmap go1 (IM.toList solved)
+    , fmap go2 (IM.toList unsolved')
+    , fmap go3 (IM.toList names)
     ]
   where
   unsolved' =
-    M.filterWithKey (\k _ -> M.notMember k solved) unsolved
+    IM.filterWithKey (\k _ -> IM.notMember k solved) unsolved
 
   go1 (u, ty) =
     "?" <> show u <> " = " <> debugType ty
