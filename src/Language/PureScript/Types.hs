@@ -72,45 +72,45 @@ typeVarVisibilityPrefix = \case
 --
 data Type a
   -- | A unification variable of type Type
-  = TUnknown a Int
+  = TUnknown !a {-# UNPACK #-} !Int
   -- | A named type variable
-  | TypeVar a Text
+  | TypeVar !a !Text
   -- | A type-level string
-  | TypeLevelString a PSString
+  | TypeLevelString !a !PSString
   -- | A type-level natural
-  | TypeLevelInt a Integer
+  | TypeLevelInt !a !Integer
   -- | A type wildcard, as would appear in a partial type synonym
-  | TypeWildcard a WildcardData
+  | TypeWildcard !a !WildcardData
   -- | A type constructor
-  | TypeConstructor a (Qualified (ProperName 'TypeName))
+  | TypeConstructor !a !(Qualified (ProperName 'TypeName))
   -- | A type operator. This will be desugared into a type constructor during the
   -- "operators" phase of desugaring.
-  | TypeOp a (Qualified (OpName 'TypeOpName))
+  | TypeOp !a !(Qualified (OpName 'TypeOpName))
   -- | A type application
-  | TypeApp a (Type a) (Type a)
+  | TypeApp !a !(Type a) !(Type a)
   -- | Explicit kind application
-  | KindApp a (Type a) (Type a)
+  | KindApp !a !(Type a) !(Type a)
   -- | Forall quantifier
-  | ForAll a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
+  | ForAll !a !TypeVarVisibility !Text !(Maybe (Type a)) !(Type a) !(Maybe SkolemScope)
   -- | A type with a set of type class constraints
-  | ConstrainedType a (Constraint a) (Type a)
+  | ConstrainedType !a !(Constraint a) !(Type a)
   -- | A skolem constant
-  | Skolem a Text (Maybe (Type a)) Int SkolemScope
+  | Skolem !a !Text !(Maybe (Type a)) !Int !SkolemScope
   -- | An empty row
-  | REmpty a
+  | REmpty !a
   -- | A non-empty row
-  | RCons a Label (Type a) (Type a)
+  | RCons !a !Label !(Type a) !(Type a)
   -- | A type with a kind annotation
-  | KindedType a (Type a) (Type a)
+  | KindedType !a !(Type a) !(Type a)
   -- | Binary operator application. During the rebracketing phase of desugaring,
   -- this data constructor will be removed.
-  | BinaryNoParensType a (Type a) (Type a) (Type a)
+  | BinaryNoParensType !a !(Type a) !(Type a) !(Type a)
   -- | Explicit parentheses. During the rebracketing phase of desugaring, this
   -- data constructor will be removed.
   --
   -- Note: although it seems this constructor is not used, it _is_ useful,
   -- since it prevents certain traversals from matching.
-  | ParensInType a (Type a)
+  | ParensInType !a !(Type a)
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Type a)
