@@ -292,7 +292,7 @@ needsRebuildEvenAfterDiffingCacheShapes (Just oldExts) upstream =
   -- TODO[drathier]: only diff exports list if it's an unsafe import
   let res =
         M.merge
-          (M.mapMissing (\k a -> internalError (show ("BuildPlan: an upstream cache shape has disappeared since the last rebuild", k, a))))
+          (M.mapMissing (\k a -> [(k,a)])) -- upstream cache shape is no longer present; perhaps we switched branches? Rebuild needed nomatter what happened.
           (M.mapMissing (\k b -> [(k,b)]))
           (M.zipWithMatched (\k a b ->
             let x = dbOpaqueDiffDiffIgnoringExportsListChanges a b in
