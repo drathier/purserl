@@ -37,7 +37,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
 import Language.PureScript.Environment (initEnvironment)
-import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
+import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
 -- import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Externs
 import Language.PureScript.Linter (Name(..), lint, lintImports)
@@ -91,7 +91,7 @@ rebuildModule'
   -> [ExternsFile]
   -> Module
   -> m ExternsFile
-rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing UnknownRecompileReason (\_ _ _ -> pure ())
+rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing UnknownRecompileReason
 
 rebuildModuleWithIndex
   :: forall m
@@ -102,9 +102,8 @@ rebuildModuleWithIndex
   -> Module
   -> Maybe (Int, Int)
   -> RecompileReason
-  -> (ModuleName -> Maybe ExternsFile -> BuildJobResult -> m ())
   -> m ExternsFile
-rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex causedByModule mmarkCompleteWithoutErrors = do
+rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex causedByModule = do
   progress $ CompilingModule moduleName moduleIndex causedByModule
   progress $ CompileMeta ("### CS.goBuildEnv13[" <> runModuleName moduleName <> "]")
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
@@ -112,7 +111,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   lint withPrim
 
   progress $ CompileMeta ("### CS.goDesugar1[" <> runModuleName moduleName <> "]")
-  ((checked@(Module ss coms _ elaborated exps), env', exEnv', usedImports'), nextVar) <- runSupplyT 0 $ do
+  ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
     -- lift $ progress $ CompilingModule moduleName moduleIndex "2"
     (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty)
     lift $ progress $ CompileMeta ("### CS.goTypeCheck2[" <> runModuleName moduleName <> "]")
@@ -120,20 +119,16 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
     -- lift $ progress $ CompilingModule moduleName moduleIndex "4"
     (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
-
+    lift $ progress $ CompileMeta ("### CS.goLintImports3[" <> runModuleName moduleName <> "]")
+    -- lift $ progress $ CompilingModule moduleName moduleIndex "5"
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
           M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
-
+    -- Imports cannot be linted before type checking because we need to
+    -- known which newtype constructors are used to solve Coercible
+    -- constraints in order to not report them as unused.
+    censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
     lift $ progress $ CompileMeta ("### CS.goDesugarCaseGuards4[" <> runModuleName moduleName <> "]")
-    return (checked, checkEnv, exEnv', usedImports')
-
-
-  progress $ CompileMeta ("### CS.goLintImports3[" <> runModuleName moduleName <> "]")
-  -- lift $ progress $ CompilingModule moduleName moduleIndex "5"
-  -- Imports cannot be linted before type checking because we need to
-  -- known which newtype constructors are used to solve Coercible
-  -- constraints in order to not report them as unused.
-  censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
+    return (checked, checkEnv)
 
   -- progress $ CompilingModule moduleName moduleIndex "6"
 
@@ -153,9 +148,6 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
       (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
       (renamedIdents, renamed) = renameInModule optimized
       exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
-
-  mmarkCompleteWithoutErrors moduleName Nothing (BuildJobSucceeded (MultipleErrors []) exts)
-
   ffiCodegen renamed
 
   progress $ CompileMeta ("### CS.goCodegen7[" <> runModuleName moduleName <> "]")
@@ -446,7 +438,7 @@ make ma@MakeActions{..} ms = do
                       -- Force the externs and warnings to avoid retaining excess module
                       -- data after the module is finished compiling.
                       extsAndWarnings <- evaluate . force <=< listen $ do
-                        rebuildModuleWithIndex ma env (snd <$> M.elems results) m (Just (idx, cnt)) recompileReason (BuildPlan.markComplete ma buildPlan)
+                        rebuildModuleWithIndex ma env (snd <$> M.elems results) m (Just (idx, cnt)) recompileReason
 
                       -- liftBase $ traceM $ T.unpack (runModuleName moduleName) <> " end"
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
@@ -480,7 +472,7 @@ make ma@MakeActions{..} ms = do
 --            Right badExts -> doCompile WasCacheHit (Just badExts)
 --            Left badExts -> doCompile WasCacheMiss badExts
 
-    BuildPlan.remarkComplete ma buildPlan moduleName oldExts result
+    BuildPlan.markComplete ma buildPlan moduleName oldExts result
 
 
 data WasCacheHit = WasCacheHit | WasCacheMiss
