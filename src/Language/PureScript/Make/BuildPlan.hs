@@ -12,6 +12,7 @@ module Language.PureScript.Make.BuildPlan
   , getResult
   , fetchMissingExterns
   , collectResults
+  , remarkComplete
   , markComplete
   , markComplete2
   , needsRebuild
@@ -124,6 +125,31 @@ data RebuildStatus = RebuildStatus
 
 -- | Called when we finished compiling a module and want to report back the
 -- compilation result, as well as any potential errors that were thrown.
+remarkComplete
+  :: (MonadBaseControl IO m)
+  => MakeActions m
+  -> BuildPlan
+  -> ModuleName
+  -> Maybe ExternsFile
+  -> BuildJobResult
+  -> m ()
+remarkComplete ma buildPlan moduleName oldExt result = do
+  liftBase $ case result of
+      BuildJobSucceeded _ _ ->
+        putStrLn $ "### CS.RE.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
+      BuildJobFailed _ ->
+        putStrLn $ "### CS.RE.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
+      BuildJobSkipped ->
+        putStrLn $ "### CS.RE.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
+      BuildJobSkippedFullCacheHit ->
+        -- putStrLn $ "### CS.BuildJobSkippedFullCacheHit[" <> T.unpack (runModuleName moduleName) <> "]"
+        pure ()
+  let BuildJob rVar = fromMaybe (internalError "make: markComplete no barrier") $ M.lookup moduleName (bpBuildJobs buildPlan)
+  -- take the value from the mvar, pretend like we never marked the module as finished, and put the real value back in, hopefully without hitting any race conditions
+  DH.hasLocked "6" $ takeMVar rVar
+  DH.hasLocked "12" $ putMVar rVar result
+  -- no need to run markComplete2 again; it would result in the same cache status
+
 markComplete
   :: (MonadBaseControl IO m)
   => MakeActions m
@@ -160,30 +186,11 @@ markComplete2
   -> BuildJobResult
   -> m ()
 markComplete2 ma@MakeActions{..} buildPlan moduleName oldExt result = do
---  liftBase $ putStrLn $ case result of
---      BuildJobSucceeded _ _ ->
---        "### CS.BuildJobSucceeded[" <> T.unpack (runModuleName moduleName) <> "]"
---      BuildJobFailed _ ->
---        "### CS.BuildJobFailed[" <> T.unpack (runModuleName moduleName) <> "]"
---      BuildJobSkipped ->
---        "### CS.BuildJobSkipped[" <> T.unpack (runModuleName moduleName) <> "]"
-
-  --(_,oldExt) <- fetchMissingExtern () ma buildPlan moduleName
   let cfa = getCacheFilesAvailable buildPlan moduleName
---  (case result of
---    BuildJobFailed _ -> pure ()
---    BuildJobSkipped -> pure ()
---    BuildJobSkippedFullCacheHit -> pure ()
---    BuildJobSucceeded _ newExt -> do
---      progress $ CompileMeta (T.pack $ show ("-- BP.externsDiff[" <> runModuleName moduleName <> "]", ("eq?", Just newExt == oldExt), ("serialise-eq?", Just (serialise newExt) == fmap serialise oldExt), ("serialise-opaque-eq?", serialiseDbEq newExt oldExt)))
---      progress $ CompileMeta (T.pack $ show ("-- BP.externsDiff[" <> runModuleName moduleName <> "]New", Just newExt))
---      progress $ CompileMeta (T.pack $ show ("-- BP.externsDiff[" <> runModuleName moduleName <> "]Old", oldExt))
---
---      pure ()
---    )
   DH.hasLocked "2" $ putMVar
     (fromMaybe (internalError (show ("BuildPlan: bpCacheResult mvar not found for module", moduleName))) $ M.lookup moduleName (bpCacheResult buildPlan))
 
+    -- ASSUMPTION[drathier]: markComplete2 ignores all errors/warnings in build results, so it's safe to run it before we've generated all errors
     (case result of
       BuildJobFailed _ -> Nothing
       BuildJobSkipped -> Nothing
