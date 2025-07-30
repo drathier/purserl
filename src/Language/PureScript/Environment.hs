@@ -10,7 +10,7 @@ import Data.Aeson ((.=), (.:))
 import Data.Aeson qualified as A
 import Data.Foldable (find, fold)
 import Data.Functor ((<&>))
-import Data.IntMap qualified as IM
+import Data.IntMap.Strict qualified as IM
 import Data.IntSet qualified as IS
 import Data.Map qualified as M
 import Data.Set qualified as S

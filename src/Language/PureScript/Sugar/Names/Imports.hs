@@ -15,7 +15,7 @@ import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
 import Data.Set qualified as S
 
-import Language.PureScript.AST (Declaration(..), DeclarationRef(..), ErrorMessageHint(..), ExportSource(..), ImportDeclarationType(..), Module(..), SourceSpan, internalModuleSourceSpan)
+import Language.PureScript.AST (Declaration(..), DeclarationRef(..), ErrorMessageHint(..), ExportSource(..), ImportDeclarationType(..), Module(..), SourceSpan, internalModuleSourceSpan, SourceAnn(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow)
 import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName)
@@ -32,7 +32,7 @@ findImports
   -> M.Map ModuleName [ImportDef]
 findImports = foldr go M.empty
   where
-  go (ImportDeclaration (pos, _) mn typ qual) =
+  go (ImportDeclaration (SourceAnn pos _) mn typ qual) =
     M.alter (return . ((pos, typ, qual) :) . fromMaybe []) mn
   go _ = id
 

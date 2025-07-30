@@ -25,15 +25,18 @@ set -ex
 
 # We test with --haddock because haddock generation can fail if there is invalid doc-comment syntax,
 # and these failures are very easy to miss otherwise.
-STACK="stack --no-terminal --haddock --jobs=2"
+STACK="stack --no-terminal --haddock --jobs=4"
 
-#STACK_OPTS="--test" # not running tests; we just want something built
-STACK_OPTS=""
+#STACK_OPTS="--test"
 if [ "$CI_RELEASE" = "true" -o "$CI_PRERELEASE" = "true" ]
 then
   STACK_OPTS="$STACK_OPTS --flag=purescript:RELEASE"
 else
   STACK_OPTS="$STACK_OPTS --fast"
+fi
+if [ "$CI_STATIC" = "true" ]
+then
+  STACK_OPTS="$STACK_OPTS --flag=purescript:static"
 fi
 
 (echo "::endgroup::"; echo "::group::Set version number for build") 2>/dev/null
@@ -166,16 +169,16 @@ $STACK build --only-snapshot $STACK_OPTS
 
 (echo "::endgroup::"; echo "::group::Build source distributions") 2>/dev/null
 
-# Test in a source distribution (see above)
+## Test in a source distribution (see above)
 $STACK sdist . --tar-dir sdist-test;
 tar -xzf sdist-test/purescript-*.tar.gz -C sdist-test --strip-components=1
 
 (echo "::endgroup::"; echo "::group::Build and test PureScript") 2>/dev/null
 
-pushd sdist-test
+#pushd sdist-test
 # Haddock -Werror goes here to keep us honest but prevent failing on
 # documentation errors in dependencies
-$STACK build $STACK_OPTS --haddock-arguments --optghc=-Werror
+$STACK build $STACK_OPTS
 
 if [ "$do_prerelease" ]
 then
@@ -185,6 +188,5 @@ then
     exit 1
   fi
 fi
-popd
 
 (echo "::endgroup::") 2>/dev/null

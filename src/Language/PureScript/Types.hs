@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 -- |
 -- Data types for types
 --
@@ -23,7 +24,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
-import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn, SourceSpan)
+import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn(..), SourceSpan)
 import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName)
 import Language.PureScript.Label (Label)
@@ -71,45 +72,45 @@ typeVarVisibilityPrefix = \case
 --
 data Type a
   -- | A unification variable of type Type
-  = TUnknown a Int
+  = TUnknown !a {-# UNPACK #-} !Int
   -- | A named type variable
-  | TypeVar a Text
+  | TypeVar !a !Text
   -- | A type-level string
-  | TypeLevelString a PSString
+  | TypeLevelString !a !PSString
   -- | A type-level natural
-  | TypeLevelInt a Integer
+  | TypeLevelInt !a !Integer
   -- | A type wildcard, as would appear in a partial type synonym
-  | TypeWildcard a WildcardData
+  | TypeWildcard !a !WildcardData
   -- | A type constructor
-  | TypeConstructor a (Qualified (ProperName 'TypeName))
+  | TypeConstructor !a !(Qualified (ProperName 'TypeName))
   -- | A type operator. This will be desugared into a type constructor during the
   -- "operators" phase of desugaring.
-  | TypeOp a (Qualified (OpName 'TypeOpName))
+  | TypeOp !a !(Qualified (OpName 'TypeOpName))
   -- | A type application
-  | TypeApp a (Type a) (Type a)
+  | TypeApp !a !(Type a) !(Type a)
   -- | Explicit kind application
-  | KindApp a (Type a) (Type a)
+  | KindApp !a !(Type a) !(Type a)
   -- | Forall quantifier
-  | ForAll a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
+  | ForAll !a !TypeVarVisibility !Text !(Maybe (Type a)) !(Type a) !(Maybe SkolemScope)
   -- | A type with a set of type class constraints
-  | ConstrainedType a (Constraint a) (Type a)
+  | ConstrainedType !a !(Constraint a) !(Type a)
   -- | A skolem constant
-  | Skolem a Text (Maybe (Type a)) Int SkolemScope
+  | Skolem !a !Text !(Maybe (Type a)) !Int !SkolemScope
   -- | An empty row
-  | REmpty a
+  | REmpty !a
   -- | A non-empty row
-  | RCons a Label (Type a) (Type a)
+  | RCons !a !Label !(Type a) !(Type a)
   -- | A type with a kind annotation
-  | KindedType a (Type a) (Type a)
+  | KindedType !a !(Type a) !(Type a)
   -- | Binary operator application. During the rebracketing phase of desugaring,
   -- this data constructor will be removed.
-  | BinaryNoParensType a (Type a) (Type a) (Type a)
+  | BinaryNoParensType !a !(Type a) !(Type a) !(Type a)
   -- | Explicit parentheses. During the rebracketing phase of desugaring, this
   -- data constructor will be removed.
   --
   -- Note: although it seems this constructor is not used, it _is_ useful,
   -- since it prevents certain traversals from matching.
-  | ParensInType a (Type a)
+  | ParensInType !a !(Type a)
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Type a)
@@ -686,13 +687,53 @@ srcInstanceType
   -> [SourceType]
   -> SourceType
 srcInstanceType ss vars className tys
-  = setAnnForType (ss, [])
+  = setAnnForType (SourceAnn ss [])
   . flip (foldr $ \(tv, k) ty -> srcForAll TypeVarInvisible tv (Just k) ty Nothing) vars
   . flip (foldl' srcTypeApp) tys
   $ srcTypeConstructor $ coerceProperName <$> className
 
+
 everywhereOnTypes :: (Type a -> Type a) -> Type a -> Type a
 everywhereOnTypes f = go where
+  go (TypeApp ann t1 t2) =
+    let !t1' = go t1
+        !t2' = go t2
+    in f (TypeApp ann t1' t2')
+  go (KindApp ann t1 t2) =
+    let !t1' = go t1
+        !t2' = go t2
+    in f (KindApp ann t1' t2')
+  go (ForAll ann vis arg mbK ty sco) =
+    let !mbK' = fmap go mbK
+        !ty' = go ty
+    in f (ForAll ann vis arg mbK' ty' sco)
+  go (ConstrainedType ann c ty) =
+    let !c' = mapConstraintArgsAll (map go) c
+        !ty' = go ty
+    in f (ConstrainedType ann c' ty')
+  go (Skolem ann name mbK i sc) =
+    let !mbK' = fmap go mbK
+    in f (Skolem ann name mbK' i sc)
+  go (RCons ann name ty rest) =
+    let !ty' = go ty
+        !rest' = go rest
+    in f (RCons ann name ty' rest')
+  go (KindedType ann ty k) =
+    let !ty' = go ty
+        !k' = go k
+    in f (KindedType ann ty' k')
+  go (BinaryNoParensType ann t1 t2 t3) =
+    let !t1' = go t1
+        !t2' = go t2
+        !t3' = go t3
+    in f (BinaryNoParensType ann t1' t2' t3')
+  go (ParensInType ann t) =
+    let !t' = go t
+    in f (ParensInType ann t')
+  go other = f other
+
+everywhereOnTypes1 :: (Type a -> Type a) -> Type a -> Type a
+everywhereOnTypes1 f = go where
   go (TypeApp ann t1 t2) = f (TypeApp ann (go t1) (go t2))
   go (KindApp ann t1 t2) = f (KindApp ann (go t1) (go t2))
   go (ForAll ann vis arg mbK ty sco) = f (ForAll ann vis arg (go <$> mbK) (go ty) sco)
@@ -706,6 +747,55 @@ everywhereOnTypes f = go where
 
 everywhereOnTypesM :: Monad m => (Type a -> m (Type a)) -> Type a -> m (Type a)
 everywhereOnTypesM f = go where
+  go (TypeApp ann t1 t2) = do
+    !t1' <- go t1
+    !t2' <- go t2
+    f (TypeApp ann t1' t2')
+
+  go (KindApp ann t1 t2) = do
+    !t1' <- go t1
+    !t2' <- go t2
+    f (KindApp ann t1' t2')
+
+  go (ForAll ann vis arg mbK ty sco) = do
+    !mbK' <- traverse go mbK
+    !ty' <- go ty
+    f (ForAll ann vis arg mbK' ty' sco)
+
+  go (ConstrainedType ann c ty) = do
+    !c' <- overConstraintArgsAll (mapM go) c
+    !ty' <- go ty
+    f (ConstrainedType ann c' ty')
+
+  go (Skolem ann name mbK i sc) = do
+    !mbK' <- traverse go mbK
+    f (Skolem ann name mbK' i sc)
+
+  go (RCons ann name ty rest) = do
+    !ty' <- go ty
+    !rest' <- go rest
+    f (RCons ann name ty' rest')
+
+  go (KindedType ann ty k) = do
+    !ty' <- go ty
+    !k' <- go k
+    f (KindedType ann ty' k')
+
+  go (BinaryNoParensType ann t1 t2 t3) = do
+    !t1' <- go t1
+    !t2' <- go t2
+    !t3' <- go t3
+    f (BinaryNoParensType ann t1' t2' t3')
+
+  go (ParensInType ann t) = do
+    !t' <- go t
+    f (ParensInType ann t')
+
+  go other = f other
+
+
+everywhereOnTypesM1 :: Monad m => (Type a -> m (Type a)) -> Type a -> m (Type a)
+everywhereOnTypesM1 f = go where
   go (TypeApp ann t1 t2) = (TypeApp ann <$> go t1 <*> go t2) >>= f
   go (KindApp ann t1 t2) = (KindApp ann <$> go t1 <*> go t2) >>= f
   go (ForAll ann vis arg mbK ty sco) = (ForAll ann vis arg <$> traverse go mbK <*> go ty <*> pure sco) >>= f

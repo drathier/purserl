@@ -11,7 +11,7 @@ import Prelude
 import Control.Monad (unless)
 import Control.Monad.Error.Class (MonadError(..))
 
-import Language.PureScript.AST (Declaration(..), ErrorMessageHint(..), Expr(..), GuardedExpr(..), KindSignatureFor(..), pattern MkUnguarded, Module(..), RoleDeclarationData(..), TypeDeclarationData(..), TypeInstanceBody(..), pattern ValueDecl, declSourceSpan, everywhereOnValuesTopDownM)
+import Language.PureScript.AST (Declaration(..), ErrorMessageHint(..), Expr(..), GuardedExpr(..), KindSignatureFor(..), pattern MkUnguarded, Module(..), RoleDeclarationData(..), TypeDeclarationData(..), TypeInstanceBody(..), pattern ValueDecl, declSourceSpan, everywhereOnValuesTopDownM, safst, SourceAnn(..))
 import Language.PureScript.Names (Ident, coerceProperName)
 import Language.PureScript.Environment (DataDeclType(..), NameKind)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow)
@@ -41,7 +41,7 @@ desugarTypeDeclarationsModule (Module modSS coms name ds exps) =
       | name' == name'' = return (name'', nameKind, val)
     fromValueDeclaration d' =
       throwError . errorMessage' (declSourceSpan d') $ OrphanTypeDeclaration name'
-  desugarTypeDeclarations [TypeDeclaration (TypeDeclarationData (ss, _) name' _)] =
+  desugarTypeDeclarations [TypeDeclaration (TypeDeclarationData (SourceAnn ss _) name' _)] =
     throwError . errorMessage' ss $ OrphanTypeDeclaration name'
   desugarTypeDeclarations (ValueDecl sa name' nameKind bs val : rest) = do
     let (_, f, _) = everywhereOnValuesTopDownM return go return
@@ -59,7 +59,7 @@ desugarTypeDeclarationsModule (Module modSS coms name ds exps) =
 
   checkKindDeclarations :: [Declaration] -> m ()
   checkKindDeclarations (KindDeclaration sa kindFor name' _ : d : rest) = do
-    unless (matchesDeclaration d) . throwError . errorMessage' (fst sa) $ OrphanKindDeclaration name'
+    unless (matchesDeclaration d) . throwError . errorMessage' (safst sa) $ OrphanKindDeclaration name'
     checkKindDeclarations rest
     where
     matchesDeclaration :: Declaration -> Bool
@@ -69,18 +69,18 @@ desugarTypeDeclarationsModule (Module modSS coms name ds exps) =
     matchesDeclaration (TypeClassDeclaration _ name'' _ _ _ _) = kindFor == ClassSig && name' == coerceProperName name''
     matchesDeclaration _ = False
   checkKindDeclarations (KindDeclaration sa _ name' _ : _) = do
-    throwError . errorMessage' (fst sa) $ OrphanKindDeclaration name'
+    throwError . errorMessage' (safst sa) $ OrphanKindDeclaration name'
   checkKindDeclarations (_ : rest) = checkKindDeclarations rest
   checkKindDeclarations [] = return ()
 
   checkRoleDeclarations :: Maybe Declaration -> [Declaration] -> m ()
   checkRoleDeclarations Nothing (RoleDeclaration RoleDeclarationData{..} : _) =
-    throwError . errorMessage' (fst rdeclSourceAnn) $ OrphanRoleDeclaration rdeclIdent
+    throwError . errorMessage' (safst rdeclSourceAnn) $ OrphanRoleDeclaration rdeclIdent
   checkRoleDeclarations (Just (RoleDeclaration (RoleDeclarationData _ name' _))) ((RoleDeclaration RoleDeclarationData{..}) : _) | name' == rdeclIdent =
-    throwError . errorMessage' (fst rdeclSourceAnn) $ DuplicateRoleDeclaration rdeclIdent
+    throwError . errorMessage' (safst rdeclSourceAnn) $ DuplicateRoleDeclaration rdeclIdent
   checkRoleDeclarations (Just d) (rd@(RoleDeclaration RoleDeclarationData{..}) : rest) = do
-    unless (matchesDeclaration d) . throwError . errorMessage' (fst rdeclSourceAnn) $ OrphanRoleDeclaration rdeclIdent
-    unless (isSupported d) . throwError . errorMessage' (fst rdeclSourceAnn) $ UnsupportedRoleDeclaration
+    unless (matchesDeclaration d) . throwError . errorMessage' (safst rdeclSourceAnn) $ OrphanRoleDeclaration rdeclIdent
+    unless (isSupported d) . throwError . errorMessage' (safst rdeclSourceAnn) $ UnsupportedRoleDeclaration
     checkRoleDeclarations (Just rd) rest
     where
     isSupported :: Declaration -> Bool

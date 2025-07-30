@@ -24,6 +24,7 @@ import Control.Monad.Error.Class (MonadError(..))
 import Control.Parallel.Strategies (withStrategy, parList, evalTuple2, r0, rseq)
 import Data.List.NonEmpty qualified as NE
 import Data.Text (Text)
+import Data.Text qualified as T
 import Language.PureScript.AST qualified as AST
 import Language.PureScript.Errors qualified as E
 import Language.PureScript.CST.Convert
@@ -62,10 +63,10 @@ parseFromFiles toFilePath input =
     $ \(k, a) -> (k, sequence $ parseFromFile (toFilePath k) a)
 
 parseModuleFromFile :: FilePath -> Text -> Either (NE.NonEmpty ParserError) (PartialResult AST.Module)
-parseModuleFromFile fp content = fmap (convertModule fp) <$> parseModule (lexModule content)
+parseModuleFromFile fp content = fmap (convertModule (T.pack fp)) <$> parseModule (lexModule content)
 
 parseFromFile :: FilePath -> Text -> ([ParserWarning], Either (NE.NonEmpty ParserError) AST.Module)
-parseFromFile fp content = fmap (convertModule fp) <$> parse content
+parseFromFile fp content = fmap (convertModule (T.pack fp)) <$> parse content
 
 handleParserError
   :: forall m k a
@@ -95,11 +96,11 @@ toMultipleWarnings fp =
 
 toPositionedError :: FilePath -> ParserError -> E.ErrorMessage
 toPositionedError name perr =
-  E.ErrorMessage [E.positionedError $ sourceSpan name $ errRange perr] (E.ErrorParsingCSTModule perr)
+  E.ErrorMessage [E.positionedError $ sourceSpan (T.pack name) $ errRange perr] (E.ErrorParsingCSTModule perr)
 
 toPositionedWarning :: FilePath -> ParserWarning -> E.ErrorMessage
 toPositionedWarning name perr =
-  E.ErrorMessage [E.positionedError $ sourceSpan name $ errRange perr] (E.WarningParsingCSTModule perr)
+  E.ErrorMessage [E.positionedError $ sourceSpan (T.pack name) $ errRange perr] (E.WarningParsingCSTModule perr)
 
 inParallel :: [(k, Either (NE.NonEmpty ParserError) a)] -> [(k, Either (NE.NonEmpty ParserError) a)]
 inParallel = withStrategy (parList (evalTuple2 r0 rseq))

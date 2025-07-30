@@ -74,7 +74,7 @@ annFromJSON modulePath = withObject "Ann" annFromObj
 
 sourceSpanFromJSON :: FilePath -> Value -> Parser SourceSpan
 sourceSpanFromJSON modulePath = withObject "SourceSpan" $ \o ->
-  SourceSpan modulePath <$>
+  SourceSpan (T.pack modulePath) <$>
     o .: "start" <*>
     o .: "end"
 

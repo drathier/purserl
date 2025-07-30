@@ -121,7 +121,7 @@ psciExpression = Expression . CST.convertExpr "" <$> CST.parseExprP
 -- :show import works, for example.
 psciImport :: FilePath -> CST.Parser Command
 psciImport filePath = do
-  (_, mn, declType, asQ) <- CST.convertImportDecl filePath <$> CST.parseImportDeclP
+  (_, mn, declType, asQ) <- CST.convertImportDecl (T.pack filePath) <$> CST.parseImportDeclP
   pure $ Import (mn, declType, asQ)
 
 -- | Any declaration that we don't need a 'special case' parser for

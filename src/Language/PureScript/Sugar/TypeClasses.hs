@@ -217,7 +217,7 @@ desugarDecl mn exps = go
     dictDecl <- case explicitOrNot of
       Right members
         | className == C.Coercible ->
-          throwError . errorMessage' (fst sa) $ InvalidCoercibleInstanceDeclaration tys
+          throwError . errorMessage' (safst sa) $ InvalidCoercibleInstanceDeclaration tys
         | otherwise -> do
           desugared <- desugarCases members
           typeInstanceDictionaryDeclaration sa name' mn deps className tys desugared
@@ -295,7 +295,7 @@ typeClassMemberToDictionaryAccessor
   -> [(Text, Maybe SourceType)]
   -> Declaration
   -> Declaration
-typeClassMemberToDictionaryAccessor mn name args (TypeDeclaration (TypeDeclarationData sa@(ss, _) ident ty)) =
+typeClassMemberToDictionaryAccessor mn name args (TypeDeclaration (TypeDeclarationData sa@(SourceAnn ss _) ident ty)) =
   let className = Qualified (ByModuleName mn) name
       dictIdent = Ident "dict"
       dictObjIdent = Ident "v"
@@ -323,7 +323,7 @@ typeInstanceDictionaryDeclaration
   -> [SourceType]
   -> [Declaration]
   -> Desugar m Declaration
-typeInstanceDictionaryDeclaration sa@(ss, _) name mn deps className tys decls =
+typeInstanceDictionaryDeclaration sa@(SourceAnn ss _) name mn deps className tys decls =
   rethrow (addHint (ErrorInInstance className tys)) $ do
   m <- get
 
@@ -368,7 +368,7 @@ typeInstanceDictionaryDeclaration sa@(ss, _) name mn deps className tys decls =
   where
 
   memberToValue :: [(Ident, SourceType)] -> Declaration -> Desugar m Expr
-  memberToValue tys' (ValueDecl (ss', _) ident _ [] [MkUnguarded val]) = do
+  memberToValue tys' (ValueDecl (SourceAnn ss' _) ident _ [] [MkUnguarded val]) = do
     _ <- maybe (throwError . errorMessage' ss' $ ExtraneousClassMember ident className) return $ lookup ident tys'
     return val
   memberToValue _ _ = internalError "Invalid declaration in type instance definition"

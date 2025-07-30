@@ -466,7 +466,7 @@ replaceUnknowns = everywhereOnTypesTopDownM replaceTypes where
     case M.lookup s (umSkolemMap m) of
       Nothing -> do
         let s' = umNextIndex m
-        put $ m { umSkolemMap = M.insert s (T.unpack name, s', Just (fst ann)) (umSkolemMap m), umNextIndex = s' + 1 }
+        put $ m { umSkolemMap = M.insert s (T.unpack name, s', Just (safst ann)) (umSkolemMap m), umNextIndex = s' + 1 }
         return (Skolem ann name Nothing s' sko)
       Just (_, s', _) -> return (Skolem ann name Nothing s' sko)
   replaceTypes other = return other
@@ -1842,7 +1842,7 @@ prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileCo
         Box.<> "with type "
         Box.<> markCodeBox (prettyType ty)
         Box.<> " "
-        Box.<> (line . displayStartEndPosShort . fst $ getAnnForType ty)
+        Box.<> (line . displayStartEndPosShort . safst $ getAnnForType ty)
     Qualified mn (Right inst) -> line . markCode . showQualified showIdent $ Qualified mn inst
 
   -- As of this writing, this function assumes that all provided SourceSpans
@@ -1856,10 +1856,10 @@ prettyPrintSingleError (PPEOptions codeColor full level _showDocs relPath fileCo
     . NEL.filter ((> 0) . sourcePosLine . spanStart)
     where
     renderFile :: NonEmpty SourceSpan -> Box.Box
-    renderFile sss = maybe Box.nullBox (linesToBox . T.lines) $ lookup fileName fileContents
+    renderFile sss = maybe Box.nullBox (linesToBox . T.lines) $ lookup (T.unpack fileName) fileContents
       where
       fileName = spanName $ NEL.head sss
-      header = lineS . (<> ":") . makeRelative relPath $ fileName
+      header = lineS . (<> ":") . makeRelative relPath $ T.unpack fileName
       lineBlocks = makeLineBlocks $ NEL.groupWith1 (sourcePosLine . spanStart) sss
 
       linesToBox fileLines = Box.moveUp 1 $ header Box.// body

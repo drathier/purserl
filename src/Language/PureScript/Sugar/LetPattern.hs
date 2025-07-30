@@ -9,7 +9,7 @@ import Prelude
 import Data.List (groupBy)
 import Data.Function (on)
 
-import Language.PureScript.AST (Binder, CaseAlternative(..), Declaration(..), Expr(..), pattern MkUnguarded, Module(..), SourceAnn, WhereProvenance, everywhereOnValues)
+import Language.PureScript.AST (Binder, CaseAlternative(..), Declaration(..), Expr(..), pattern MkUnguarded, Module(..), SourceAnn(..), WhereProvenance, everywhereOnValues)
 import Language.PureScript.Crash (internalError)
 
 -- | Replace every @BoundValueDeclaration@ in @Let@ expressions with @Case@
@@ -35,7 +35,7 @@ desugarLetPattern decl =
           -- The original let-in result expression
      -> Expr
   go _ [] e = e
-  go w (Right ((pos, com), binder, boundE) : ds) e =
+  go w (Right ((SourceAnn pos com), binder, boundE) : ds) e =
     PositionedValue pos com $ Case [boundE] [CaseAlternative [binder] [MkUnguarded $ go w ds e]]
   go w (Left ds:dss) e = Let w ds (go w dss e)
 

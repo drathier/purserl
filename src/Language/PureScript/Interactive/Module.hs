@@ -42,14 +42,14 @@ createTemporaryModule exec st val =
     supportImport = (fst (psciInteractivePrint st), P.Implicit, Just (P.ModuleName "$Support"))
     eval          = P.Var internalSpan (P.Qualified (P.ByModuleName (P.ModuleName "$Support")) (snd (psciInteractivePrint st)))
     mainValue     = P.App eval (P.Var internalSpan (P.Qualified P.ByNullSourcePos (P.Ident "it")))
-    itDecl        = P.ValueDecl (internalSpan, []) (P.Ident "it") P.Public [] [P.MkUnguarded val]
+    itDecl        = P.ValueDecl (P.SourceAnn internalSpan []) (P.Ident "it") P.Public [] [P.MkUnguarded val]
     typeDecl      = P.TypeDeclaration
-                      (P.TypeDeclarationData (internalSpan, []) (P.Ident "$main")
+                      (P.TypeDeclarationData (P.SourceAnn internalSpan []) (P.Ident "$main")
                         (P.srcTypeApp
                           (P.srcTypeConstructor
                             (P.Qualified (P.ByModuleName (P.ModuleName "$Effect")) (P.ProperName "Effect")))
                                   P.srcTypeWildcard))
-    mainDecl      = P.ValueDecl (internalSpan, []) (P.Ident "$main") P.Public [] [P.MkUnguarded mainValue]
+    mainDecl      = P.ValueDecl (P.SourceAnn internalSpan []) (P.Ident "$main") P.Public [] [P.MkUnguarded mainValue]
     decls         = if exec then [itDecl, typeDecl, mainDecl] else [itDecl]
   in
     P.Module internalSpan
@@ -67,7 +67,7 @@ createTemporaryModuleForKind st typ =
     imports    = psciImportedModules st
     lets       = psciLetBindings st
     moduleName = P.ModuleName "$PSCI"
-    itDecl     = P.TypeSynonymDeclaration (internalSpan, []) (P.ProperName "IT") [] typ
+    itDecl     = P.TypeSynonymDeclaration (P.SourceAnn internalSpan []) (P.ProperName "IT") [] typ
   in
     P.Module internalSpan [] moduleName ((importDecl `map` imports) ++ lets ++ [itDecl]) Nothing
 
@@ -83,7 +83,7 @@ createTemporaryModuleForImports st =
     P.Module internalSpan [] moduleName (importDecl `map` imports) Nothing
 
 importDecl :: ImportedModule -> P.Declaration
-importDecl (mn, declType, asQ) = P.ImportDeclaration (internalSpan, []) mn declType asQ
+importDecl (mn, declType, asQ) = P.ImportDeclaration (P.SourceAnn internalSpan []) mn declType asQ
 
 indexFile :: FilePath
 indexFile = ".psci_modules" ++ pathSeparator : "index.js"

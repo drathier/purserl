@@ -6,7 +6,9 @@ module Language.PureScript.AST.SourcePos where
 
 import Prelude
 
-import Codec.Serialise (Serialise)
+import Codec.Serialise (Serialise, encode, decode)
+import Codec.Serialise.Encoding (encodeSimple)
+import Codec.Serialise.Decoding (decodeSimple)
 import Control.DeepSeq (NFData)
 import Data.Aeson ((.=), (.:))
 import Data.Text (Text)
@@ -17,15 +19,57 @@ import Data.Text qualified as T
 import System.FilePath (makeRelative)
 
 -- | Source annotation - position information and comments.
-type SourceAnn = (SourceSpan, [Comment])
+data SourceAnn = SourceAnn {-# UNPACK #-} !SourceSpan ![Comment]
+  deriving (Show, Eq, Ord, Generic, NFData)
+
+-- instance Serialise SourceAnn
+instance Serialise SourceAnn where
+  encode sa = encode ()
+  decode = do
+    () <- decode
+    pure NullSourceAnn
+--instance Serialise SourceAnn where
+--  encode sa =
+--    case sa of
+--      SourceAnn NullSourceSpan [] -> encodeSimple 0
+--      SourceAnn ss [] -> encodeSimple 1 <> encode ss
+--      SourceAnn NullSourceSpan comments -> encodeSimple 2 <> encode comments
+--      SourceAnn ss comments -> encodeSimple 3 <> encode ss <> encode comments
+--
+--  decode = do
+--    tag <- decodeSimple
+--    case tag of
+--      0 ->
+--        pure $ SourceAnn NullSourceSpan []
+--      1 -> do
+--        ss <- decode
+--        pure $ SourceAnn ss []
+--      2 -> do
+--        comments <- decode
+--        pure $ SourceAnn NullSourceSpan comments
+--      3 -> do
+--        ss <- decode
+--        comments <- decode
+--        pure $ SourceAnn ss comments
+
+
+safst (SourceAnn a _) = a
+sasnd (SourceAnn _ b) = b
 
 -- | Source position information
 data SourcePos = SourcePos
-  { sourcePosLine :: Int
+  { sourcePosLine :: {-# UNPACK #-} !Int
     -- ^ Line number
-  , sourcePosColumn :: Int
+  , sourcePosColumn :: {-# UNPACK #-} !Int
     -- ^ Column number
-  } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Show, Eq, Ord, Generic, NFData)--, Serialise)
+
+instance Serialise SourcePos where
+  encode sa = encode ()
+  decode = do
+    () <- decode
+    pure (SourcePos 0 0)
+
 
 displaySourcePos :: SourcePos -> Text
 displaySourcePos sp =
@@ -47,14 +91,20 @@ instance A.FromJSON SourcePos where
     return $ SourcePos line col
 
 data SourceSpan = SourceSpan
-  { spanName :: String
+  { spanName :: {-# UNPACK #-} !Text
     -- ^ Source name
-  , spanStart :: SourcePos
+  , spanStart :: {-# UNPACK #-} !SourcePos
     -- ^ Start of the span
-  , spanEnd :: SourcePos
+  , spanEnd :: {-# UNPACK #-} !SourcePos
     -- ^ End of the span
-  -- } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
-  } deriving (Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Eq, Ord, Generic, NFData)--, Serialise)
+
+instance Serialise SourceSpan where
+  encode sa = encode ()
+  decode = do
+    () <- decode
+    pure NullSourceSpan
+
 
 instance Show SourceSpan where
   show NullSourceSpan = "s0"
@@ -67,7 +117,7 @@ displayStartEndPosShort sp =
 
 displaySourceSpan :: FilePath -> SourceSpan -> Text
 displaySourceSpan relPath sp =
-  T.pack (makeRelative relPath (spanName sp)) <> ":" <>
+  T.pack (makeRelative relPath (T.unpack $ spanName sp)) <> ":" <>
     displayStartEndPosShort sp
 
 instance A.ToJSON SourceSpan where
@@ -84,24 +134,36 @@ instance A.FromJSON SourceSpan where
       o .: "start" <*>
       o .: "end"
 
-internalModuleSourceSpan :: String -> SourceSpan
+instance A.ToJSON SourceAnn where
+  toJSON (SourceAnn ss c) =
+    A.object [ "ss"  .= ss
+             , "comments" .= c
+             ]
+
+instance A.FromJSON SourceAnn where
+  parseJSON = A.withObject "SourceAnn" $ \o ->
+    SourceAnn     <$>
+      o .: "ss"  <*>
+      o .: "comments"
+
+internalModuleSourceSpan :: T.Text -> SourceSpan
 internalModuleSourceSpan name = SourceSpan name (SourcePos 0 0) (SourcePos 0 0)
 
 nullSourceSpan :: SourceSpan
 nullSourceSpan = internalModuleSourceSpan ""
 
 nullSourceAnn :: SourceAnn
-nullSourceAnn = (nullSourceSpan, [])
+nullSourceAnn = SourceAnn nullSourceSpan []
 
 pattern NullSourceSpan :: SourceSpan
 pattern NullSourceSpan = SourceSpan "" (SourcePos 0 0) (SourcePos 0 0)
 
 pattern NullSourceAnn :: SourceAnn
-pattern NullSourceAnn = (NullSourceSpan, [])
+pattern NullSourceAnn = SourceAnn NullSourceSpan []
 
 nonEmptySpan :: SourceAnn -> Maybe SourceSpan
-nonEmptySpan (NullSourceSpan, _) = Nothing
-nonEmptySpan (ss, _) = Just ss
+nonEmptySpan (SourceAnn NullSourceSpan _) = Nothing
+nonEmptySpan (SourceAnn ss _) = Just ss
 
 widenSourceSpan :: SourceSpan -> SourceSpan -> SourceSpan
 widenSourceSpan NullSourceSpan b = b
@@ -113,4 +175,4 @@ widenSourceSpan (SourceSpan n1 s1 e1) (SourceSpan n2 s2 e2) =
     | otherwise = n1
 
 widenSourceAnn :: SourceAnn -> SourceAnn -> SourceAnn
-widenSourceAnn (s1, _) (s2, _) = (widenSourceSpan s1 s2, [])
+widenSourceAnn (SourceAnn s1 _) (SourceAnn s2 _) = SourceAnn (widenSourceSpan s1 s2) []

@@ -65,7 +65,7 @@ desugarGuardedExprs ss (Case scrut alternatives)
     (scrut', scrut_decls) <- unzip <$> forM scrut (\e -> do
       scrut_id <- freshIdent "GUARD"
       pure ( Var ss (Qualified ByNullSourcePos scrut_id)
-           , ValueDecl (ss, []) scrut_id Private [] [MkUnguarded e]
+           , ValueDecl (SourceAnn ss []) scrut_id Private [] [MkUnguarded e]
            )
       )
     Let FromLet scrut_decls <$> desugarGuardedExprs ss (Case scrut' alternatives)
@@ -232,7 +232,7 @@ desugarGuardedExprs ss (Case scrut alternatives) =
           alt_fail n = [CaseAlternative (replicate n NullBinder) [MkUnguarded goto_rem_case]]
 
         pure $ Let FromLet [
-          ValueDecl (ss, []) rem_case_id Private []
+          ValueDecl (SourceAnn ss []) rem_case_id Private []
             [MkUnguarded (Abs (VarBinder ss unused_binder) desugared)]
           ] (mk_body alt_fail)
 
@@ -344,7 +344,7 @@ inSameGroup (ValueDeclaration vd1) (ValueDeclaration vd2) = valdeclIdent vd1 == 
 inSameGroup _ _ = False
 
 toDecls :: forall m. (MonadSupply m, MonadError MultipleErrors m) => [Declaration] -> m [Declaration]
-toDecls [ValueDecl sa@(ss, _) ident nameKind bs [MkUnguarded val]] | all isIrrefutable bs = do
+toDecls [ValueDecl sa@(SourceAnn ss _) ident nameKind bs [MkUnguarded val]] | all isIrrefutable bs = do
   args <- mapM fromVarBinder bs
   let body = foldr (Abs . VarBinder ss) val args
   guardWith (errorMessage' ss (OverlappingArgNames (Just ident))) $ length (ordNub args) == length args
@@ -356,7 +356,7 @@ toDecls [ValueDecl sa@(ss, _) ident nameKind bs [MkUnguarded val]] | all isIrref
   fromVarBinder (PositionedBinder _ _ b) = fromVarBinder b
   fromVarBinder (TypedBinder _ b) = fromVarBinder b
   fromVarBinder _ = internalError "fromVarBinder: Invalid argument"
-toDecls ds@(ValueDecl (ss, _) ident _ bs (result : _) : _) = do
+toDecls ds@(ValueDecl (SourceAnn ss _) ident _ bs (result : _) : _) = do
   let tuples = map toTuple ds
 
       isGuarded (MkUnguarded _) = False
@@ -385,7 +385,7 @@ makeCaseDeclaration ss ident alternatives = do
       binders = [ CaseAlternative bs result | (bs, result) <- alternatives ]
   let value = foldr (Abs . uncurry VarBinder) (Case vars binders) args
 
-  return $ ValueDecl (ss, []) ident Public [] [MkUnguarded value]
+  return $ ValueDecl (SourceAnn ss []) ident Public [] [MkUnguarded value]
   where
   -- We will construct a table of potential names.
   -- VarBinders will become Just _ which is a potential name.

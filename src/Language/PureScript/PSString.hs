@@ -14,7 +14,10 @@ module Language.PureScript.PSString
 
 import Prelude
 import GHC.Generics (Generic)
-import Codec.Serialise (Serialise)
+import Codec.Serialise (Serialise, encode, decode)
+import Codec.Serialise qualified as Serialise
+import Codec.Serialise.Encoding (encodeSimple)
+import Codec.Serialise.Decoding (decodeSimple)
 import Control.DeepSeq (NFData)
 import Control.Exception (try, evaluate)
 import Control.Applicative ((<|>))
@@ -56,11 +59,25 @@ newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
 
 instance NFData PSString
 instance Serialise PSString
+--instance Serialise PSString where
+--  encode ps =
+--    case decodeString ps of
+--      Just t -> encodeSimple 0 <> encode t
+--      Nothing -> encodeSimple 1 <> encode (toUTF16CodeUnits ps)
+--
+--  decode = do
+--    tag <- decodeSimple
+--    case tag of
+--      0 -> do
+--        t <- decode
+--        pure $ fromText t
+--      1 -> do
+--        words <- decode
+--        pure $ PSString words
 
 instance Show PSString where
   show = show . codePoints
 
--- |
 -- Decode a PSString to a String, representing any lone surrogates as the
 -- reserved code point with that index. Warning: if there are any lone
 -- surrogates, converting the result to Text via Data.Text.pack will result in

@@ -141,7 +141,7 @@ updateImportExports st@(PSCiState modules lets externs iprint _ _) =
       P.Module internalSpan [] temporaryName decl Nothing
 
   importDecl :: ImportedModule -> P.Declaration
-  importDecl (mn, declType, asQ) = P.ImportDeclaration (internalSpan, []) mn declType asQ
+  importDecl (mn, declType, asQ) = P.ImportDeclaration (P.SourceAnn internalSpan []) mn declType asQ
 
   internalSpan :: P.SourceSpan
   internalSpan = P.internalModuleSourceSpan "<internal>"

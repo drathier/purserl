@@ -42,6 +42,7 @@ import Data.Functor (($>))
 import Data.IntSet qualified as IS
 import Data.List (nubBy, sortOn, (\\))
 import Data.Map qualified as M
+import Data.IntMap.Strict qualified as IM
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -93,7 +94,7 @@ apply ty = flip substituteType ty <$> gets checkSubstitution
 substituteType :: Substitution -> SourceType -> SourceType
 substituteType sub = everywhereOnTypes $ \case
   TUnknown ann u ->
-    case M.lookup u (substType sub) of
+    case IM.lookup u (substType sub) of
       Nothing -> TUnknown ann u
       Just (TUnknown ann' u1) | u1 == u -> TUnknown ann' u1
       Just t -> substituteType sub t
@@ -113,7 +114,7 @@ freshKindWithKind :: (MonadState CheckState m) => SourceSpan -> SourceType -> m 
 freshKindWithKind ss kind = do
   u <- freshUnknown
   addUnsolved Nothing u kind
-  pure $ TUnknown (ss, []) u
+  pure $ TUnknown (SourceAnn ss []) u
 
 addUnsolved :: (MonadState CheckState m) => Maybe UnkLevel -> Unknown -> SourceType -> m ()
 addUnsolved lvl unk kind = modify $ \st -> do
@@ -122,14 +123,14 @@ addUnsolved lvl unk kind = modify $ \st -> do
       Nothing -> pure unk
       Just (UnkLevel lvl') -> lvl' <> pure unk
     subs = checkSubstitution st
-    uns = M.insert unk (newLvl, kind) $ substUnsolved subs
+    uns = IM.insert unk (newLvl, kind) $ substUnsolved subs
   st { checkSubstitution = subs { substUnsolved = uns } }
 
 solve :: (MonadState CheckState m) => Unknown -> SourceType -> m ()
 solve unk solution = modify $ \st -> do
   let
     subs = checkSubstitution st
-    tys = M.insert unk solution $ substType subs
+    tys = IM.insert unk solution $ substType subs
   st { checkSubstitution = subs { substType = tys } }
 
 lookupUnsolved
@@ -138,7 +139,7 @@ lookupUnsolved
   -> m (UnkLevel, SourceType)
 lookupUnsolved u = do
   uns <- gets (substUnsolved . checkSubstitution)
-  case M.lookup u uns of
+  case IM.lookup u uns of
     Nothing -> internalCompilerError $ "Unsolved unification variable ?" <> T.pack (show u) <> " is not bound"
     Just res -> return res
 
@@ -159,7 +160,7 @@ inferKind
   -> m (SourceType, SourceType)
 inferKind = \tyToInfer ->
   withErrorMessageHint (ErrorInferringKind tyToInfer)
-    . rethrowWithPosition (fst $ getAnnForType tyToInfer)
+    . rethrowWithPosition (safst $ getAnnForType tyToInfer)
     $ go tyToInfer
   where
   go = \case
@@ -167,7 +168,7 @@ inferKind = \tyToInfer ->
       env <- getEnv
       case M.lookup v (E.types env) of
         Nothing ->
-          throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
+          throwError . errorMessage' (safst ann) . UnknownName . fmap TyName $ v
         Just (kind, E.LocalTypeVariable) -> do
           kind' <- apply kind
           pure (ty, kind' $> ann)
@@ -177,7 +178,7 @@ inferKind = \tyToInfer ->
       env <- getEnv
       con' <- case M.lookup (coerceProperName <$> v) (E.types env) of
         Nothing ->
-          throwError . errorMessage' (fst ann) . UnknownName . fmap TyClassName $ v
+          throwError . errorMessage' (safst ann) . UnknownName . fmap TyClassName $ v
         Just _ ->
           checkConstraint con
       ty' <- checkIsSaturatedType ty
@@ -198,12 +199,12 @@ inferKind = \tyToInfer ->
       kind <- apply . snd =<< lookupUnsolved u
       pure (ty, kind $> ann)
     ty@(TypeWildcard ann _) -> do
-      k <- freshKind (fst ann)
+      k <- freshKind (safst ann)
       pure (ty, k $> ann)
     ty@(REmpty ann) -> do
       pure (ty, E.kindOfREmpty $> ann)
     ty@(RCons ann _ _ _) | (rowList, rowTail) <- rowToList ty -> do
-      kr <- freshKind (fst ann)
+      kr <- freshKind (safst ann)
       rowList' <- for rowList $ \(RowListItem a lbl t) ->
         RowListItem a lbl <$> checkKind t kr
       rowTail' <- checkKind rowTail $ E.kindRow kr
@@ -229,7 +230,7 @@ inferKind = \tyToInfer ->
       moduleName <- unsafeCheckCurrentModule
       kind <- case mbKind of
         Just k -> replaceAllTypeSynonyms =<< checkIsSaturatedType k
-        Nothing -> freshKind (fst ann)
+        Nothing -> freshKind (safst ann)
       (ty', unks) <- bindLocalTypeVariables moduleName [(ProperName arg, kind)] $ do
         ty' <- apply =<< checkIsSaturatedType ty
         unks <- unknownsWithKinds . IS.toList $ unknowns ty'
@@ -323,7 +324,7 @@ checkKind'
   -> m SourceType
 checkKind' requireSynonymsToExpand ty kind2 = do
   withErrorMessageHint (ErrorCheckingKind ty kind2)
-    . rethrowWithPosition (fst $ getAnnForType ty) $ do
+    . rethrowWithPosition (safst $ getAnnForType ty) $ do
         (ty', kind1) <- inferKind ty
         kind1' <- apply kind1
         kind2' <- apply kind2
@@ -338,7 +339,7 @@ instantiateKind
 instantiateKind (ty, kind1) kind2 = case kind1 of
   ForAll _ _ a (Just k) t _ | shouldInstantiate kind2 -> do
     let ann = getAnnForType ty
-    u <- freshKindWithKind (fst ann) k
+    u <- freshKindWithKind (safst ann) k
     instantiateKind (KindApp ann ty u, replaceTypeVars a u t) kind2
   _ -> do
     subsumesKind kind1 kind2
@@ -366,7 +367,7 @@ subsumesKind = go
       skolc <- newSkolemConstant
       go a $ skolemize ann var mbKind skolc scope b
     (ForAll ann _ var (Just kind) a _, b) -> do
-      a' <- freshKindWithKind (fst ann) kind
+      a' <- freshKindWithKind (safst ann) kind
       go (replaceTypeVars var a' a) b
     (TUnknown ann u, b@(TypeApp _ (TypeApp _ arr _) _))
       | eqType arr E.tyFunction
@@ -386,7 +387,7 @@ unifyKinds
   -> m ()
 unifyKinds = unifyKindsWithFailure $ \w1 w2 ->
   throwError
-    . errorMessage''' (fst . getAnnForType <$> [w1, w2])
+    . errorMessage''' (safst . getAnnForType <$> [w1, w2])
     $ KindsDoNotUnify w1 w2
 
 -- | Does not attach positions to the error node, instead relies on the
@@ -524,7 +525,7 @@ elaborateKind = \case
     env <- getEnv
     case M.lookup v (E.types env) of
       Nothing ->
-        throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
+        throwError . errorMessage' (safst ann) . UnknownName . fmap TyName $ v
       Just (kind, _) ->
         ($> ann) <$> apply kind
   TypeVar ann a -> do
@@ -570,7 +571,7 @@ elaborateKind = \case
   KindedType ann _ k ->
     pure $ k $> ann
   ty ->
-    throwError . errorMessage' (fst (getAnnForType ty)) $ UnsupportedTypeInKind ty
+    throwError . errorMessage' (safst (getAnnForType ty)) $ UnsupportedTypeInKind ty
 
 checkEscapedSkolems :: MonadError MultipleErrors m => SourceType -> m ()
 checkEscapedSkolems ty =
@@ -580,12 +581,12 @@ checkEscapedSkolems ty =
   where
   go :: SourceType -> SourceType -> (SourceType, [(SourceSpan, Text, SourceType)])
   go ty' = \case
-    Skolem ss name _ _ _ -> (ty', [(fst ss, name, ty')])
+    Skolem ss name _ _ _ -> (ty', [(safst ss, name, ty')])
     ty''@(KindApp _ _ _) -> (ty'', [])
     _ -> (ty', [])
 
   toSkolemError (ss, name, ty') =
-    errorMessage' (fst $ getAnnForType ty') $ EscapedSkolem name (Just ss) ty'
+    errorMessage' (safst $ getAnnForType ty') $ EscapedSkolem name (Just ss) ty'
 
 kindOfWithUnknowns
   :: (MonadError MultipleErrors m, MonadState CheckState m, HasCallStack)
@@ -644,7 +645,7 @@ inferDataDeclaration moduleName (ann, tyName, tyArgs, ctors) = do
   tyKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos tyName)
   let (sigBinders, tyKind') = fromJust . completeBinderList $ tyKind
   bindLocalTypeVariables moduleName (first ProperName . snd <$> sigBinders) $ do
-    tyArgs' <- for tyArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
+    tyArgs' <- for tyArgs . traverse . maybe (freshKind (safst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
     subsumesKind (foldr ((E.-:>) . snd) E.kindType tyArgs') tyKind'
     bindLocalTypeVariables moduleName (first ProperName <$> tyArgs') $ do
       let tyCtorName = srcTypeConstructor $ mkQualified tyName moduleName
@@ -696,8 +697,8 @@ inferTypeSynonym moduleName (ann, tyName, tyArgs, tyBody) = do
   tyKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos tyName)
   let (sigBinders, tyKind') = fromJust . completeBinderList $ tyKind
   bindLocalTypeVariables moduleName (first ProperName . snd <$> sigBinders) $ do
-    kindRes <- freshKind (fst ann)
-    tyArgs' <- for tyArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
+    kindRes <- freshKind (safst ann)
+    tyArgs' <- for tyArgs . traverse . maybe (freshKind (safst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
     unifyKinds tyKind' $ foldr ((E.-:>) . snd) kindRes tyArgs'
     bindLocalTypeVariables moduleName (first ProperName <$> tyArgs') $ do
       tyBodyAndKind <- traverse apply =<< inferKind tyBody
@@ -719,7 +720,7 @@ checkQuantification =
   collectErrors vars =
     unless (null vars)
       . throwError
-      . foldMap (\(ann, arg) -> errorMessage' (fst ann) $ QuantificationCheckFailureInKind arg)
+      . foldMap (\(ann, arg) -> errorMessage' (safst ann) $ QuantificationCheckFailureInKind arg)
       $ vars
 
   go acc _ [] = reverse acc
@@ -769,11 +770,11 @@ checkTypeQuantification =
   unknownsInKinds False _ = (False, [])
   unknownsInKinds _ ty = case ty of
     ForAll sa _ _ _ _ _ | unks <- unknowns ty, not (IS.null unks) ->
-      (False, [(fst sa, unks, ty)])
+      (False, [(safst sa, unks, ty)])
     KindApp sa _ _ | unks <- unknowns ty, not (IS.null unks) ->
-      (False, [(fst sa, unks, ty)])
+      (False, [(safst sa, unks, ty)])
     ConstrainedType sa _ _ | unks <- unknowns ty, not (IS.null unks) ->
-      (False, [(fst sa, unks, ty)])
+      (False, [(safst sa, unks, ty)])
     _ ->
       (True, [])
 
@@ -813,7 +814,7 @@ inferClassDeclaration moduleName (ann, clsName, clsArgs, superClasses, decls) = 
   clsKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ coerceProperName clsName)
   let (sigBinders, clsKind') = fromJust . completeBinderList $ clsKind
   bindLocalTypeVariables moduleName (first ProperName . snd <$> sigBinders) $ do
-    clsArgs' <- for clsArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
+    clsArgs' <- for clsArgs . traverse . maybe (freshKind (safst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
     unifyKinds clsKind' $ foldr ((E.-:>) . snd) E.kindConstraint clsArgs'
     bindLocalTypeVariables moduleName (first ProperName <$> clsArgs') $ do
       (clsArgs',,)
@@ -886,7 +887,7 @@ checkInstanceDeclaration moduleName (ann, constraints, clsName, args) = do
   let ty = foldl (TypeApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) args
       tyWithConstraints = foldr srcConstrainedType ty constraints
       freeVars = freeTypeVariables tyWithConstraints
-  freeVarsDict <- for freeVars $ \v -> (ProperName v,) <$> freshKind (fst ann)
+  freeVarsDict <- for freeVars $ \v -> (ProperName v,) <$> freshKind (safst ann)
   bindLocalTypeVariables moduleName freeVarsDict $ do
     ty' <- checkKind ty E.kindConstraint
     constraints' <- for constraints checkConstraint
@@ -930,7 +931,7 @@ checkKindDeclaration _ ty = do
 
   checkValidKind = everywhereOnTypesM $ \case
     ty'@(ConstrainedType ann _ _) ->
-      throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
+      throwError . errorMessage' (safst ann) $ UnsupportedTypeInKind ty'
     other -> pure other
 
 existingSignatureOrFreshKind
@@ -953,9 +954,9 @@ kindsOfAll
   -> [ClassDeclarationArgs]
   -> m ([TypeDeclarationResult], [DataDeclarationResult], [ClassDeclarationResult])
 kindsOfAll moduleName syns dats clss = withFreshSubstitution $ do
-  synDict <- for syns $ \(sa, synName, _, _) -> (synName,) <$> existingSignatureOrFreshKind moduleName (fst sa) synName
-  datDict <- for dats $ \(sa, datName, _, _) -> (datName,) <$> existingSignatureOrFreshKind moduleName (fst sa) datName
-  clsDict <- for clss $ \(sa, clsName, _, _, _) -> fmap (coerceProperName clsName,) $ existingSignatureOrFreshKind moduleName (fst sa) $ coerceProperName clsName
+  synDict <- for syns $ \(sa, synName, _, _) -> (synName,) <$> existingSignatureOrFreshKind moduleName (safst sa) synName
+  datDict <- for dats $ \(sa, datName, _, _) -> (datName,) <$> existingSignatureOrFreshKind moduleName (safst sa) datName
+  clsDict <- for clss $ \(sa, clsName, _, _, _) -> fmap (coerceProperName clsName,) $ existingSignatureOrFreshKind moduleName (safst sa) $ coerceProperName clsName
   let bindingGroup = synDict <> datDict <> clsDict
   bindLocalTypeVariables moduleName bindingGroup $ do
     synResults <- for syns (inferTypeSynonym moduleName)

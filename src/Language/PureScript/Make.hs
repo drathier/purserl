@@ -46,7 +46,7 @@ import Language.PureScript.Names (ModuleName, isBuiltinModuleName, runModuleName
 import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
-import Language.PureScript.Make.BuildPlan (BuildJobResult(..), BuildPlan(..), getResult)
+import Language.PureScript.Make.BuildPlan (BuildJobResult(..), BuildPlan(..))
 import Language.PureScript.Make.BuildPlan qualified as BuildPlan
 import Language.PureScript.Make.Cache qualified as Cache
 import Language.PureScript.Make.Actions as Actions
@@ -64,6 +64,7 @@ import Data.Text.IO qualified as T
 -- purserl
 import Control.Applicative ((<|>))
 import qualified Build as Erl.Build
+import           System.Directory (getCurrentDirectory)
 -- import System.IO.Unsafe (unsafePerformIO)
 --
 
@@ -90,7 +91,7 @@ rebuildModule'
   -> [ExternsFile]
   -> Module
   -> m ExternsFile
-rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing
+rebuildModule' act env ext mdl = rebuildModuleWithIndex act env ext mdl Nothing UnknownRecompileReason
 
 rebuildModuleWithIndex
   :: forall m
@@ -100,9 +101,11 @@ rebuildModuleWithIndex
   -> [ExternsFile]
   -> Module
   -> Maybe (Int, Int)
+  -> RecompileReason
   -> m ExternsFile
-rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex = do
-  progress $ CompilingModule moduleName moduleIndex
+rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) moduleIndex causedByModule = do
+  progress $ CompilingModule moduleName moduleIndex causedByModule
+  progress $ CompileMeta ("### CS.goBuildEnv13[" <> runModuleName moduleName <> "]")
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim
@@ -136,18 +139,18 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     desugarCaseGuards elaborated
   progress $ CompileMeta ("### CS.goCreateBindingGroups5[" <> runModuleName moduleName <> "]")
 
-  let upstreamDBs = M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
-
   regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
+
   progress $ CompileMeta ("### CS.goFfiCodegen6[" <> runModuleName moduleName <> "]")
+  let upstreamDBs = M.fromList $ (\e -> (efModuleName e, efOurCacheShapes e)) <$> externs
   let mod' = Module ss coms moduleName regrouped exps
       corefn = CF.moduleToCoreFn env' mod'
       (optimized, nextVar'') = runSupply nextVar' $ CF.optimizeCoreFn corefn
       (renamedIdents, renamed) = renameInModule optimized
       exts = moduleToExternsFile upstreamDBs mod' env' renamedIdents
   ffiCodegen renamed
-  progress $ CompileMeta ("### CS.goCodegen7[" <> runModuleName moduleName <> "]")
 
+  progress $ CompileMeta ("### CS.goCodegen7[" <> runModuleName moduleName <> "]")
   -- progress $ CompilingModule moduleName moduleIndex "7"
   -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
   -- but I have not done so for two reasons:
@@ -162,6 +165,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
                Right d -> d
 
+  -- NOTE[drathier]: codegen updates the ExternsFile cache, so we have to grab a copy of the old externs file before running codegen if we want to diff them
   -- progress $ CompilingModule moduleName moduleIndex "8"
   evalSupplyT nextVar'' $ codegen env renamed docs exts
   -- progress $ CompilingModule moduleName moduleIndex "9"
@@ -187,7 +191,8 @@ make ma@MakeActions{..} ms = do
   (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
   progress $ CompileMeta ("### CS.goConstructBuildPlan10")
 
-  (buildPlan, newCacheDb) <- BuildPlan.construct ma cacheDb (sorted, graph)
+  -- (buildPlan2, newCacheDb2) <- BuildPlan.construct2 ma cacheDb (sortedDirect, graphDirect)
+  (buildPlan, newCacheDb) <- BuildPlan.construct2 ma cacheDb (sorted, graph)
   progress $ CompileMeta ("### CS.goFork11")
 
   -- Limit concurrent module builds to the number of capabilities as
@@ -200,37 +205,141 @@ make ma@MakeActions{..} ms = do
   lock <- C.newQSem concurrency
 
   let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
+  progress $ CompileMeta ("### CS.toBeRebuilt")
   let totalModuleCount = length toBeRebuilt
+  newCacheDbMVar <- newMVar cacheDb
+
   for_ toBeRebuilt $ \m -> fork $ do
+    -- for each module:
+    -- do I need to rebuild myself?
+    -- did any of my deps change?
+    -- did my source files change?
+    -- after recompile, did my externs change?
+
+
+
     let moduleName = getModuleName . CST.resPartial $ m
+    -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.1"))
+    -- for each module:
+    -- do I need to rebuild myself?
+    -- did my source files change?
+    inputInfo <- getInputTimestampsAndHashes moduleName
+    areMyOwnFilesUpToDate <-
+      case inputInfo of
+        Left RebuildNever -> do
+          -- built-in module, nothing to do
+          -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.2.1", "Left RebuildNever"))
+          pure True
+        Left RebuildAlways -> do
+          -- file not yet built
+          -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.2.2", "Left RebuildAlways"))
+          pure False
+        Right cacheInfo -> do
+          -- -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.2.3", "Right cacheInfo"))
+          -- file has been built before
+          cwd <- liftBase getCurrentDirectory
+          (newCacheInfo, isUpToDate) <- Cache.checkChanged cacheDb moduleName cwd cacheInfo
+          modifyMVar_ newCacheDbMVar (\db -> pure $ M.insert moduleName newCacheInfo db)
+          -- -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.4.2.1", ("writeNewCacheDb", newCacheInfo)))
+          pure isUpToDate
+
+    let bumpCompilationCounter = do
+          idx <- C.takeMVar (bpIndex buildPlan)
+          C.putMVar (bpIndex buildPlan) (idx + 1)
+
+
     let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
-    buildModule lock buildPlan moduleName totalModuleCount
-      (spanName . getModuleSourceSpan . CST.resPartial $ m)
-      (fst $ CST.resFull m)
-      (fmap importPrim . snd $ CST.resFull m)
-      (deps `inOrderOf` map (getModuleName . CST.resPartial) sorted)
+    let goBuild oldExterns results recompileReason = do
+          -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.4.3"))
+          buildModule lock buildPlan moduleName totalModuleCount oldExterns results recompileReason
+            (T.unpack . spanName . getModuleSourceSpan . CST.resPartial $ m)
+            (fst $ CST.resFull m)
+            (fmap importPrim . snd $ CST.resFull m)
+            (deps `inOrderOf` map (getModuleName . CST.resPartial) sorted)
 
-      -- Prevent hanging on other modules when there is an internal error
-      -- (the exception is thrown, but other threads waiting on MVars are released)
-      `onException` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
+            -- Prevent hanging on other modules when there is an internal error
+            -- (the exception is thrown, but other threads waiting on MVars are released)
+          `onException` (BuildPlan.markComplete ma buildPlan moduleName Nothing (BuildJobFailed mempty))
 
+    case areMyOwnFilesUpToDate of
+      False -> do
+        -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
+        oldExterns <- BuildPlan.getExternFromLastSuccessfulPreviousBuild ma buildPlan moduleName
+        mResults <- BuildPlan.fetchMissingExterns ("mod", "b", moduleName) ma buildPlan deps
+        case assertAllExternsExists mResults of
+          Left bjRes -> bumpCompilationCounter >> BuildPlan.markComplete ma buildPlan moduleName Nothing bjRes
+          Right results -> goBuild oldExterns results SourceChangedOrDependencyFailedToBuildInPreviousCompilationOrSomethingElse
+      True -> do
+        -- -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.3.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate)))
+        -- did any of my deps change?
+        anyDepChanged <- BuildPlan.anyDepChanged moduleName graph buildPlan
+        case anyDepChanged of
+          BuildPlan.FailRebuildDepsFailed causedByModule -> do
+            -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.2.1", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FailRebuildDepsFailed", causedByModule))
+            bumpCompilationCounter
+            BuildPlan.markComplete ma buildPlan moduleName Nothing BuildJobSkipped
+            pure ()
+
+          BuildPlan.FullDepsCacheHit -> do
+            -- -- progress $ CompileMeta (T.pack $ show (moduleName, -- DR.3.2.2", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "FullDepsCacheHit"))
+            bumpCompilationCounter
+            BuildPlan.markComplete ma buildPlan moduleName Nothing BuildJobSkippedFullCacheHit
+            pure ()
+
+          BuildPlan.DepsChangedPleaseRebuildIfNeeded causedByModule -> do
+            -- progress $ CompileMeta (T.pack $ show (moduleName, "-- DR.3.2.3", ("areMyOwnFilesUpToDate", areMyOwnFilesUpToDate), "DepsChangedPleaseRebuildIfNeeded", causedByModule))
+            oldExterns <- BuildPlan.getExternFromLastSuccessfulPreviousBuild ma buildPlan moduleName
+            mResults <- BuildPlan.fetchMissingExterns ("mod", "a", moduleName) ma buildPlan deps
+            case assertAllExternsExists mResults of
+              Left bjRes -> bumpCompilationCounter >> BuildPlan.markComplete ma buildPlan moduleName Nothing bjRes
+              Right results ->
+                case BuildPlan.needsRebuildEvenAfterDiffingCacheShapes oldExterns (fmap snd results) of
+                  BuildPlan.NoRebuildNeeded -> do
+                    -- progress $ CompileMeta ("-- DR 3.2.3.1 upstreamDiffWasEmpty[" <> runModuleName moduleName <> "]")
+                    bumpCompilationCounter
+                    BuildPlan.markComplete ma buildPlan moduleName Nothing BuildJobSkippedFullCacheHit
+                    pure ()
+                  BuildPlan.PleaseRebuild errs -> do
+                    -- progress $ CompileMeta ("-- DR 3.2.3.2 upstreamDiffFound[" <> runModuleName moduleName <> "] " <> T.pack (show errs))
+                    goBuild oldExterns results (DependencyChanged causedByModule)
+
+  -- progress $ CompileMeta (T.pack $ show ("-- DR.5", "all solo modules done, pre collection"))
+  externs <- traverse tryReadMVar $ M.elems $ BuildPlan.bpExterns buildPlan
+  -- progress $ CompileMeta (T.pack $ show ("-- DR.5", "all solo modules done, counts", length (filter ((==) Nothing) externs), "/", length externs, "unchanged"))
   -- Wait for all threads to complete, and collect results (and errors).
-  (failures, successes) <-
-    let
-      splitResults = \case
-        BuildJobSucceeded _ exts ->
-          Right exts
-        BuildJobFailed errs ->
-          Left errs
-        BuildJobSkipped ->
-          Left mempty
-    in
-      M.mapEither splitResults <$> BuildPlan.collectResults buildPlan
 
+  collectedResults <- BuildPlan.collectResults buildPlan
+  let directFailures =
+        let
+          isDirectFailure = \case
+            BuildJobFailed _ -> True
+            BuildJobSucceeded _ _ -> False
+            BuildJobSkipped -> False
+            BuildJobSkippedFullCacheHit -> False
+        in
+        M.filter isDirectFailure $ collectedResults
+
+  let (failures, successes) =
+        let
+          splitResults = \case
+            BuildJobSucceeded _ exts ->
+              Right exts
+            BuildJobFailed errs ->
+              Left errs
+            BuildJobSkipped ->
+              Left mempty
+            BuildJobSkippedFullCacheHit ->
+              Right (error "FullCacheHit externs not here")
+        in
+          M.mapEither splitResults $ collectedResults
+
+  progress $ CompileMeta ("### CS.collectedResults31")
   -- Write the updated build cache database to disk
   -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
 
-  writeCacheDb $ M.unionWith (\new _old -> new) (Cache.removeModules (M.keysSet failures) $ newCacheDb) cacheDb
+  newCacheDb <- takeMVar newCacheDbMVar
+  writeCacheDb $ Cache.removeModules (M.keysSet directFailures) $ newCacheDb
+  progress $ CompileMeta ("### CS.wroteCacheDB32")
   -- case () of
   --   _ | M.null failures == False ->
   --     -- NOTE[drathier]: Leaving the old cache-file as-is on failed compiles is a workaround. Previously, a build error in a module caused the cache entries for all subsequent modules to be dropped, which lead to a recompile. This way, we pretend we never did that failing compile, and we'll recompile modules over and over again until we get a full successful compile. This might play badly with ide and possibly other things too, but it superficially works. It's worth a try.
@@ -289,9 +398,9 @@ make ma@MakeActions{..} ms = do
   inOrderOf :: (Ord a) => [a] -> [a] -> [a]
   inOrderOf xs ys = let s = S.fromList xs in filter (`S.member` s) ys
 
-  buildModule :: QSem -> BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
-  buildModule lock buildPlan moduleName cnt fp pwarnings mres deps = do
-    progress $ CompileMeta ("### CS.goWaitForDepsMvars12[" <> runModuleName moduleName <> "]")
+  buildModule :: QSem -> BuildPlan -> ModuleName -> Int -> Maybe ExternsFile -> M.Map ModuleName (MultipleErrors, ExternsFile) -> RecompileReason -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
+  buildModule lock buildPlan moduleName cnt oldExts results recompileReason fp pwarnings mres deps = do
+    progress $ CompileMeta ("### CS.goParse12[" <> runModuleName moduleName <> "]")
 
     -- NOTE[drathier]: catchError here only ever fires if there's an error in a module we're building; it does not fire if a module is skipped because upstream modules failed to build.
     result <- flip catchError (return . BuildJobFailed) $ do
@@ -301,25 +410,21 @@ make ma@MakeActions{..} ms = do
       -- We need to wait for dependencies to be built, before checking if the current
       -- module should be rebuilt, so the first thing to do is to wait on the
       -- MVars for the module's dependencies.
-      mexterns <- fmap unzip . sequence <$> traverse (getResult buildPlan) deps
-      progress $ CompileMeta ("### CS.goBuildEnv13[" <> runModuleName moduleName <> "]")
 
-      case mexterns of
-        Just (_, externs) -> do
+      do
           -- We need to ensure that all dependencies have been included in Env
           C.modifyMVar_ (bpEnv buildPlan) $ \env -> do
             let
               go :: Env -> ModuleName -> m Env
-              go e dep = case lookup dep (zip deps externs) of
-                Just exts
+              go e dep = case M.lookup dep results of
+                Just (_, exts)
                   | not (M.member dep e) -> externsEnv e exts
                 _ -> return e
             foldM go env deps
           env <- C.readMVar (bpEnv buildPlan)
           idx <- C.takeMVar (bpIndex buildPlan)
           C.putMVar (bpIndex buildPlan) (idx + 1)
-          let cfa = BuildPlan.getCacheFilesAvailable buildPlan moduleName
-          nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
+          -- nothingIfNeedsRecompileBecauseOutputFileIsMissing <- touchOutputTimestamp moduleName
 
           let doCompile wasCacheHit badExts =
                 do
@@ -333,7 +438,7 @@ make ma@MakeActions{..} ms = do
                       -- Force the externs and warnings to avoid retaining excess module
                       -- data after the module is finished compiling.
                       extsAndWarnings <- evaluate . force <=< listen $ do
-                        rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
+                        rebuildModuleWithIndex ma env (snd <$> M.elems results) m (Just (idx, cnt)) recompileReason
 
                       -- liftBase $ traceM $ T.unpack (runModuleName moduleName) <> " end"
                       liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
@@ -354,20 +459,20 @@ make ma@MakeActions{..} ms = do
               Nothing -> False
               _ -> True
 
-          case BuildPlan.shouldRecompile moduleName cfa externs of
-            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
-            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
-            --
-            Right exts
-              -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
-              | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
-              ->
-              return $ BuildJobSucceeded pwarnings' exts
-            Right badExts -> doCompile WasCacheHit (Just badExts)
-            Left badExts -> doCompile WasCacheMiss badExts
-        Nothing -> return BuildJobSkipped
+          doCompile WasCacheMiss Nothing
+--          case BuildPlan.shouldRecompile buildPlan moduleName externs of
+--            Right badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheHit (Just badExts)
+--            Left badExts | experimentalCachingDisabledViaEnvvar -> doCompile WasCacheMiss badExts
+--            --
+--            Right exts
+--              -- touch the already up-to-date output files so that the next compile run thinks that they're up to date, or recompile if anything was missing
+--              | Just () <- nothingIfNeedsRecompileBecauseOutputFileIsMissing
+--              ->
+--              return $ BuildJobSucceeded pwarnings' exts
+--            Right badExts -> doCompile WasCacheHit (Just badExts)
+--            Left badExts -> doCompile WasCacheMiss badExts
 
-    BuildPlan.markComplete buildPlan moduleName result
+    BuildPlan.markComplete ma buildPlan moduleName oldExts result
 
 
 data WasCacheHit = WasCacheHit | WasCacheMiss
@@ -394,3 +499,17 @@ inferForeignModules =
        erlForeign <- Erl.Build.inferForeignModule' path
        pure (erlForeign <|> jsForeign)
 
+
+assertAllExternsExists :: M.Map ModuleName BuildJobResult -> Either BuildJobResult (M.Map ModuleName (MultipleErrors, ExternsFile))
+assertAllExternsExists externs = assertAllExternsExistsImpl (M.toList externs) mempty
+
+assertAllExternsExistsImpl externs acc =
+  case externs of
+    [] -> Right acc
+    ((moduleName,e):ex) ->
+      case e of
+        BuildJobSkippedFullCacheHit -> internalError "Make:assertAllExternsExists saw unexpected BuildJobSkippedFullCacheHit, should have been replaced with BuildJobSucceeded by now"
+        BuildJobFailed err -> Left BuildJobSkipped
+        BuildJobSkipped -> Left BuildJobSkipped
+        --
+        BuildJobSucceeded err ext -> assertAllExternsExistsImpl ex (M.insert moduleName (err, ext) acc)

@@ -763,7 +763,7 @@ asGithub = (,) <$> nth 0 (GithubUser <$> asText)
                <*> nth 1 (GithubRepo <$> asText)
 
 asSourceSpan :: Parse e P.SourceSpan
-asSourceSpan = P.SourceSpan <$> key "name" asString
+asSourceSpan = P.SourceSpan <$> key "name" asText
                             <*> key "start" asSourcePos
                             <*> key "end" asSourcePos
 

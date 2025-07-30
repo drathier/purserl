@@ -24,6 +24,7 @@ import Data.Functor (($>))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (isJust, fromJust, mapMaybe)
 import Data.Text qualified as Text
+import Data.Text qualified as T
 import Language.PureScript.AST qualified as AST
 import Language.PureScript.AST.Declarations.ChainId (mkChainId)
 import Language.PureScript.AST.SourcePos qualified as Pos
@@ -51,31 +52,31 @@ comments = mapMaybe comment
 sourcePos :: SourcePos -> Pos.SourcePos
 sourcePos (SourcePos line col) = Pos.SourcePos line col
 
-sourceSpan :: String -> SourceRange -> Pos.SourceSpan
+sourceSpan :: T.Text -> SourceRange -> Pos.SourceSpan
 sourceSpan name (SourceRange start end) = Pos.SourceSpan name (sourcePos start) (sourcePos end)
 
 widenLeft :: TokenAnn -> Pos.SourceAnn -> Pos.SourceAnn
-widenLeft ann (sp, _) =
-  ( Pos.widenSourceSpan (sourceSpan (Pos.spanName sp) $ tokRange ann) sp
-  , comments $ tokLeadingComments ann
-  )
+widenLeft ann (Pos.SourceAnn sp _) =
+  Pos.SourceAnn
+  ( Pos.widenSourceSpan (sourceSpan (Pos.spanName sp) $ tokRange ann) sp)
+  (comments $ tokLeadingComments ann)
 
-sourceAnnCommented :: String -> SourceToken -> SourceToken -> Pos.SourceAnn
+sourceAnnCommented :: T.Text -> SourceToken -> SourceToken -> Pos.SourceAnn
 sourceAnnCommented fileName (SourceToken ann1 _) (SourceToken ann2 _) =
-  ( Pos.SourceSpan fileName (sourcePos $ srcStart $ tokRange ann1) (sourcePos $ srcEnd $ tokRange ann2)
-  , comments $ tokLeadingComments ann1
-  )
+  Pos.SourceAnn
+  ( Pos.SourceSpan fileName (sourcePos $ srcStart $ tokRange ann1) (sourcePos $ srcEnd $ tokRange ann2))
+  (comments $ tokLeadingComments ann1)
 
-sourceAnn :: String -> SourceToken -> SourceToken -> Pos.SourceAnn
+sourceAnn :: T.Text -> SourceToken -> SourceToken -> Pos.SourceAnn
 sourceAnn fileName (SourceToken ann1 _) (SourceToken ann2 _) =
-  ( Pos.SourceSpan fileName (sourcePos $ srcStart $ tokRange ann1) (sourcePos $ srcEnd $ tokRange ann2)
-  , []
-  )
+  Pos.SourceAnn
+  ( Pos.SourceSpan fileName (sourcePos $ srcStart $ tokRange ann1) (sourcePos $ srcEnd $ tokRange ann2))
+  ([])
 
-sourceName :: String -> Name a -> Pos.SourceAnn
+sourceName :: T.Text -> Name a -> Pos.SourceAnn
 sourceName fileName a = sourceAnnCommented fileName (nameTok a) (nameTok a)
 
-sourceQualName :: String -> QualifiedName a -> Pos.SourceAnn
+sourceQualName :: T.Text -> QualifiedName a -> Pos.SourceAnn
 sourceQualName fileName a = sourceAnnCommented fileName (qualTok a) (qualTok a)
 
 moduleName :: Token -> Maybe N.ModuleName
@@ -97,13 +98,13 @@ qualified q = N.Qualified qb (qualName q)
 ident :: Ident -> N.Ident
 ident = N.Ident . getIdent
 
-convertType :: String -> Type a -> T.SourceType
+convertType :: T.Text -> Type a -> T.SourceType
 convertType = convertType' False
 
-convertVtaType :: String -> Type a -> T.SourceType
+convertVtaType :: T.Text -> Type a -> T.SourceType
 convertVtaType = convertType' True
 
-convertType' :: Bool -> String -> Type a -> T.SourceType
+convertType' :: Bool -> T.Text -> Type a -> T.SourceType
 convertType' withinVta fileName = go
   where
   goRow (Row labels tl) b = do
@@ -201,7 +202,7 @@ convertType' withinVta fileName = go
         ann = uncurry (sourceAnnCommented fileName) rng
       T.setAnnForType ann $ Env.kindRow a'
 
-convertConstraint :: Bool -> String -> Constraint a -> T.SourceConstraint
+convertConstraint :: Bool -> T.Text -> Constraint a -> T.SourceConstraint
 convertConstraint withinVta fileName = go
   where
   go = \case
@@ -210,7 +211,7 @@ convertConstraint withinVta fileName = go
       T.Constraint ann (qualified name) [] (convertType' withinVta fileName <$> args) Nothing
     ConstraintParens _ (Wrapped _ c _) -> go c
 
-convertGuarded :: String -> Guarded a -> [AST.GuardedExpr]
+convertGuarded :: T.Text -> Guarded a -> [AST.GuardedExpr]
 convertGuarded fileName = \case
   Unconditional _ x -> [AST.GuardedExpr [] (convertWhere fileName x)]
   Guarded gs -> (\(GuardedExpr _ ps _ x) -> AST.GuardedExpr (p <$> toList ps) (convertWhere fileName x)) <$> NE.toList gs
@@ -219,14 +220,15 @@ convertGuarded fileName = \case
   p (PatternGuard Nothing x) = AST.ConditionGuard (go x)
   p (PatternGuard (Just (b, _)) x) = AST.PatternGuard (convertBinder fileName b) (go x)
 
-convertWhere :: String -> Where a -> AST.Expr
+convertWhere :: T.Text -> Where a -> AST.Expr
 convertWhere fileName = \case
   Where expr Nothing -> convertExpr fileName expr
   Where expr (Just (_, bs)) -> do
     let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-    uncurry AST.PositionedValue ann . AST.Let AST.FromWhere (convertLetBinding fileName <$> NE.toList bs) $ convertExpr fileName expr
+    let Pos.SourceAnn q1 q2 = ann
+    AST.PositionedValue q1 q2 . AST.Let AST.FromWhere (convertLetBinding fileName <$> NE.toList bs) $ convertExpr fileName expr
 
-convertLetBinding :: String -> LetBinding a -> AST.Declaration
+convertLetBinding :: T.Text -> LetBinding a -> AST.Declaration
 convertLetBinding fileName = \case
   LetBindingSignature _ lbl ->
     convertSignature fileName lbl
@@ -237,56 +239,61 @@ convertLetBinding fileName = \case
     let ann = uncurry (sourceAnnCommented fileName) $ letBindingRange binding
     AST.BoundValueDeclaration ann (convertBinder fileName a) (convertWhere fileName b)
 
-convertExpr :: forall a. String -> Expr a -> AST.Expr
+convertExpr :: forall a. T.Text -> Expr a -> AST.Expr
 convertExpr fileName = go
   where
   positioned =
     uncurry AST.PositionedValue
+  positionedSA (Pos.SourceAnn a b) =
+      AST.PositionedValue a b
 
   goDoStatement = \case
     stmt@(DoLet _ as) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ doStatementRange stmt
-      uncurry AST.PositionedDoNotationElement ann . AST.DoNotationLet $ convertLetBinding fileName <$> NE.toList as
+      let Pos.SourceAnn q1 q2 = ann
+      AST.PositionedDoNotationElement q1 q2 . AST.DoNotationLet $ convertLetBinding fileName <$> NE.toList as
     stmt@(DoDiscard a) -> do
       let ann = uncurry (sourceAnn fileName) $ doStatementRange stmt
-      uncurry AST.PositionedDoNotationElement ann . AST.DoNotationValue $ go a
+      let Pos.SourceAnn q1 q2 = ann
+      AST.PositionedDoNotationElement q1 q2 . AST.DoNotationValue $ go a
     stmt@(DoBind a _ b) -> do
       let
         ann = uncurry (sourceAnn fileName) $ doStatementRange stmt
         a' = convertBinder fileName a
         b' = go b
-      uncurry AST.PositionedDoNotationElement ann $ AST.DoNotationBind a' b'
+      let (Pos.SourceAnn q1 q2) = ann
+      AST.PositionedDoNotationElement q1 q2 $ AST.DoNotationBind a' b'
 
   go = \case
     ExprHole _ a ->
-      positioned (sourceName fileName a) . AST.Hole . getIdent $ nameValue a
+      positionedSA (sourceName fileName a) . AST.Hole . getIdent $ nameValue a
     ExprSection _ a ->
-      positioned (sourceAnnCommented fileName a a) AST.AnonymousArgument
+      positionedSA (sourceAnnCommented fileName a a) AST.AnonymousArgument
     ExprIdent _ a -> do
       let ann = sourceQualName fileName a
-      positioned ann . AST.Var (fst ann) . qualified $ fmap ident a
+      positionedSA ann . AST.Var (Pos.safst ann) . qualified $ fmap ident a
     ExprConstructor _ a -> do
       let ann = sourceQualName fileName a
-      positioned ann . AST.Constructor (fst ann) $ qualified a
+      positionedSA ann . AST.Constructor (Pos.safst ann) $ qualified a
     ExprBoolean _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.Literal (fst ann) $ AST.BooleanLiteral b
+      positionedSA ann . AST.Literal (Pos.safst ann) $ AST.BooleanLiteral b
     ExprChar _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.Literal (fst ann) $ AST.CharLiteral b
+      positionedSA ann . AST.Literal (Pos.safst ann) $ AST.CharLiteral b
     ExprString _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.Literal (fst ann) . AST.StringLiteral $ b
+      positionedSA ann . AST.Literal (Pos.safst ann) . AST.StringLiteral $ b
     ExprNumber _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.Literal (fst ann) $ AST.NumericLiteral b
+      positionedSA ann . AST.Literal (Pos.safst ann) $ AST.NumericLiteral b
     ExprArray _ (Wrapped a bs c) -> do
       let
         ann = sourceAnnCommented fileName a c
         vals = case bs of
           Just (Separated x xs) -> go x : (go . snd <$> xs)
           Nothing -> []
-      positioned ann . AST.Literal (fst ann) $ AST.ArrayLiteral vals
+      positionedSA ann . AST.Literal (Pos.safst ann) $ AST.ArrayLiteral vals
     ExprRecord z (Wrapped a bs c) -> do
       let
         ann = sourceAnnCommented fileName a c
@@ -296,9 +303,9 @@ convertExpr fileName = go
         vals = case bs of
           Just (Separated x xs) -> lbl x : (lbl . snd <$> xs)
           Nothing -> []
-      positioned ann . AST.Literal (fst ann) $ AST.ObjectLiteral vals
+      positionedSA ann . AST.Literal (Pos.safst ann) $ AST.ObjectLiteral vals
     ExprParens _ (Wrapped a b c) ->
-      positioned (sourceAnnCommented fileName a c) . AST.Parens $ go b
+      positionedSA (sourceAnnCommented fileName a c) . AST.Parens $ go b
     expr@(ExprTyped _ a _ b) -> do
       let
         a' = go a
@@ -317,102 +324,104 @@ convertExpr fileName = go
         loop k = \case
           ExprOp _ a op b -> loop (reassoc op (k b)) a
           expr' -> k expr'
-      positioned ann $ loop go expr
+      positionedSA ann $ loop go expr
     ExprOpName _ op -> do
       let
         rng = qualRange op
         op' = AST.Op (sourceSpan fileName $ toSourceRange rng) $ qualified op
-      positioned (uncurry (sourceAnnCommented fileName) rng) op'
+      positionedSA (uncurry (sourceAnnCommented fileName) rng) op'
     expr@(ExprNegate _ _ b) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-      positioned ann . AST.UnaryMinus (fst ann) $ go b
+      positionedSA ann . AST.UnaryMinus (Pos.safst ann) $ go b
     expr@(ExprRecordAccessor _ (RecordAccessor a _ (Separated h t))) -> do
       let
         ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
         field x f = AST.Accessor (lblName f) x
-      positioned ann $ foldl' (\x (_, f) -> field x f) (field (go a) h) t
+      positionedSA ann $ foldl' (\x (_, f) -> field x f) (field (go a) h) t
     expr@(ExprRecordUpdate _ a b) -> do
       let
         ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
         k (RecordUpdateLeaf f _ x) = (lblName f, AST.Leaf $ go x)
         k (RecordUpdateBranch f xs) = (lblName f, AST.Branch $ toTree xs)
         toTree (Wrapped _ xs _) = AST.PathTree . AST.AssocList . map k $ toList xs
-      positioned ann . AST.ObjectUpdateNested (go a) $ toTree b
+      positionedSA ann . AST.ObjectUpdateNested (go a) $ toTree b
     expr@(ExprApp _ a b) -> do
       let ann = uncurry (sourceAnn fileName) $ exprRange expr
-      positioned ann $ AST.App (go a) (go b)
+      positionedSA ann $ AST.App (go a) (go b)
     expr@(ExprVisibleTypeApp _ a _ b) -> do
       let ann = uncurry (sourceAnn fileName) $ exprRange expr
-      positioned ann $ AST.VisibleTypeApp (go a) (convertVtaType fileName b)
+      positionedSA ann $ AST.VisibleTypeApp (go a) (convertVtaType fileName b)
     expr@(ExprLambda _ (Lambda _ as _ b)) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-      positioned ann
+      positionedSA ann
         . AST.Abs (convertBinder fileName (NE.head as))
         . foldr (AST.Abs . convertBinder fileName) (go b)
         $ NE.tail as
     expr@(ExprIf _ (IfThenElse _ a _ b _ c)) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-      positioned ann $ AST.IfThenElse (go a) (go b) (go c)
+      positionedSA ann $ AST.IfThenElse (go a) (go b) (go c)
     expr@(ExprCase _ (CaseOf _ as _ bs)) -> do
       let
         ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
         as' = go <$> toList as
         bs' = uncurry AST.CaseAlternative . bimap (map (convertBinder fileName) . toList) (convertGuarded fileName) <$> NE.toList bs
-      positioned ann $ AST.Case as' bs'
+      positionedSA ann $ AST.Case as' bs'
     expr@(ExprLet _ (LetIn _ as _ b)) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-      positioned ann . AST.Let AST.FromLet (convertLetBinding fileName <$> NE.toList as) $ go b
+      positionedSA ann . AST.Let AST.FromLet (convertLetBinding fileName <$> NE.toList as) $ go b
     -- expr@(ExprWhere _ (Where a _ bs)) -> do
     --   let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-    --   positioned ann . AST.Let AST.FromWhere (goLetBinding <$> bs) $ go a
+    --   positionedSA ann . AST.Let AST.FromWhere (goLetBinding <$> bs) $ go a
     expr@(ExprDo _ (DoBlock kw stmts)) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-      positioned ann . AST.Do (moduleName $ tokValue kw) $ goDoStatement <$> NE.toList stmts
+      positionedSA ann . AST.Do (moduleName $ tokValue kw) $ goDoStatement <$> NE.toList stmts
     expr@(ExprAdo _ (AdoBlock kw stms _ a)) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ exprRange expr
-      positioned ann . AST.Ado (moduleName $ tokValue kw) (goDoStatement <$> stms) $ go a
+      positionedSA ann . AST.Ado (moduleName $ tokValue kw) (goDoStatement <$> stms) $ go a
 
-convertBinder :: String -> Binder a -> AST.Binder
+convertBinder :: T.Text -> Binder a -> AST.Binder
 convertBinder fileName = go
   where
   positioned =
     uncurry AST.PositionedBinder
+  positionedSA (Pos.SourceAnn a b) =
+    AST.PositionedBinder a b
 
   go = \case
     BinderWildcard _ a ->
-      positioned (sourceAnnCommented fileName a a) AST.NullBinder
+      positionedSA (sourceAnnCommented fileName a a) AST.NullBinder
     BinderVar _ a -> do
       let ann = sourceName fileName a
-      positioned ann . AST.VarBinder (fst ann) . ident $ nameValue a
+      positionedSA ann . AST.VarBinder (Pos.safst ann) . ident $ nameValue a
     binder@(BinderNamed _ a _ b) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ binderRange binder
-      positioned ann . AST.NamedBinder (fst ann) (ident $ nameValue a) $ go b
+      positionedSA ann . AST.NamedBinder (Pos.safst ann) (ident $ nameValue a) $ go b
     binder@(BinderConstructor _ a bs) -> do
       let ann = uncurry (sourceAnnCommented fileName) $ binderRange binder
-      positioned ann . AST.ConstructorBinder (fst ann) (qualified a) $ go <$> bs
+      positionedSA ann . AST.ConstructorBinder (Pos.safst ann) (qualified a) $ go <$> bs
     BinderBoolean _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.LiteralBinder (fst ann) $ AST.BooleanLiteral b
+      positionedSA ann . AST.LiteralBinder (Pos.safst ann) $ AST.BooleanLiteral b
     BinderChar _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.LiteralBinder (fst ann) $ AST.CharLiteral b
+      positionedSA ann . AST.LiteralBinder (Pos.safst ann) $ AST.CharLiteral b
     BinderString _ a b -> do
       let ann = sourceAnnCommented fileName a a
-      positioned ann . AST.LiteralBinder (fst ann) . AST.StringLiteral $ b
+      positionedSA ann . AST.LiteralBinder (Pos.safst ann) . AST.StringLiteral $ b
     BinderNumber _ n a b -> do
       let
         ann = sourceAnnCommented fileName a a
         b'
           | isJust n = bimap negate negate b
           | otherwise = b
-      positioned ann . AST.LiteralBinder (fst ann) $ AST.NumericLiteral b'
+      positionedSA ann . AST.LiteralBinder (Pos.safst ann) $ AST.NumericLiteral b'
     BinderArray _ (Wrapped a bs c) -> do
       let
         ann = sourceAnnCommented fileName a c
         vals = case bs of
           Just (Separated x xs) -> go x : (go . snd <$> xs)
           Nothing -> []
-      positioned ann . AST.LiteralBinder (fst ann) $ AST.ArrayLiteral vals
+      positionedSA ann . AST.LiteralBinder (Pos.safst ann) $ AST.ArrayLiteral vals
     BinderRecord z (Wrapped a bs c) -> do
       let
         ann = sourceAnnCommented fileName a c
@@ -422,9 +431,9 @@ convertBinder fileName = go
         vals = case bs of
           Just (Separated x xs) -> lbl x : (lbl . snd <$> xs)
           Nothing -> []
-      positioned ann . AST.LiteralBinder (fst ann) $ AST.ObjectLiteral vals
+      positionedSA ann . AST.LiteralBinder (Pos.safst ann) $ AST.ObjectLiteral vals
     BinderParens _ (Wrapped a b c) ->
-      positioned (sourceAnnCommented fileName a c) . AST.ParensInBinder $ go b
+      positionedSA (sourceAnnCommented fileName a c) . AST.ParensInBinder $ go b
     binder@(BinderTyped _ a _ b) -> do
       let
         a' = go a
@@ -440,9 +449,9 @@ convertBinder fileName = go
         loop k = \case
           BinderOp _ a op b -> loop (reassoc op (k b)) a
           binder' -> k binder'
-      positioned ann $ loop go binder
+      positionedSA ann $ loop go binder
 
-convertDeclaration :: String -> Declaration a -> [AST.Declaration]
+convertDeclaration :: T.Text -> Declaration a -> [AST.Declaration]
 convertDeclaration fileName decl = case decl of
   DeclData _ (DataHead _ a vars) bd -> do
     let
@@ -618,14 +627,14 @@ convertDeclaration fileName decl = case decl of
     else
       (fst $ qualRange cls, snd $ typeRange $ last args)
 
-convertSignature :: String -> Labeled (Name Ident) (Type a) -> AST.Declaration
+convertSignature :: T.Text -> Labeled (Name Ident) (Type a) -> AST.Declaration
 convertSignature fileName (Labeled a _ b) = do
   let
     b' = convertType fileName b
     ann = widenLeft (tokAnn $ nameTok a) $ T.getAnnForType b'
   AST.TypeDeclaration $ AST.TypeDeclarationData ann (ident $ nameValue a) b'
 
-convertValueBindingFields :: String -> Pos.SourceAnn -> ValueBindingFields a -> AST.Declaration
+convertValueBindingFields :: T.Text -> Pos.SourceAnn -> ValueBindingFields a -> AST.Declaration
 convertValueBindingFields fileName ann (ValueBindingFields a bs c) = do
   let
     bs' = convertBinder fileName <$> bs
@@ -633,7 +642,7 @@ convertValueBindingFields fileName ann (ValueBindingFields a bs c) = do
   AST.ValueDeclaration $ AST.ValueDeclarationData ann (ident $ nameValue a) Env.Public bs' cs'
 
 convertImportDecl
-  :: String
+  :: T.Text
   -> ImportDecl a
   -> (Pos.SourceAnn, N.ModuleName, AST.ImportDeclarationType, Maybe N.ModuleName)
 convertImportDecl fileName decl@(ImportDecl _ _ modName mbNames mbQual) = do
@@ -648,7 +657,7 @@ convertImportDecl fileName decl@(ImportDecl _ _ modName mbNames mbQual) = do
           else AST.Explicit imps'
   (ann, nameValue modName, importTy, nameValue . snd <$> mbQual)
 
-convertImport :: String -> Import a -> AST.DeclarationRef
+convertImport :: T.Text -> Import a -> AST.DeclarationRef
 convertImport fileName imp = case imp of
   ImportValue _ a ->
     AST.ValueRef ann . ident $ nameValue a
@@ -670,7 +679,7 @@ convertImport fileName imp = case imp of
   where
   ann = sourceSpan fileName . toSourceRange $ importRange imp
 
-convertExport :: String -> Export a -> AST.DeclarationRef
+convertExport :: T.Text -> Export a -> AST.DeclarationRef
 convertExport fileName export = case export of
   ExportValue _ a ->
     AST.ValueRef ann . ident $ nameValue a
@@ -694,14 +703,15 @@ convertExport fileName export = case export of
   where
   ann = sourceSpan fileName . toSourceRange $ exportRange export
 
-convertModule :: String -> Module a -> AST.Module
+convertModule :: T.Text -> Module a -> AST.Module
 convertModule fileName module'@(Module _ _ modName exps _ imps decls _) = do
   let
-    ann = uncurry (sourceAnnCommented fileName) $ moduleRange module'
+    -- ann = let Pos.SourceAnn a b = moduleRange module' in sourceAnnCommented fileName a b
+    Pos.SourceAnn ss comments = uncurry (sourceAnnCommented fileName) $ moduleRange module'
     imps' = importCtr. convertImportDecl fileName <$> imps
     decls' = convertDeclaration fileName =<< decls
     exps' = map (convertExport fileName) . toList . wrpValue <$> exps
-  uncurry AST.Module ann (nameValue modName) (imps' <> decls') exps'
+  AST.Module ss comments (nameValue modName) (imps' <> decls') exps'
   where
   importCtr (a, b, c, d) = AST.ImportDeclaration a b c d
 

@@ -324,9 +324,9 @@ collectFixities :: Module -> [Either ValueFixityRecord TypeFixityRecord]
 collectFixities (Module _ _ moduleName ds _) = concatMap collect ds
   where
   collect :: Declaration -> [Either ValueFixityRecord TypeFixityRecord]
-  collect (ValueFixityDeclaration (ss, _) fixity name op) =
+  collect (ValueFixityDeclaration (SourceAnn ss _) fixity name op) =
     [Left (Qualified (ByModuleName moduleName) op, ss, fixity, name)]
-  collect (TypeFixityDeclaration (ss, _) fixity name op) =
+  collect (TypeFixityDeclaration (SourceAnn ss _) fixity name op) =
     [Right (Qualified (ByModuleName moduleName) op, ss, fixity, name)]
   collect _ = []
 
@@ -370,29 +370,29 @@ updateTypes goType = (goDecl, goExpr, goBinder)
   goType' = everywhereOnTypesTopDownM . goType
 
   goDecl :: Declaration -> m Declaration
-  goDecl (DataDeclaration sa@(ss, _) ddt name args dctors) =
+  goDecl (DataDeclaration sa@(SourceAnn ss _) ddt name args dctors) =
     DataDeclaration sa ddt name
       <$> traverse (traverse (traverse (goType' ss))) args
       <*> traverse (traverseDataCtorFields (traverse (sndM (goType' ss)))) dctors
-  goDecl (ExternDeclaration sa@(ss, _) name ty) =
+  goDecl (ExternDeclaration sa@(SourceAnn ss _) name ty) =
     ExternDeclaration sa name <$> goType' ss ty
-  goDecl (TypeClassDeclaration sa@(ss, _) name args implies deps decls) = do
+  goDecl (TypeClassDeclaration sa@(SourceAnn ss _) name args implies deps decls) = do
     implies' <- traverse (overConstraintArgs (traverse (goType' ss))) implies
     args' <- traverse (traverse (traverse (goType' ss))) args
     return $ TypeClassDeclaration sa name args' implies' deps decls
-  goDecl (TypeInstanceDeclaration sa@(ss, _) na ch idx name cs className tys impls) = do
+  goDecl (TypeInstanceDeclaration sa@(SourceAnn ss _) na ch idx name cs className tys impls) = do
     cs' <- traverse (overConstraintArgs (traverse (goType' ss))) cs
     tys' <- traverse (goType' ss) tys
     return $ TypeInstanceDeclaration sa na ch idx name cs' className tys' impls
-  goDecl (TypeSynonymDeclaration sa@(ss, _) name args ty) =
+  goDecl (TypeSynonymDeclaration sa@(SourceAnn ss _) name args ty) =
     TypeSynonymDeclaration sa name
       <$> traverse (traverse (traverse (goType' ss))) args
       <*> goType' ss ty
-  goDecl (TypeDeclaration (TypeDeclarationData sa@(ss, _) expr ty)) =
+  goDecl (TypeDeclaration (TypeDeclarationData sa@(SourceAnn ss _) expr ty)) =
     TypeDeclaration . TypeDeclarationData sa expr <$> goType' ss ty
-  goDecl (KindDeclaration sa@(ss, _) sigFor name ty) =
+  goDecl (KindDeclaration sa@(SourceAnn ss _) sigFor name ty) =
     KindDeclaration sa sigFor name <$> goType' ss ty
-  goDecl (ExternDataDeclaration sa@(ss, _) name ty) =
+  goDecl (ExternDataDeclaration sa@(SourceAnn ss _) name ty) =
     ExternDataDeclaration sa name <$> goType' ss ty
   goDecl other =
     return other

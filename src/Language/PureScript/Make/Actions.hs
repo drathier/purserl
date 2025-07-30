@@ -9,6 +9,7 @@ module Language.PureScript.Make.Actions
   , readCacheDb'
   , writeCacheDb'
   , ffiCodegen'
+  , RecompileReason(..)
   ) where
 
 import Prelude
@@ -117,18 +118,24 @@ data RebuildPolicy
 -- | Progress messages from the make process
 data ProgressMessage
   -- = CompilingModule ModuleName (Maybe (Int, Int)) String
-  = CompilingModule ModuleName (Maybe (Int, Int))
+  = CompilingModule ModuleName (Maybe (Int, Int)) RecompileReason
   -- ^ Compilation started for the specified module
   | CompileMeta T.Text
   -- ^ [drathier]: Various stuff we want to print to describe to purerlex where we are in the compilation flow
+  deriving (Show, Eq, Ord)
+
+data RecompileReason
+  = UnknownRecompileReason
+  | SourceChangedOrDependencyFailedToBuildInPreviousCompilationOrSomethingElse
+  | DependencyChanged ModuleName
   deriving (Show, Eq, Ord)
 
 -- | Render a progress message
 renderProgressMessage :: T.Text -> ProgressMessage -> T.Text
 --renderProgressMessage infx (CompilingModule mn mi ms) =
 renderProgressMessage infx (CompileMeta t) = t
-renderProgressMessage infx (CompilingModule mn mi) =
-  T.concat
+renderProgressMessage infx (CompilingModule mn mi causedByModule) =
+  T.concat $
     [ renderProgressIndex mi
     -- , " "
     -- , T.pack (show ms)
@@ -136,6 +143,11 @@ renderProgressMessage infx (CompilingModule mn mi) =
     , infx
     , runModuleName mn
     ]
+    <>
+    case causedByModule of
+      DependencyChanged causeModule -> [" (", runModuleName causeModule, " changed)"]
+      SourceChangedOrDependencyFailedToBuildInPreviousCompilationOrSomethingElse -> []
+      UnknownRecompileReason -> []
   where
   renderProgressIndex :: Maybe (Int, Int) -> T.Text
   renderProgressIndex = maybe "" $ \(start, end) ->
@@ -241,6 +253,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
     :: ModuleName
     -> Make (Either RebuildPolicy (M.Map FilePath (UTCTime, Make ContentHash)))
   getInputTimestampsAndHashes mn = do
+    -- TODO[drathier]: split timestamp and hash generation into two steps, so we don't have to open unchanged files?
     let path = fromMaybe (internalError "Module has no filename in 'make'") $ M.lookup mn filePathMap
     case path of
       Left policy ->
@@ -340,10 +353,10 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
     let mn = CF.moduleName m
     lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
-    when (S.member CoreFn codegenTargets) $ do
-      let coreFnFile = targetFilename mn CoreFn
-          json = CFJ.moduleToJSON Paths.version m
-      lift $ writeJSONFile coreFnFile json
+    -- when (S.member CoreFn codegenTargets) $ do
+    --   let coreFnFile = targetFilename mn CoreFn
+    --       json = CFJ.moduleToJSON Paths.version m
+    --   lift $ writeJSONFile coreFnFile json
     when (S.member JS codegenTargets) $ do
       foreignInclude <- case mn `M.lookup` foreigns of
         Just _
@@ -378,9 +391,9 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           Just v -> pure v
 
       -- generate the corefn
-      let coreFnFile = targetFilename mn CoreFn
-          json = CFJ.moduleToJSON Paths.version m
-      lift $ writeJSONFile coreFnFile json
+      -- let coreFnFile = targetFilename mn CoreFn
+      --     json = CFJ.moduleToJSON Paths.version m
+      -- lift $ writeJSONFile coreFnFile json
 
       let externsFiles = exts
 
@@ -467,9 +480,9 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
       dir <- lift $ makeIO "get file info: ." getCurrentDirectory
       let makeAbsFile file = dir </> file
       let pretty = prettyPrintErl makeAbsFile optimized
-          prettyChecked = prettyPrintErl makeAbsFile checked
-          prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
-          prettyDecls = prettyPrintErl makeAbsFile typeDecls
+          -- prettyChecked = prettyPrintErl makeAbsFile checked
+          -- prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
+          -- prettyDecls = prettyPrintErl makeAbsFile typeDecls
 
       let
           prefix :: [T.Text]
@@ -486,17 +499,17 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
             "-compile(nowarn_obsolete_guard).",
             "-compile(nowarn_opportunistic).",
             "-compile(nowarn_unused_function).",
-            "-compile(no_auto_import).",
-            includeHrl,
-            "-ifndef(PURERL_MEMOIZE).",
-            "-define(MEMOIZE(X), X).",
-            "-else.",
-            "-define(MEMOIZE, memoize).",
-            "memoize(X) -> X.",
-            "-endif."
+            "-compile(no_auto_import)."
+            -- includeHrl,
+            -- "-ifndef(PURERL_MEMOIZE).",
+            -- "-define(MEMOIZE(X), X).",
+            -- "-else.",
+            -- "-define(MEMOIZE, memoize).",
+            -- "memoize(X) -> X.",
+            -- "-endif."
             ]
-          includeHrl :: T.Text
-          includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
+          -- includeHrl :: T.Text
+          -- includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
       let erl :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives exports PureScriptModule ++  [ pretty ]
       lift $ writeTextFile (outFile mn) $ TE.encodeUtf8 erl
 
@@ -504,11 +517,11 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
       --   let erlchecked :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives checkedExports PureScriptCheckedModule ++  [ prettyChecked ]
       --   lift $ writeTextFile (outFileChecked mn) $ TE.encodeUtf8 erlchecked
 
-      let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
-      lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
+      -- let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
+      -- lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
 
-      let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
-      lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
+      -- let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
+      -- lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
 
   ffiCodegen :: CF.Module CF.Ann -> Make ()
   ffiCodegen m = do

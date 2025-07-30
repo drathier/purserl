@@ -204,7 +204,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
         <*> updateConstraints implies
         <*> pure deps
         <*> pure ds
-  updateDecl bound (TypeInstanceDeclaration sa na@(ss, _) ch idx name cs cn ts ds) =
+  updateDecl bound (TypeInstanceDeclaration sa na@(SourceAnn ss _) ch idx name cs cn ts ds) =
     fmap (bound,) $
       TypeInstanceDeclaration sa na ch idx name
         <$> updateConstraints cs
@@ -220,24 +220,24 @@ renameInModule imports (Module modSS coms mn decls exps) =
       TypeDeclaration . TypeDeclarationData sa name
         <$> updateTypesEverywhere ty
   updateDecl bound (ExternDeclaration sa name ty) =
-    fmap (M.insert name (spanStart $ fst sa) bound,) $
+    fmap (M.insert name (spanStart $ safst sa) bound,) $
       ExternDeclaration sa name
         <$> updateTypesEverywhere ty
   updateDecl bound (ExternDataDeclaration sa name ki) =
     fmap (bound,) $
       ExternDataDeclaration sa name
         <$> updateTypesEverywhere ki
-  updateDecl bound (TypeFixityDeclaration sa@(ss, _) fixity alias op) =
+  updateDecl bound (TypeFixityDeclaration sa@(SourceAnn ss _) fixity alias op) =
     fmap (bound,) $
       TypeFixityDeclaration sa fixity
         <$> updateTypeName alias ss
         <*> pure op
-  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias)) op) =
+  updateDecl bound (ValueFixityDeclaration sa@(SourceAnn ss _) fixity (Qualified mn' (Left alias)) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . fmap Left
         <$> updateValueName (Qualified mn' alias) ss
         <*> pure op
-  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias)) op) =
+  updateDecl bound (ValueFixityDeclaration sa@(SourceAnn ss _) fixity (Qualified mn' (Right alias)) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . fmap Right
         <$> updateDataConstructorName (Qualified mn' alias) ss
@@ -334,13 +334,13 @@ renameInModule imports (Module modSS coms mn decls exps) =
     . binderNamesWithSpans
 
   letBoundVariable :: Declaration -> Maybe (Ident, SourceSpan)
-  letBoundVariable = fmap (valdeclIdent &&& (fst . valdeclSourceAnn)) . getValueDeclaration
+  letBoundVariable = fmap (valdeclIdent &&& (safst . valdeclSourceAnn)) . getValueDeclaration
 
   declarationsToMap :: [Declaration] -> M.Map Ident SourcePos
   declarationsToMap = foldl goDTM M.empty
     where
       goDTM a (ValueDeclaration ValueDeclarationData {..}) =
-        M.insert valdeclIdent (spanStart $ fst valdeclSourceAnn) a
+        M.insert valdeclIdent (spanStart $ safst valdeclSourceAnn) a
       goDTM a _ =
         a
 
@@ -353,16 +353,16 @@ renameInModule imports (Module modSS coms mn decls exps) =
   updateTypesEverywhere = everywhereOnTypesM updateType
     where
     updateType :: SourceType -> m SourceType
-    updateType (TypeOp ann@(ss, _) name) = TypeOp ann <$> updateTypeOpName name ss
-    updateType (TypeConstructor ann@(ss, _) name) = TypeConstructor ann <$> updateTypeName name ss
+    updateType (TypeOp ann@(SourceAnn ss _) name) = TypeOp ann <$> updateTypeOpName name ss
+    updateType (TypeConstructor ann@(SourceAnn ss _) name) = TypeConstructor ann <$> updateTypeName name ss
     updateType (ConstrainedType ann c t) = ConstrainedType ann <$> updateInConstraint c <*> pure t
     updateType t = return t
     updateInConstraint :: SourceConstraint -> m SourceConstraint
-    updateInConstraint (Constraint ann@(ss, _) name ks ts info) =
+    updateInConstraint (Constraint ann@(SourceAnn ss _) name ks ts info) =
       Constraint ann <$> updateClassName name ss <*> pure ks <*> pure ts <*> pure info
 
   updateConstraints :: [SourceConstraint] -> m [SourceConstraint]
-  updateConstraints = traverse $ \(Constraint ann@(pos, _) name ks ts info) ->
+  updateConstraints = traverse $ \(Constraint ann@(SourceAnn pos _) name ks ts info) ->
     Constraint ann
       <$> updateClassName name pos
       <*> traverse updateTypesEverywhere ks

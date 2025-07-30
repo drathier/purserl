@@ -83,7 +83,7 @@ translateBacktrace modu foreignIdents binds =
                   , ("?FUNCTION_NAME", erl "?FUNCTION_NAME")
                   , ("?FUNCTION_ARITY", erl "?FUNCTION_ARITY")
                   , ("moduleName", Literal ann (StringLiteral (PS.fromText (runModuleName modu))))
-                  , ("file", Literal ann (StringLiteral (PS.fromString (P.spanName ss))))
+                  , ("file", Literal ann (StringLiteral (PS.fromText (P.spanName ss))))
                   , ("spanStartLine", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosLine (P.spanStart ss))))))
                   , ("spanStartColumn", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosColumn (P.spanStart ss))))))
                   , ("spanStopLine", Literal ann (NumericLiteral (Left (toInteger (P.sourcePosLine (P.spanEnd ss))))))

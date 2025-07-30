@@ -258,7 +258,7 @@ toBindingGroup moduleName (CyclicSCC ds') = do
   toBinding (CyclicSCC ds) = throwError $ foldMap cycleError ds
 
   cycleError :: ValueDeclarationData Expr -> MultipleErrors
-  cycleError (ValueDeclarationData (ss, _) n _ _ _) = errorMessage' ss $ CycleInDeclaration n
+  cycleError (ValueDeclarationData (SourceAnn ss _) n _ _ _) = errorMessage' ss $ CycleInDeclaration n
 
 toDataBindingGroup
   :: MonadError MultipleErrors m
@@ -275,8 +275,8 @@ toDataBindingGroup (CyclicSCC ds')
         $ typeSynonymCycles
   | otherwise = return . DataBindingGroupDeclaration . NEL.fromList $ getDecl <$> ds'
   where
-  kindDecl (KindDeclaration sa _ pn _) = [(fst sa, Qualified ByNullSourcePos pn)]
-  kindDecl (ExternDataDeclaration sa pn _) = [(fst sa, Qualified ByNullSourcePos pn)]
+  kindDecl (KindDeclaration sa _ pn _) = [(safst sa, Qualified ByNullSourcePos pn)]
+  kindDecl (ExternDataDeclaration sa pn _) = [(safst sa, Qualified ByNullSourcePos pn)]
   kindDecl _ = []
 
   getDecl (decl, _, _) = decl
