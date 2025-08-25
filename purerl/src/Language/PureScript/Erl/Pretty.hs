@@ -82,7 +82,15 @@ literals = mkPattern' match
     [ return $ printFunTy (Just $ length xs) x t, return $ emit ".\n" ]
     <>
     -- [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> erlang:display({drathier_call3, ?MODULE, ?FUNCTION_NAME, ?LINE})," ]
-    [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> " ]
+    [ return $ emit $ runAtom x <> "(" <> intercalate "," (map escapeQuotedVar xs) <> ") -> "
+    , return $ emit $
+        case ss of
+          Nothing -> ""
+          Just NullSourceSpan -> ""
+          Just (SourceSpan _ ssstart ssend) ->
+            let pos (SourcePos a b) = show a <> "-" <> show b in
+            "'Elixir.Kako':function('" <> T.pack ("[" <> pos ssstart <> ", " <> pos ssend <> "]") <> "'," <> runAtom x <> "),"
+    ]
     <>
     let f body =
           [ return $ emit "\n"
@@ -340,10 +348,35 @@ fromChar = toEnum . fromEnum
 runLetAndThen :: (Emit gen) => ([Erl] -> StateT PrinterState Maybe gen) -> Erl -> Erl -> StateT PrinterState Maybe gen
 runLetAndThen runBlock arg1 arg2 =
   let
+      kako ak av =
+        let tag =
+              case ak of
+                EVar ev -> EAtomLiteral (Atom Nothing ev)
+                _ -> EAtomLiteral (Atom Nothing (T.pack $ show ak))
+        in ERawErlangSource "'Elixir.Kako':'let'($ak, $av)" [(AtomPS Nothing "ak", tag), (AtomPS Nothing "av", av)]
+
+      binds a@(EBind ak _) =
+        let vars =
+              everything (<>)
+                (\e ->
+                  case e of
+                    EVar v -> [v]
+                    _ -> []
+                )
+                ak
+        in (vars & fmap (\ak -> ERawErlangSource "'Elixir.Kako':'let'($ak, $av)" [(AtomPS Nothing "ak", EAtomLiteral (AtomPS Nothing (PS.fromText ak))), (AtomPS Nothing "av", EVar ak)])) <> [a]
+      binds a = [EAtomLiteral (Atom Nothing "not-an-ebind"), a]
+
       f e acc =
         case e of
-          EAndThen a b -> f b (a:acc)
-          ELet a b -> f b (a:acc)
+          EAndThen a b -> f b (binds a <> acc)
+          ELet a b -> f b (binds a <> acc)
+
+          -- EAndThen (EBind ak av) b -> f b (EBind ak (kako ak av):acc)
+          -- ELet (EBind ak av) b -> f b (EBind ak (kako ak av):acc)
+
+          -- EAndThen a b -> f b (a:acc)
+          -- ELet a b -> f b (a:acc)
           _ -> reverse (e:acc)
   in
   runBlock $ f (EAndThen arg1 arg2) []
