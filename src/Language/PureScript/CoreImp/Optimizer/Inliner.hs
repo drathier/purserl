@@ -110,7 +110,7 @@ inlineCommonOperators expander = everywhereTopDown $ applyAll $
   , binary C.P_ringNumber C.P_sub Subtract
   , unary  C.P_ringNumber C.P_negate Negate
 
-  , binary C.P_euclideanRingNumber C.P_div Divide
+  -- , binary C.P_euclideanRingNumber C.P_div Divide
 
   , binary C.P_eqNumber C.P_eq EqualTo
   , binary C.P_eqNumber C.P_notEq NotEqualTo

@@ -103,7 +103,7 @@ $(TH.declare do
 
   TH.mod "Data.EuclideanRing" do
     TH.asPair do
-      TH.var "div"
+      -- TH.var "div"
 
       TH.var "euclideanRingNumber"
 

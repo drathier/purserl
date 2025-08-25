@@ -385,9 +385,10 @@ specialize = everywhereOnErl onErl
         EApp1 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> EBinary Subtract a b
         EApp2 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> EBinary Subtract a b
         EApp3 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> EBinary Subtract a b
-        EApp1 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
-        EApp2 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
-        EApp3 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
+        -- [drathier]: euclidian float div is not inlined as `div` because we're using a version that returns 0 on div with 0
+        -- EApp1 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
+        -- EApp2 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
+        -- EApp3 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
         EApp1 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThan a b
         EApp2 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThan a b
         EApp3 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThan a b
@@ -744,7 +745,7 @@ binaryOperators :: Map.Map ((Text, Text), (Text, Text)) (Either BinaryOperator (
 binaryOperators =
   Map.fromList $
     conv
-      <$> ( [ Binary euclideanRingNumber opDiv FDivide,
+      <$> ( [ -- Binary euclideanRingNumber opDiv FDivide,
               -- [drathier]: Purescript euclidian integer division is not the same division as erlang division, so we can't inline it as `div` here. See data_euclideanRing@foreign:intDiv and https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/divmodnote-letter.pdf for the various kinds of division.
               Binary heytingAlgebraBoolean opConj AndAlso,
               Binary heytingAlgebraBoolean opDisj OrElse,
@@ -892,8 +893,8 @@ opSub = (EC.dataRing, snd $ C.P_sub)
 opNegate :: forall a b. (IsString a, IsString b, Eq b) => (a, b)
 opNegate = (EC.dataRing, snd $ C.P_negate)
 
-opDiv :: forall a b. (IsString a, IsString b, Eq b) => (a, b)
-opDiv = (EC.dataEuclideanRing, snd $ C.P_div)
+-- opDiv :: forall a b. (IsString a, IsString b, Eq b) => (a, b)
+-- opDiv = (EC.dataEuclideanRing, snd $ C.P_div)
 
 opConj :: forall a b. (IsString a, IsString b, Eq b) => (a, b)
 opConj = (EC.dataHeytingAlgebra, snd $ C.P_conj)
