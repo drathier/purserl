@@ -17,7 +17,7 @@ where
 
 import Control.Monad.Supply.Class (MonadSupply (fresh))
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, fromMaybe)
 import qualified Data.Set as Set
 import Data.String (IsString)
 import Data.Text (Text)
@@ -343,10 +343,11 @@ specialize = everywhereOnErl onErl
         -- CodeGen.erlang magic
         EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) [EStringLiteral fmt,EMapLiteral binds] ->
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
-          ERawErlangSource (PS.prettyPrintString fmt & T.drop 1 & T.dropEnd 1) binds
+          -- ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
+          ERawErlangSource (fmt & PS.decodeString & fromMaybe "FAILED TO DECODE STRING in CodeGen.erlang") binds
         EApp RegularApp (EApp RegularApp (EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) []) [EStringLiteral fmt]) [EMapLiteral binds] ->
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
-          ERawErlangSource (PS.prettyPrintString fmt & T.drop 1 & T.dropEnd 1) binds
+          ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
 
         -- Int
         -- EApp3 _ (EAtomLiteral (Atom (Just "data_semiring@ps") "add")) (EApp _ (EAtomLiteral (Atom (Just "data_semiring@ps") inst)) []) a b | isInst inst "semiringInt" -> EBinary Add a b
