@@ -94,7 +94,7 @@ buildActions outputDir foreigns usePrefix generateChecked =
         prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
         prettyDecls = prettyPrintErl makeAbsFile typeDecls
 
-        -- [drathier]: WRONG FILE, see top of file!
+        -- NOTE[drathier]: WRONG FILE, see top of file!
 
     let
         prefix :: [T.Text]

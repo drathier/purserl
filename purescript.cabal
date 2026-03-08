@@ -421,6 +421,8 @@ library
     Language.PureScript.Erl.CodeGen.Constants.PureScriptModules
     Language.PureScript.Erl.CodeGen.Inliner
     Language.PureScript.Erl.CodeGen.InlineLocal
+    Language.PureScript.Erl.CodeGen.EffectLift
+    Language.PureScript.Erl.CodeGen.LambdaLift
     Language.PureScript.Erl.CodeGen.Optimizer
     Language.PureScript.Erl.CodeGen.Optimizer.Blocks
     Language.PureScript.Erl.CodeGen.Optimizer.Common

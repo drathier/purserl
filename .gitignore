@@ -38,3 +38,5 @@ TAGS
 *.ps
 *.svg
 tests/purs/make/
+
+.stack-work*/
