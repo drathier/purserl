@@ -107,7 +107,6 @@ import Data.IORef as IORef
 import Debug.Trace
 import System.IO.Unsafe
 
-
 -- | Determines when to rebuild a module
 data RebuildPolicy
   -- | Never rebuild this module
@@ -470,8 +469,8 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (T.unpack $ T.replace ",Rec" ",\nRec" $ T.replace ",NonRec" ",\nNonRec" $ T.pack $ show m)
           False -> pure ()
 -}
-      optimized <- lambdaLift =<< optimize exports rawErl
-      checked <- lambdaLift =<< optimize checkedExports checkedRawErl
+      optimized <- optimize exports rawErl
+      checked <- optimize checkedExports checkedRawErl
 {-
       !_ <-
         case True of -- runModuleName mn == "Hex" of
