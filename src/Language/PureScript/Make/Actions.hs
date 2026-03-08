@@ -107,9 +107,6 @@ import Data.IORef as IORef
 import Debug.Trace
 import System.IO.Unsafe
 
-import Language.PureScript.Erl.CodeGen.LambdaLift (lambdaLift)
-import Language.PureScript.Erl.CodeGen.EffectLift (effectLift)
-
 
 -- | Determines when to rebuild a module
 data RebuildPolicy
@@ -473,17 +470,8 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (T.unpack $ T.replace ",Rec" ",\nRec" $ T.replace ",NonRec" ",\nNonRec" $ T.pack $ show m)
           False -> pure ()
 -}
-      -- optimized <- lambdaLift =<< effectLift (optimize exports rawErl)
-      -- checked <- lambdaLift =<< effectLift (optimize checkedExports checkedRawErl)
-
-      rawOptimized <- optimize exports rawErl
-      optimized    <- pure rawOptimized -- (effectLift rawOptimized)
-      -- optimized    <- lambdaLift (effectLift rawOptimized)
-      rawChecked   <- optimize checkedExports checkedRawErl
-      checked      <- pure rawChecked -- (effectLift rawChecked)
-      -- checked      <- lambdaLift (effectLift rawChecked)
-
-
+      optimized <- lambdaLift =<< optimize exports rawErl
+      checked <- lambdaLift =<< optimize checkedExports checkedRawErl
 {-
       !_ <-
         case True of -- runModuleName mn == "Hex" of
