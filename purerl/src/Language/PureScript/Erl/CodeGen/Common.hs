@@ -3,6 +3,7 @@
 --
 module Language.PureScript.Erl.CodeGen.Common
 ( runAtom
+, runAtom2
 , atomPS
 , atom
 , atomModuleName
@@ -42,6 +43,13 @@ runAtom at = case at of
   Atom Nothing a -> atom a
   AtomPS (Just q) a -> atom q <> ":" <> atomPS a
   AtomPS Nothing a -> atomPS a
+
+runAtom2 :: Atom -> (Maybe Text, Text)
+runAtom2 at = case at of
+  Atom (Just q) a -> (Just (atom q), atom a)
+  Atom Nothing a -> (Nothing, atom a)
+  AtomPS (Just q) a -> (Just (atom q), atomPS a)
+  AtomPS Nothing a -> (Nothing, atomPS a)
 
 -- Atoms do not support codepoints > 255
 atomPS :: PSString -> Text

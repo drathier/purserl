@@ -12,7 +12,6 @@ import Prelude.Compat
 import Control.Monad.Supply.Class (MonadSupply)
 
 import Language.PureScript.Erl.CodeGen.AST
-    ( everywhereOnErl, Erl(..), pattern EApp, Atom )
 import Language.PureScript.Erl.CodeGen.Optimizer.MagicDo
     ( magicDo )
 import Language.PureScript.Erl.CodeGen.Optimizer.Blocks
@@ -30,25 +29,33 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
       singleBegin, collectLists, replaceAppliedFunRefs, inlineCommonFnsM )
 -- import Language.PureScript.Erl.CodeGen.Optimizer.Guards
 --     ( inlineSimpleGuards )
+import Language.PureScript.Erl.CodeGen.Common (runAtom2, freshNameErl')
 
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Unused (removeUnusedFuns)
 import Data.Map (Map)
 import Language.PureScript.Erl.CodeGen.Optimizer.Memoize (addMemoizeAnnotations)
-import Control.Monad ((<=<))
+import Control.Monad ((<=<), liftM)
+import Control.Monad.Trans.Class (lift)
 import Language.PureScript.Erl.CodeGen.Inliner qualified as Inliner
 import Language.PureScript.Erl.CodeGen.InlineLocal qualified as InlineLocal
 import Debug.Trace
 import Data.Function ((&))
+import Data.Functor ((<&>))
+import qualified Data.Map as M
+import qualified Data.Text as T
+import Language.PureScript.Names (Ident(..), ModuleName(..), runModuleName, Qualified(..), QualifiedBy(..))
+import Language.PureScript.CoreFn.Meta (Meta(..))
+import Control.Monad.State (StateT(..), runStateT, mapStateT, get, put, evalStateT)
 
 -- |
 -- Apply a series of optimizer passes to simplified Javascript code
 --
-optimize :: MonadSupply m => [(Atom, Int)] -> [Erl] -> m [Erl]
+optimize :: MonadSupply m => M.Map T.Text (M.Map (T.Text, Int) Erl) -> [(Atom, Int)] -> [Erl] -> m [Erl]
 -- optimize exports es = pure es
 -- optimize exports es = pure (Inliner.inline es)
 -- optimize exports es = removeUnusedFuns exports <$> pure (Inliner.inline es)
-optimize exports es = do -- removeUnusedFuns exports <$> do
+optimize inlineableUpstream exports es = do -- removeUnusedFuns exports <$> do
   -- es2 <-
   --     pure es
   -- let es3 = Inliner.inline es2
@@ -58,16 +65,11 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
   -- es6 <- untilFixedPoint (traverse go) es5
   -- let es7 = InlineLocal.inlineVarBinds es6
   -- es8 <- untilFixedPoint (traverse go) es7
-  es
-    -- & map (inlineCommonOperators EC.effect EC.effectDictionaries expander)
-    -- & map (go)
-    & map
-      (\b ->
-        b
-          & inlineCommonOperators EC.effect EC.effectDictionaries id
-          & specialize
-          & untilFix go
-      )
+  let es2 = es & map (inlineCommonOperators EC.effect EC.effectDictionaries id)
+  es3 <- es2 & mapM (inlineUpstream inlineableUpstream)
+  let es4 = es3
+        & (map (specialize))
+        & (map (untilFix go))
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & Inliner.inline
@@ -75,8 +77,7 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & map addMemoizeAnnotations
-    & pure
-  -- pure $ es4
+  pure $ es4
 
   where
   go erl =
@@ -164,3 +165,98 @@ buildExpander = replaceAtoms . foldr go []
   isSimpleApp (EApp _ e1 es) = isSimpleApp e1 && all isSimpleApp es
   isSimpleApp (EAtomLiteral _) = True
   isSimpleApp _ = False
+
+-- inlineUpstream :: MonadSupply m => _ -> Erl -> m Erl
+inlineUpstream inlineableUpstream = everywhereOnErlBottomUpM onErl
+    where
+      rec = inlineUpstream inlineableUpstream
+      onErl expr =
+        case expr of
+          EFunRef atom i
+            | (Just modu, fn) <- runAtom2 atom
+            , Just up <- M.lookup modu inlineableUpstream
+            , Just body <- M.lookup (fn, i) up
+            ->
+            body
+            -- & trace (show ("inlineUpstream.hit1", expr))
+            & rename
+            & fmap (match [])
+            >>= rec
+
+          EApp _ (EAtomLiteral atom) args
+            | (Just modu, fn) <- runAtom2 atom
+            , Just up <- M.lookup modu inlineableUpstream
+            , Just body <- M.lookup (fn, length args) up
+            ->
+            body
+            -- & trace (show ("inlineUpstream.hit2", expr))
+            & rename
+            & fmap (match args)
+            >>= rec
+
+          _ -> pure expr
+
+match args body =
+  case body of
+    EFunctionDef _ _ _ [] rhs -> rhs
+    EFunctionDef _ _ _ pats rhs | length args == length pats ->
+      foldr (\(a,p) v -> ELet (EBind (EVar p) a) v) rhs (zip args pats)
+    EFunctionDef et ss name pats rhs ->
+      case (args, pats) of
+        (a:ax, p:px) ->
+          ELet (EBind (EVar p) a) (match ax (EFunctionDef et ss name px rhs))
+        ([], _) ->
+          EFunFull Nothing [(EFunBinder (map EVar pats), rhs)]
+    EFunctionDef _ _ _ pats rhs -> error (show ("notimpl qliwuenfalksm", args, pats, rhs))
+    _ -> error "notimpl lqwieuflnaskd"
+
+rename :: forall m. MonadSupply m => Erl -> m Erl
+rename e =
+  flip evalStateT M.empty $
+  renameImpl e
+
+renameImpl :: forall m. MonadSupply m => Erl -> StateT (Map T.Text T.Text) m Erl
+renameImpl e =
+  everywhereOnErlTopDownLeftToRightM onErl e
+  where
+    rec = renameImpl
+    fresh :: T.Text -> StateT (M.Map T.Text T.Text) m T.Text
+    fresh v = do
+      db <- get
+      -- traceM (show ("fresh", v, M.lookup v db, "db", db, "e", e))
+      case M.lookup v db of
+        Nothing -> do
+          v2 <- lift $ freshNameErl' v
+          put (M.insert v2 v2 $ M.insert v v2 db)
+          pure v2
+        Just v2 -> pure v2
+
+    onErl expr =
+      case expr of
+        EVar var -> EVar <$> fresh var
+        EFunctionDef et ss a pats rhs ->
+          do
+            pats2 <- mapM fresh pats
+            pure $ EFunctionDef et ss a pats2 rhs
+        EFunFull ma binders ->
+          do
+            binders2 <- binders & mapM (\(EFunBinder p, rhs) -> do
+              p2 <- mapM rec p
+              pure (EFunBinder p2, rhs))
+            pure $ EFunFull ma binders2
+        -- EFunctionDef _ _ name pats _ -> error (show ("inline-rename EFunctionDef notimpl", name))
+        ECaseOf cond branches -> do
+          branches2 <- mapM (\(EBinder p, rhs) -> do
+            p2 <- rec p
+            pure (EBinder p2, rhs)) branches
+          pure $ ECaseOf cond branches2
+        -- EMapLiteral pairs -> do
+        --   do
+        --     pats2 <- pats & mapM (\(k,v) -> do
+        --       k2 <- fresh
+        --       pure (k2, v)
+        --       )
+        --     pure $ EMapLiteral pats2
+
+        _ -> pure expr
+

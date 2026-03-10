@@ -27,7 +27,7 @@ import Data.Either (partitionEithers)
 import Data.Foldable (for_)
 import Data.List.NonEmpty qualified as NEL
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (fromMaybe, maybeToList, mapMaybe)
 import Data.Set qualified as S
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -79,6 +79,7 @@ import Language.PureScript.Sugar as P
 import Language.PureScript.TypeChecker as P
 import Language.PureScript.Types as P
 import Language.PureScript.Erl as Purserl
+import Language.PureScript.Erl.CodeGen.AST as CG
 
 import Data.Maybe (catMaybes)
 
@@ -182,7 +183,7 @@ data MakeActions m = MakeActions
   , readExterns :: ModuleName -> m (FilePath, Maybe ExternsFile)
   -- ^ Read the externs file for a module as a string and also return the actual
   -- path for the file.
-  , codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT m ()
+  , codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> M.Map T.Text (M.Map (T.Text, Int) Erl) -> ExternsFile -> SupplyT m (M.Map (T.Text, Int) CG.Erl)
   -- ^ Run the code generator for the module and write any required output files.
   , ffiCodegen :: CF.Module CF.Ann -> m ()
   -- ^ Check ffi and print it in the output directory.
@@ -348,8 +349,8 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
 
 
 
-  codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> ExternsFile -> SupplyT Make ()
-  codegen environment m docs exts = do
+  codegen :: Environment -> CF.Module CF.Ann -> Docs.Module -> M.Map T.Text (M.Map (T.Text, Int) Erl) -> ExternsFile -> SupplyT Make (M.Map (T.Text, Int) Erl)
+  codegen environment m docs inlineableUpstream exts = do
     let mn = CF.moduleName m
     lift $ writeCborFile mExternsMemCache (outputFilename mn externsFileName) exts
     codegenTargets <- lift $ asks optionsCodegenTargets
@@ -383,145 +384,164 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
 
     -- ### Purerl
 
-    when (S.member Erl codegenTargets) $ do
-      erlForeigns <- do
-        (merls :: M.Map ModuleName (Maybe FilePath)) <- traverse Erl.Build.inferForeignModule' foreigns
-        case sequence merls of
-          Nothing -> internalError (show ("couldn't find some erl foreign", merls))
-          Just v -> pure v
 
-      -- generate the corefn
-      -- let coreFnFile = targetFilename mn CoreFn
-      --     json = CFJ.moduleToJSON Paths.version m
-      -- lift $ writeJSONFile coreFnFile json
+    case S.member Erl codegenTargets of
+      False -> pure M.empty
+      True -> do
+        erlForeigns <- do
+          (merls :: M.Map ModuleName (Maybe FilePath)) <- traverse Erl.Build.inferForeignModule' foreigns
+          case sequence merls of
+            Nothing -> internalError (show ("couldn't find some erl foreign", merls))
+            Just v -> pure v
 
-      let externsFiles = exts
+        -- generate the corefn
+        -- let coreFnFile = targetFilename mn CoreFn
+        --     json = CFJ.moduleToJSON Paths.version m
+        -- lift $ writeJSONFile coreFnFile json
 
-      let  getForeigns :: String -> Make [(T.Text, Int)]
-           getForeigns path = do
-             -- liftIO $ putStrLn (show ("getForeigns", path))
-             text <- readTextFile path
-             let (exports, ignoreExports) = fromRight ([],[]) $ parseFile path text
-             pure $ exports \\ ignoreExports
+        let externsFiles = exts
+
+        let  getForeigns :: String -> Make [(T.Text, Int)]
+             getForeigns path = do
+               -- liftIO $ putStrLn (show ("getForeigns", path))
+               text <- readTextFile path
+               let (exports, ignoreExports) = fromRight ([],[]) $ parseFile path text
+               pure $ exports \\ ignoreExports
 
 
-      -- purerl env
-      -- let env = buildCodegenEnvironment $ foldr P.applyExternsFileToEnvironment P.initEnvironment (catMaybes externsFiles)
-      -- make sure our own externs are included in the environment
-      let env = buildCodegenEnvironment (P.applyExternsFileToEnvironment exts environment)
+        -- purerl env
+        -- let env = buildCodegenEnvironment $ foldr P.applyExternsFileToEnvironment P.initEnvironment (catMaybes externsFiles)
+        -- make sure our own externs are included in the environment
+        let env = buildCodegenEnvironment (P.applyExternsFileToEnvironment exts environment)
 
-      -- and generate the erlang code
-        -- codegen :: CodegenEnvironment -> CF.Module CF.Ann -> SupplyT Make ()
-        -- codegen env m = do
-      let mn = CF.moduleName m
-      foreignExports <- lift $ case mn `M.lookup` erlForeigns of
-        Just path
-          | not $ requiresForeign m ->
-              return []
-          | otherwise ->
-              getForeigns path
-        Nothing ->
-          return []
+        -- and generate the erlang code
+          -- codegen :: CodegenEnvironment -> CF.Module CF.Ann -> SupplyT Make ()
+          -- codegen env m = do
+        let mn = CF.moduleName m
+        foreignExports <- lift $ case mn `M.lookup` erlForeigns of
+          Just path
+            | not $ requiresForeign m ->
+                return []
+            | otherwise ->
+                getForeigns path
+          Nothing ->
+            return []
 
-      (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl) <- do
-        -- SupplyT.mapSupplyT
-        --   (\(Language.PureScript.Erl.Make.Monad.Make m, i) ->
-        --     (Make
-        --       -- ExceptT
-        --       $ ReaderT.mapReaderT
-        --          (ExceptT.withExceptT
-        --            (\(Language.PureScript.Erl.Errors.MultipleErrors errors) -> MultipleErrors [])
-        --          )
-        --       -- Logger
-        --       $ ReaderT.mapReaderT
-        --          (ExceptT.mapExceptT
-        --            (Logger.contraMapLoggerErrors
-        --               (\(MultipleErrors _) -> Language.PureScript.Erl.Errors.MultipleErrors [])
-        --            )
-        --          )
-        --        m
-        --     , i)
-        --   )
+        (exports, typeDecls, foreignSpecs, rawErl, checkedExports, checkedRawErl) <- do
+          -- SupplyT.mapSupplyT
+          --   (\(Language.PureScript.Erl.Make.Monad.Make m, i) ->
+          --     (Make
+          --       -- ExceptT
+          --       $ ReaderT.mapReaderT
+          --          (ExceptT.withExceptT
+          --            (\(Language.PureScript.Erl.Errors.MultipleErrors errors) -> MultipleErrors [])
+          --          )
+          --       -- Logger
+          --       $ ReaderT.mapReaderT
+          --          (ExceptT.mapExceptT
+          --            (Logger.contraMapLoggerErrors
+          --               (\(MultipleErrors _) -> Language.PureScript.Erl.Errors.MultipleErrors [])
+          --            )
+          --          )
+          --        m
+          --     , i)
+          --   )
 
-        let f m =
-              liftIO $ do
-                (l, r) <-
-                  Language.PureScript.Erl.Make.Monad.runMake
-                    (Options False False codegenTargets)
-                    m
+          let f m =
+                liftIO $ do
+                  (l, r) <-
+                    Language.PureScript.Erl.Make.Monad.runMake
+                      (Options False False codegenTargets)
+                      m
 
-                case (l, r) of
-                  -- TODO[drathier]: don't throw away purerl errors and warnings
-                  (Right a, _) -> pure a
-                  (Left lerrs, rerrs) -> internalError (show (Language.PureScript.Erl.Errors.runMultipleErrors lerrs, rerrs))
+                  case (l, r) of
+                    -- TODO[drathier]: don't throw away purerl errors and warnings
+                    (Right a, _) -> pure a
+                    (Left lerrs, rerrs) -> internalError (show (Language.PureScript.Erl.Errors.runMultipleErrors lerrs, rerrs))
 
-        SupplyT.mapSupplyT
-          f
-          (moduleToErl env m foreignExports) -- :: SupplyT Language.PureScript.Erl.Make.Monad.Make
+          SupplyT.mapSupplyT
+            f
+            (moduleToErl env m foreignExports) -- :: SupplyT Language.PureScript.Erl.Make.Monad.Make
 
-{-
-      !_ <-
-        case True of -- runModuleName mn == "Hex" of
-          True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show rawErl)
-          False -> pure ()
-      !_ <-
-        case True of -- runModuleName mn == "Hex" of
-          True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (T.unpack $ T.replace ",Rec" ",\nRec" $ T.replace ",NonRec" ",\nNonRec" $ T.pack $ show m)
-          False -> pure ()
--}
-      optimized <- optimize exports rawErl
-      checked <- optimize checkedExports checkedRawErl
-{-
-      !_ <-
-        case True of -- runModuleName mn == "Hex" of
-          True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".erlopt.txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show optimized)
-          False -> pure ()
--}
-      dir <- lift $ makeIO "get file info: ." getCurrentDirectory
-      let makeAbsFile file = dir </> file
-      let pretty = prettyPrintErl makeAbsFile optimized
-          -- prettyChecked = prettyPrintErl makeAbsFile checked
-          -- prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
-          -- prettyDecls = prettyPrintErl makeAbsFile typeDecls
+  -- {-
+        !_ <-
+          -- case True of
+          case runModuleName mn == "Shell" of
+            True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".1.corefn.txt") (T.unpack $ T.replace ",Rec" ",\nRec" $ T.replace ",NonRec" ",\nNonRec" $ T.pack $ show m)
+            False -> pure ()
+        !_ <-
+          -- case True of
+          case runModuleName mn == "Shell" of
+            True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".2.rawerl.txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show rawErl)
+            False -> pure ()
+  -- -}
+        optimized <- optimize inlineableUpstream exports rawErl
+        checked <- optimize inlineableUpstream checkedExports checkedRawErl
+  -- {-
+        !_ <-
+          -- case True of
+          case runModuleName mn == "Shell" of
+            True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".3.erlopt.txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show optimized)
+            False -> pure ()
+  -- -}
+        dir <- lift $ makeIO "get file info: ." getCurrentDirectory
+        let makeAbsFile file = dir </> file
+        let pretty = prettyPrintErl makeAbsFile optimized
+            -- prettyChecked = prettyPrintErl makeAbsFile checked
+            -- prettySpecs = prettyPrintErl makeAbsFile foreignSpecs
+            -- prettyDecls = prettyPrintErl makeAbsFile typeDecls
 
-      let
-          prefix :: [T.Text]
-          prefix = ["Generated by purerl version " <> T.pack (showVersion Paths.version) | usePrefix]
-          -- directives :: [(T.Text, Int)] -> ModuleType -> [T.Text]
-          directives exports' moduleType = [
-            "-module(" <> atom (atomModuleName mn moduleType) <> ").",
-            "-export([" <> T.intercalate ", " (map (\(f, a) -> runAtom f <> "/" <> T.pack (show a)) exports') <> "]).",
-            "-compile(nowarn_shadow_vars).",
-            "-compile(nowarn_unused_vars).",
-            "-compile(nowarn_export_all).",
-            "-compile(nowarn_ignored).",
-            "-compile(nowarn_nomatch).",
-            "-compile(nowarn_obsolete_guard).",
-            "-compile(nowarn_opportunistic).",
-            "-compile(nowarn_unused_function).",
-            "-compile(no_auto_import)."
-            -- includeHrl,
-            -- "-ifndef(PURERL_MEMOIZE).",
-            -- "-define(MEMOIZE(X), X).",
-            -- "-else.",
-            -- "-define(MEMOIZE, memoize).",
-            -- "memoize(X) -> X.",
-            -- "-endif."
-            ]
-          -- includeHrl :: T.Text
-          -- includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
-      let erl :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives exports PureScriptModule ++  [ pretty ]
-      lift $ writeTextFile (outFile mn) $ TE.encodeUtf8 erl
+        let
+            prefix :: [T.Text]
+            prefix = ["Generated by purerl version " <> T.pack (showVersion Paths.version) | usePrefix]
+            -- directives :: [(T.Text, Int)] -> ModuleType -> [T.Text]
+            directives exports' moduleType = [
+              "-module(" <> atom (atomModuleName mn moduleType) <> ").",
+              "-export([" <> T.intercalate ", " (map (\(f, a) -> runAtom f <> "/" <> T.pack (show a)) exports') <> "]).",
+              "-compile(nowarn_shadow_vars).",
+              "-compile(nowarn_unused_vars).",
+              "-compile(nowarn_export_all).",
+              "-compile(nowarn_ignored).",
+              "-compile(nowarn_nomatch).",
+              "-compile(nowarn_obsolete_guard).",
+              "-compile(nowarn_opportunistic).",
+              "-compile(nowarn_unused_function).",
+              "-compile(no_auto_import)."
+              -- includeHrl,
+              -- "-ifndef(PURERL_MEMOIZE).",
+              -- "-define(MEMOIZE(X), X).",
+              -- "-else.",
+              -- "-define(MEMOIZE, memoize).",
+              -- "memoize(X) -> X.",
+              -- "-endif."
+              ]
+            -- includeHrl :: T.Text
+            -- includeHrl = "-include(\"./" <> erlModuleNameBase mn <> ".hrl\").\n"
+        let erl :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives exports PureScriptModule ++  [ pretty ]
+        lift $ writeTextFile (outFile mn) $ TE.encodeUtf8 erl
 
-      -- when generateChecked $ do
-      --   let erlchecked :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives checkedExports PureScriptCheckedModule ++  [ prettyChecked ]
-      --   lift $ writeTextFile (outFileChecked mn) $ TE.encodeUtf8 erlchecked
+        -- when generateChecked $ do
+        --   let erlchecked :: T.Text = T.unlines $ map ("% " <>) prefix ++ directives checkedExports PureScriptCheckedModule ++  [ prettyChecked ]
+        --   lift $ writeTextFile (outFileChecked mn) $ TE.encodeUtf8 erlchecked
 
-      -- let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
-      -- lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
+        -- let hrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ prettyDecls ]
+        -- lift $ writeTextFile (hrlFile mn) $ TE.encodeUtf8 hrl
 
-      -- let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
-      -- lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
+        -- let foreignHrl :: T.Text = T.unlines $ map ("% " <>) prefix ++ [ includeHrl, prettySpecs ]
+        -- lift $ writeTextFile (foreignHrlFile mn) $ TE.encodeUtf8 foreignHrl
+
+        let inlineable =
+              mapMaybe
+                (\e -> case e of
+                  EFunctionDef _ _ name args body | elem (runModuleName mn) ["Maybe", "Control.Applicative"] ->
+                    -- trace (show ("inlineable", runModuleName mn, name, length args)) $
+                    Just ((runAtom name, length args), fqAtomRefs (erlModuleName mn PureScriptModule) e)
+                  _ -> Nothing
+                )
+                optimized
+
+
+        pure (M.fromList inlineable)
 
   ffiCodegen :: CF.Module CF.Ann -> Make ()
   ffiCodegen m = do
@@ -720,3 +740,15 @@ ffiCodegen' foreigns codegenTargets makeOutputPath m = do
 
   copyForeign path mn =
     for_ makeOutputPath (\outputFilename -> copyFile path (outputFilename mn "foreign.js"))
+
+
+fqAtomRefs :: Text -> Erl -> Erl
+fqAtomRefs mn erl = everywhereOnErl go erl
+  where
+    go :: Erl -> Erl
+    go e = case e of
+      (EApp annot (EAtomLiteral (Atom Nothing a)) args) -> (EApp annot (EAtomLiteral (Atom (Just mn) a)) args)
+      (EApp annot (EAtomLiteral (AtomPS Nothing a)) args) -> (EApp annot (EAtomLiteral (AtomPS (Just mn) a)) args)
+      (EFunRef (Atom Nothing a) i) -> (EFunRef (Atom (Just mn) a) i)
+      (EFunRef (AtomPS Nothing a) i) -> (EFunRef (AtomPS (Just mn) a) i)
+      _ -> e

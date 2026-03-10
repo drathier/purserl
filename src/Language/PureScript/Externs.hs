@@ -71,6 +71,7 @@ import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString as BS
 import qualified Crypto.Hash as Hash
 import qualified Data.ByteArray.Encoding as BAE
+import Language.PureScript.Erl.CodeGen.AST (Erl)
 
 import System.IO.Unsafe (unsafePerformIO)
 import           System.Environment (lookupEnv)
@@ -112,6 +113,8 @@ data ExternsFile = ExternsFile
   -- ^ Shapes of things dependend upon by this module
   , efOurCacheShapes :: DBOpaque
   -- ^ Shapes of things in this module
+  , efErlInlineableSources :: M.Map (Text, Int) Erl
+  -- ^ Things we'd be happy to inline into other modules, such as type class implementations
   } deriving (Show, Generic, NFData)
 
 instance Serialise ExternsFile
@@ -1665,6 +1668,7 @@ moduleToExternsFile upstreamDBs (Module ss _comments mn decls (Just exports)) en
   -- let !_ = trace (sShow ("###moduleToExternsFile efOurCacheShapes", mn, efOurCacheShapes)) () in
   ExternsFile{..}
   where
+  efErlInlineableSources = M.empty
   efVersion       = T.pack (showVersion Paths.version)
   efModuleName    = mn
   efExports       = map renameRef exports

@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# Language DeriveAnyClass #-}
 
 -- |
 -- Data types for the intermediate simplified-Erlang AST
@@ -18,6 +19,9 @@ import Control.Arrow (second)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.AST.SourcePos
 import Debug.Trace (traceM, trace)
+import Control.DeepSeq (NFData)
+import GHC.Generics (Generic)
+import Codec.Serialise (Serialise)
 
 -- |
 -- Data type for simplified Erlang expressions
@@ -114,13 +118,13 @@ data Erl
   -- [drathier]: raw erlang code
   | ERawErlangSource T.Text [(Atom, Erl)]
 
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 -- | [drathier]: I think this is annotating if a particular App is applying something compiler-generated like a type class dict (SyntheticApp), or is just a normal function call (RegularApp).
 data AppAnnotation 
   = RegularApp
   | SyntheticApp
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 -- | EVarBind as defined before drathier expanded it to allow more than simple var lhs's
 pattern EVarBind :: Text -> Erl -> Erl
@@ -181,25 +185,25 @@ data EFunBinder
  -- [drathier]: using ECaseOf instead of EFunBinder _ (Just _)
  -- = EFunBinder [Erl] (Maybe Guard)
 
-   deriving (Show, Eq)
+   deriving (Show, Eq, Generic, Serialise, NFData)
 
 data EBinder
   = EBinder Erl -- TODO split out literals?
   -- [drathier]: using ECaseOf instead of EGuardedBinder
   -- | EGuardedBinder Erl Guard
 
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 data Guard
   = Guard Erl
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 -- | Possibly qualified atom
 -- TODO : This is not really an atom, each part is an atom.
 data Atom
   = Atom (Maybe Text) Text
   | AtomPS (Maybe Text) PSString
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Generic, Serialise, NFData, Ord)
 -- |
 -- Built-in unary operators
 --
@@ -220,7 +224,7 @@ data UnaryOperator
   -- Numeric unary \'plus\'
   --
   | Positive
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 -- |
 -- Built-in binary operators
@@ -347,7 +351,7 @@ data BinaryOperator
   --
   | ListSubtract
 
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 -- Simplified Erlang types
 data EType
@@ -372,7 +376,7 @@ data EType
   | TUnion [EType]
   | TRemote Text Text [EType]
   | TAlias Atom [EType]
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Serialise, NFData)
 
 everywhereOnErl :: (Erl -> Erl) -> Erl -> Erl
 everywhereOnErl f = go

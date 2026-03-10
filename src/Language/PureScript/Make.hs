@@ -32,7 +32,7 @@ import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Text qualified as T
 import Debug.Trace (traceMarkerIO)
-import Language.PureScript.AST (ErrorMessageHint(..), Module(..), SourceSpan(..), getModuleName, getModuleSourceSpan, importPrim)
+import Language.PureScript.AST (ErrorMessageHint(..), Module(..), SourceSpan(..), getModuleName, getModuleSourceSpan, importPrim, Expr(..), everywhereOnValues)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
@@ -42,7 +42,7 @@ import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHi
 import Language.PureScript.Externs
 import Language.PureScript.Linter (Name(..), lint, lintImports)
 import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
-import Language.PureScript.Names (ModuleName, isBuiltinModuleName, runModuleName)
+import Language.PureScript.Names (ModuleName, isBuiltinModuleName, runModuleName, QualifiedBy(..), Qualified(..), Ident(..))
 import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
@@ -60,14 +60,14 @@ import System.IO.Unsafe (unsafePerformIO)
 import PrettyPrint
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
-
+import Debug.Trace as Debug
 -- purserl
 import Control.Applicative ((<|>))
 import qualified Build as Erl.Build
 import           System.Directory (getCurrentDirectory)
 -- import System.IO.Unsafe (unsafePerformIO)
 --
-
+import Language.PureScript.Erl.CodeGen.Common (erlModuleName, ModuleType(..))
 
 -- | Rebuild a single module.
 --
@@ -128,7 +128,8 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     -- constraints in order to not report them as unused.
     censor (addHint (ErrorInModule moduleName)) $ lintImports checked exEnv' usedImports'
     lift $ progress $ CompileMeta ("### CS.goDesugarCaseGuards4[" <> runModuleName moduleName <> "]")
-    return (checked, checkEnv)
+    let checked2 = specialize checked
+    return (checked2, checkEnv)
 
   -- progress $ CompilingModule moduleName moduleIndex "6"
 
@@ -167,9 +168,10 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
 
   -- NOTE[drathier]: codegen updates the ExternsFile cache, so we have to grab a copy of the old externs file before running codegen if we want to diff them
   -- progress $ CompilingModule moduleName moduleIndex "8"
-  evalSupplyT nextVar'' $ codegen env renamed docs exts
+  let inlineableUpstream = M.fromList $ map (\ext -> (erlModuleName (efModuleName ext) PureScriptModule, efErlInlineableSources ext)) externs
+  inlineable <- evalSupplyT nextVar'' $ codegen env renamed docs inlineableUpstream exts
   -- progress $ CompilingModule moduleName moduleIndex "9"
-  return exts
+  return (exts {efErlInlineableSources = inlineable})
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
 --
@@ -513,3 +515,40 @@ assertAllExternsExistsImpl externs acc =
         BuildJobSkipped -> Left BuildJobSkipped
         --
         BuildJobSucceeded err ext -> assertAllExternsExistsImpl ex (M.insert moduleName (err, ext) acc)
+
+
+---------------------
+
+
+specialize m = m
+specialize (Module ss comments mn decls mdr) =
+  let
+      (onDecl', _, _) = everywhereOnValues id onExpr id
+      onExpr :: Expr -> Expr
+      onExpr e = case e of
+        App
+          (TypedValue True
+            (PositionedValue _ []
+              (Var ss (Qualified (ByModuleName moduOfClass) (Ident functionName)))
+            )
+            tipe
+          )
+          (Var _ (Qualified byModu@(ByModuleName moduOfInstance) (Ident functorInstanceName)))
+          | any (matches (runModuleName moduOfClass) (runModuleName moduOfInstance) functionName functorInstanceName)
+              [("Data.Functor", "map", "functor")]
+            ->
+              Debug.trace (show ("specialize-hit", mn, moduOfClass, byModu, functionName, functorInstanceName)) $
+
+              (Var ss ((Qualified byModu) (Ident functionName)))
+
+
+        _ ->
+          -- Debug.trace (show ("specialize", mn, e)) $
+          e
+  in Module ss comments mn (map onDecl' decls) mdr
+
+matches moduOfClass moduOfInstance functionName instanceName (modu, fn, instPrefix) =
+  (instPrefix `T.isPrefixOf` instanceName)
+  && moduOfClass == modu
+  && moduOfClass /= moduOfInstance
+  && functionName == fn

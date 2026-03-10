@@ -196,10 +196,10 @@ markComplete2 ma@MakeActions{..} buildPlan moduleName oldExt result = do
             Just ExternsChanged
     )
 
-serialiseDbEq (ExternsFile efVersion1 efModuleName1 efExports1 efImports1 efFixities1 efTypeFixities1 efDeclarations1 efSourceSpan1 efUpstreamCacheShapes1 efOurCacheShapes1) mb =
+serialiseDbEq (ExternsFile efVersion1 efModuleName1 efExports1 efImports1 efFixities1 efTypeFixities1 efDeclarations1 efSourceSpan1 efUpstreamCacheShapes1 efOurCacheShapes1 efErlInlineableSources1) mb =
   case mb of
     Nothing -> []
-    Just (ExternsFile efVersion2 efModuleName2 efExports2 efImports2 efFixities2 efTypeFixities2 efDeclarations2 efSourceSpan2 efUpstreamCacheShapes2 efOurCacheShapes2) ->
+    Just (ExternsFile efVersion2 efModuleName2 efExports2 efImports2 efFixities2 efTypeFixities2 efDeclarations2 efSourceSpan2 efUpstreamCacheShapes2 efOurCacheShapes2 efErlInlineableSources2) ->
       filter
       (\(x, y) -> y == False)
       [ ("efVersion", serialise efVersion1 == serialise efVersion2)
@@ -212,6 +212,7 @@ serialiseDbEq (ExternsFile efVersion1 efModuleName1 efExports1 efImports1 efFixi
       , ("efSourceSpan", serialise efSourceSpan1 == serialise efSourceSpan2)
       , ("efUpstreamCacheShapes", serialise efUpstreamCacheShapes1 == serialise efUpstreamCacheShapes2)
       , ("efOurCacheShapes", serialise efOurCacheShapes1 == serialise efOurCacheShapes2)
+      , ("efErlInlineableSources", serialise efErlInlineableSources1 == serialise efErlInlineableSources2)
       ]
 
 -- | Whether or not the module with the given ModuleName needs to be rebuilt

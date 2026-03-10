@@ -398,7 +398,7 @@ optimizeCommonSubexpressions mn
     App3 "Data.Ord" _ "Data.Ord" _ -> False
     App3 "Data.Eq" _ "Data.Eq" _ -> False
     App3 "Data.Int" _ "Data.Int" _ -> False
-    App (_, _, Just IsSyntheticApp) e _ -> isSimple e
+    App (_, _, Just IsSyntheticApp) e _ -> not (isSimple e)
     _                                   -> False
 
 
