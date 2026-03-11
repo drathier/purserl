@@ -17,6 +17,7 @@ where
 
 import Control.Monad.Supply.Class (MonadSupply (fresh))
 import qualified Data.Map as Map
+import qualified Data.Map as M
 import Data.Maybe (mapMaybe, fromMaybe)
 import qualified Data.Set as Set
 import Data.String (IsString)
@@ -25,7 +26,7 @@ import qualified Data.Text as T
 import qualified Language.PureScript.Constants.Prim as C
 import qualified Language.PureScript.Constants.Libs as C
 import Language.PureScript.Erl.CodeGen.AST
-import Language.PureScript.Erl.CodeGen.Common (atomPS, runAtom)
+import Language.PureScript.Erl.CodeGen.Common (atomPS, runAtom, freshNameErl')
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Common
 import Language.PureScript.PSString (PSString, mkString)
@@ -248,12 +249,19 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
     fnBottom = (EC.dataBounded, snd $ C.P_bottom)
     fnTop = (EC.dataBounded, snd $ C.P_top)
 
-inlineCommonValuesTopDown :: (Erl -> Erl) -> Erl -> Erl
-inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
+inlineCommonValuesTopDown :: forall m. MonadSupply m => (M.Map T.Text T.Text -> Erl -> m Erl) -> Erl -> m Erl
+inlineCommonValuesTopDown rename = everywhereOnErlTopDownM convert
   where
-    convert :: Erl -> Erl
+    renameBump :: [Text] -> Erl -> m Erl
+    -- renameBump _ e = pure e
+    renameBump vars e =
+      do
+        vars2 <- mapM freshNameErl' vars
+        rename (M.fromList $ zip vars vars2) e
+
+    convert :: Erl -> m Erl
     convert expr =
-      case expander expr of
+      case expr of
 
 --        EApp _ (EFun1 Nothing var1 (EApp _ (EFun1 Nothing var2 (EApp _ (EFun1 Nothing var3 (EApp _ (EFun1 Nothing var4 (EApp _ (EFun1 Nothing var5 body) [arg5])) [arg4])) [arg3])) [arg2])) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, EVarBind var5 arg5, convert body]
 --        EApp _ (EFun1 Nothing var1 (EApp _ (EFun1 Nothing var2 (EApp _ (EFun1 Nothing var3 (EApp _ (EFun1 Nothing var4 body) [arg4])) [arg3])) [arg2])) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, EVarBind var3 arg3, EVarBind var4 arg4, convert body]
@@ -267,7 +275,7 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 --        EApp _ (EApp _ (EFun1 Nothing var1 (EFun1 Nothing var2 body)) [arg2]) [arg1] -> EBlock [EVarBind var1 arg1, EVarBind var2 arg2, convert body]
 --        EApp _ (EFun1 Nothing var1 body) [arg1] -> EBlock [EVarBind var1 arg1, convert body]
 
-        EApp _ (EFun0 _ body) [] -> body
+        EApp _ (EFun0 _ body) [] -> pure body
 
 {-
         -- [drathier]: needlessly _@123-wrapped top-level functions, take the inner var and use that instead of the _@123 var.
@@ -279,15 +287,26 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
         EFunctionDef mType mSS name [var1a] (EApp _ (EFun1 Nothing var1i body) [EVar var1b]) | var1a == var1b -> EFunctionDef mType mSS name [var1i] (letBindIdents [(var1a, EVar var1i), (var1b, EVar var1i)] body)
 -}
 
-        -- [drathier]: immediately called funs, let-bind their vars
-        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 (EFun1 _ var8 body)))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] ) [arg8] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7), (var8, arg8)] body
-        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 body))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7)] body
-        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 body)))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6)] body
-        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
-        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
-        EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
-        EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> letBindIdents [(var1, arg1), (var2, arg2)] body
-        EApp _ (EFun1 _ var1 body) [arg1] -> letBindIdents [(var1, arg1)] body
+--         -- [drathier]: immediately called funs, let-bind their vars
+--         -- nope, this is not safe if the let-bound value is a function
+--         EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 (EFun1 _ var8 body)))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] ) [arg8] -> renameBump [var1, var2, var3, var4, var5, var6, var7, var8] $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7), (var8, arg8)] body
+--         EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 body))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] -> renameBump [var1, var2, var3, var4, var5, var6, var7] $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7)] body
+--         EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 body)))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6] -> renameBump [var1, var2, var3, var4, var5, var6] $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6)] body
+--         EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> renameBump [var1, var2, var3, var4, var5] $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
+--         EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> renameBump [var1, var2, var3, var4] $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
+--         EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> renameBump [var1, var2, var3] $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
+--         EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> renameBump [var1, var2] $ letBindIdents [(var1, arg1), (var2, arg2)] body
+--         EApp _ (EFun1 _ var1 body) [arg1] -> renameBump [var1] $ letBindIdents [(var1, arg1)] body
+
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 (EFun1 _ var8 body)))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] ) [arg8] -> pure $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7), (var8, arg8)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 (EFun1 _ var7 body))))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6]) [arg7] -> pure $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6), (var7, arg7)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 (EFun1 _ var6 body)))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5]) [arg6] -> pure $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5), (var6, arg6)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> pure $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
+        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> pure $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
+        EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 body))) [arg1]) [arg2]) [arg3] -> pure $ letBindIdents [(var1, arg1), (var2, arg2), (var3, arg3)] body
+        EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 body)) [arg1]) [arg2] -> pure $ letBindIdents [(var1, arg1), (var2, arg2)] body
+        EApp _ (EFun1 _ var1 body) [arg1] -> pure $ letBindIdents [(var1, arg1)] body
+
 
 --        EApp _ (EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 (EFun1 _ var5 body))))) [arg1]) [arg2]) [arg3]) [arg4]) [arg5] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4), (var5, arg5)] body
 --        EApp _ (EApp _ (EApp _ (EApp _ (EFun1 _ var1 (EFun1 _ var2 (EFun1 _ var3 (EFun1 _ var4 body)))) [arg1]) [arg2]) [arg3]) [arg4] -> replaceIdents [(var1, arg1), (var2, arg2), (var3, arg3), (var4, arg4)] body
@@ -307,10 +326,10 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
         -- EFunctionDef _ _ _ vars (EApp _ body args) | map EVar vars == args -> body
         -- [drathier]: Skipping because it traverses body: -- EFunFull _ [(EFunBinder vars, (EApp _ body args))] | not (isEAtomLiteral body), vars == args, isAnyMentioned (concatMap varsInExpr vars) (varsInExpr body) == False -> body
 
-        EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> v
+        EApp _ (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral key, EMapLiteral fields] | Just v <- findKey (runAtom key) fields -> pure v
         -- EMapLiteral fields | Just rhs <- allFieldsAreMapGetSame Nothing fields -> rhs -- [drathier]: this optimization broke prod
 
-        EApp appKind (ELet bind body) args -> ELet bind (EApp appKind body args)
+        EApp appKind (ELet bind body) args -> pure $ ELet bind (EApp appKind body args)
 
         -- EFunFull Nothing [(EFunBinder [EVar "_@251"],EApp RegularApp (EAtomLiteral (Atom Nothing "eqNewtypeRep_156")) [EVar "_@251"])]
         -- (EFunFull Nothing [(EFunBinder [EVar "_@251"],EVar "_@251")])
@@ -328,7 +347,7 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 
         -- EApp _ (EFunFull Nothing [(EFunBinder [pat1], body)]) [arg1] -> EBlock [EBind pat1 arg1, convert body]
 
-        other -> other
+        other -> pure other
 
 specialize :: Erl -> Erl
 specialize = everywhereOnErl onErl

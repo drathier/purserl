@@ -30,7 +30,6 @@ import Language.PureScript.Erl.CodeGen.Optimizer.Inliner
 -- import Language.PureScript.Erl.CodeGen.Optimizer.Guards
 --     ( inlineSimpleGuards )
 import Language.PureScript.Erl.CodeGen.Common (runAtom2, freshNameErl')
-
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Unused (removeUnusedFuns)
 import Data.Map (Map)
@@ -69,7 +68,20 @@ optimize inlineableUpstream exports es = do -- removeUnusedFuns exports <$> do
   es3 <- es2 & mapM (inlineUpstream inlineableUpstream)
   let es4 = es3
         & (map (specialize))
-        & (map (untilFix go))
+  es5 <- pure es4
+        >>= mapM (untilFixM go)
+        & fmap (map InlineLocal.inlineVarBind)
+        >>= mapM (untilFixM go)
+        & fmap (map InlineLocal.inlineVarBind)
+        >>= mapM (untilFixM go)
+        & fmap (map InlineLocal.inlineVarBind)
+        -- & (map (untilFix go))
+        -- & map InlineLocal.inlineVarBind
+        -- & (map (untilFix go))
+        -- & map InlineLocal.inlineVarBind
+        -- & (map (untilFix go))
+        -- & map InlineLocal.inlineVarBind
+        -- & (map (untilFix go))
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & Inliner.inline
@@ -77,13 +89,13 @@ optimize inlineableUpstream exports es = do -- removeUnusedFuns exports <$> do
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & map addMemoizeAnnotations
-  pure $ es4
+  pure $ es5
 
   where
   go erl =
     erl
-      & inlineCommonValuesTopDown id -- expander
-      & inlineCommonValuesBottomUp id -- expander
+      & inlineCommonValuesTopDown renameOnly -- expander
+      & fmap (inlineCommonValuesBottomUp id) -- expander
       -- Compilation took 107841 ms -- only topdown
       -- Compilation took 104441 ms -- only topdown
       -- Compilation took 102926 ms -- only bottomup
@@ -136,6 +148,14 @@ untilFix f = go 10
   go n a =
    let a2 = f a in
    if a2 == a then a2 else go (n-1) a2
+
+untilFixM :: Monad m => Show a => Eq a => (a -> m a) -> a -> m a
+untilFixM f = go 10
+  where
+  go 0 a = pure a -- trace (show ("untilFixM bailed out", a)) $ a
+  go n a = do
+   a2 <- f a
+   if a2 == a then pure a2 else go (n-1) a2
 
 
 -- |
@@ -194,6 +214,20 @@ inlineUpstream inlineableUpstream = everywhereOnErlBottomUpM onErl
             & fmap (match args)
             >>= rec
 
+--          -- record accesses, like type class instance field getters: grab field directly
+--          EApp RegularApp (EAtomLiteral (Atom (Just "maps") "get")) [EAtomLiteral (AtomPS Nothing field), rhs] ->
+--
+--          EApp _ (EAtomLiteral atom) args
+--            | (Just modu, fn) <- runAtom2 atom
+--            , Just up <- M.lookup modu inlineableUpstream
+--            , Just body <- M.lookup (fn, length args) up
+--            ->
+--            body
+--            -- & trace (show ("inlineUpstream.hit2", expr))
+--            & rename
+--            & fmap (match args)
+--            >>= rec
+
           _ -> pure expr
 
 match args body =
@@ -215,6 +249,16 @@ rename e =
   flip evalStateT M.empty $
   renameImpl e
 
+renameIgnoring :: forall m. MonadSupply m => [T.Text] -> Erl -> m Erl
+renameIgnoring ignore e =
+  flip evalStateT (M.fromList $ map (\v -> (v,v)) ignore) $
+  renameImpl e
+
+renameOnly :: forall m. MonadSupply m => M.Map T.Text T.Text -> Erl -> m Erl
+renameOnly renames e =
+  flip evalStateT renames $
+  renameImpl e
+
 renameImpl :: forall m. MonadSupply m => Erl -> StateT (Map T.Text T.Text) m Erl
 renameImpl e =
   everywhereOnErlTopDownLeftToRightM onErl e
@@ -229,6 +273,48 @@ renameImpl e =
           v2 <- lift $ freshNameErl' v
           put (M.insert v2 v2 $ M.insert v v2 db)
           pure v2
+        Just v2 -> pure v2
+
+    onErl expr =
+      case expr of
+        EVar var -> EVar <$> fresh var
+        EFunctionDef et ss a pats rhs ->
+          do
+            pats2 <- mapM fresh pats
+            pure $ EFunctionDef et ss a pats2 rhs
+        EFunFull ma binders ->
+          do
+            binders2 <- binders & mapM (\(EFunBinder p, rhs) -> do
+              p2 <- mapM rec p
+              pure (EFunBinder p2, rhs))
+            pure $ EFunFull ma binders2
+        -- EFunctionDef _ _ name pats _ -> error (show ("inline-rename EFunctionDef notimpl", name))
+        ECaseOf cond branches -> do
+          branches2 <- mapM (\(EBinder p, rhs) -> do
+            p2 <- rec p
+            pure (EBinder p2, rhs)) branches
+          pure $ ECaseOf cond branches2
+        -- EMapLiteral pairs -> do
+        --   do
+        --     pats2 <- pats & mapM (\(k,v) -> do
+        --       k2 <- fresh
+        --       pure (k2, v)
+        --       )
+        --     pure $ EMapLiteral pats2
+
+        _ -> pure expr
+
+renameOnlyImpl :: forall m. MonadSupply m => Erl -> StateT (Map T.Text T.Text) m Erl
+renameOnlyImpl e =
+  everywhereOnErlTopDownLeftToRightM onErl e
+  where
+    rec = renameOnlyImpl
+    fresh :: T.Text -> StateT (M.Map T.Text T.Text) m T.Text
+    fresh v = do
+      db <- get
+      -- traceM (show ("fresh", v, M.lookup v db, "db", db, "e", e))
+      case M.lookup v db of
+        Nothing -> pure v
         Just v2 -> pure v2
 
     onErl expr =

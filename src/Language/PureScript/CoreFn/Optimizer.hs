@@ -98,7 +98,7 @@ translateBacktrace modu foreignIdents binds =
 
 optimizeModuleDecls :: ModuleName -> [Ident] -> [Bind Ann] -> [Bind Ann]
 optimizeModuleDecls modu foreignIdents binds =
-  map transformBinds $
+  -- NOTE disabled opt: map transformBinds $
     force $
       map (
        renameIdentsAndVars modu

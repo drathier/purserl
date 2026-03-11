@@ -208,7 +208,8 @@ erlAnyReserved = [
 
 
 freshNameErl' :: (MonadSupply m) => T.Text -> m T.Text
-freshNameErl' base = fmap (((base <> "@") <>) . T.pack . show) fresh
+freshNameErl' "_" = pure "_"
+freshNameErl' base = fmap (((T.replace "." "_" base <> "@") <>) . T.pack . show) fresh
 
 freshNameErl :: (MonadSupply m) => m T.Text
 freshNameErl = freshNameErl' "V"

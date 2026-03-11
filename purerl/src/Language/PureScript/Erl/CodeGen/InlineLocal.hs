@@ -5,7 +5,7 @@
 --
 --  * Inlining of (>>=) and ret for the Eff monad
 --
-module Language.PureScript.Erl.CodeGen.InlineLocal (inlineVarBinds) where
+module Language.PureScript.Erl.CodeGen.InlineLocal (inlineVarBinds, inlineVarBind) where
 
 import Prelude.Compat
 
@@ -43,6 +43,7 @@ import Data.UnionFind.ST qualified as UF
 import Data.STRef as ST
 import Control.Monad.ST as ST
 import Control.Applicative ((<|>))
+import Data.Function ((&))
 
 forbiddenInlineFunctions = Atom Nothing <$> ["@runtime_lazy"]
 
@@ -74,9 +75,27 @@ initialDB = DB []
 
 processStack stack =
   let cs = compressStack (reverse stack) in
-  let actions = actionStack cs in
-  -- trace (show ("processStack", ("cs", cs), ("actions", actions)))
-  actions
+  let world = findExternalReads Map.empty cs in
+  case world of
+    [] ->
+      let cs2 = map SDef world <> cs in
+      let actions = actionStack cs2 in
+      -- trace (show ("processStack", ("cs", cs), ("actions", actions)))
+      -- trace (show ("processStack", ("world", world), ("cs2", cs2), ("actions", actions)))
+      Just actions
+    _ ->
+      -- trace (show ("world not empty, we don't handle renames (should use the world var name when renaming), so skipping", world)) $
+      Nothing
+
+findExternalReads defined stack =
+  let def a = Map.insertWith (||) a True defined in
+  let read a = Map.insertWith (||) a False defined in
+  case stack of
+    SAlias a _ : rest -> findExternalReads (def a) rest
+    SWrite a _ : rest -> findExternalReads (def a) rest
+    SDef a : rest -> findExternalReads (def a) rest
+    SRead a : rest -> findExternalReads (read a) rest
+    [] -> defined & Map.toList & filter (\(k,v) -> v == False) & map (\(k,v) -> k)
 
 compressStack stack =
   case stack of
@@ -85,11 +104,10 @@ compressStack stack =
     SDef a : rest -> SDef a : compressStack rest
     SRead a : rest -> SRead a : compressStack rest
     [] -> []
-    other -> [SRead (T.pack $ show ("err-processStack", other))]
 
 
 actionStack stack = ST.runST $ do
-  pointersRef <- ST.newSTRef (Map.empty :: Map T.Text (UF.Point s (T.Text, Int, Maybe Erl)))
+  pointersRef <- ST.newSTRef (Map.empty :: Map T.Text (UF.Point s (Either T.Text T.Text, Int, Maybe Erl)))
   traverse (actionStackOne pointersRef) stack
   pointers <- ST.readSTRef pointersRef
   rawActions <- traverse UF.descriptor pointers
@@ -102,8 +120,9 @@ data GoRewrite
   | GoInline Erl
   deriving (Show)
 
-handleAction :: (T.Text, Int, Maybe Erl) -> GoRewrite
-handleAction (wantVar, readCount, mValue) =
+handleAction :: (Either T.Text T.Text, Int, Maybe Erl) -> GoRewrite
+handleAction (wantVar2, readCount, mValue) =
+  let wantVar = either id id wantVar2 in
   case readCount of
     0 -> GoSkip
     _ ->
@@ -122,9 +141,16 @@ data AAction
   | ADef
   | ARead
   | AWrite Erl
+  deriving (Show)
 
 merge (at, arc, av) (bt, brc, bv) =
-  ( if T.length at < T.length bt then bt else at
+  ( -- at <> "___" <> bt --
+    -- if T.length at < T.length bt then bt else at
+    case (at, bt) of
+      (Left a, _) -> Left a
+      (_, Left b) -> Left b
+      (Right a, Right b) ->
+        Right (if T.length a < T.length b then b else a)
   , arc+brc
   , av<|>bv
   )
@@ -153,10 +179,10 @@ actionStackOne pointersRef item = do
 findGroup pointersRef a kind = do
   let kindState =
         case kind of
-          AAlias -> (a, 0, Nothing)
-          ADef -> (a, 0, Nothing)
-          ARead -> (a, 1, Nothing)
-          AWrite v -> (a, 0, Just v)
+          AAlias -> (Right a, 0, Nothing)
+          ADef -> (Left a, 0, Nothing)
+          ARead -> (Right a, 1, Nothing)
+          AWrite v -> (Right a, 0, Just v)
 
   p <- ST.readSTRef pointersRef
   case Map.lookup a p of
@@ -172,16 +198,19 @@ findGroup pointersRef a kind = do
 
 inlineVarBinds :: [Erl] -> [Erl]
 inlineVarBinds erls =
-  map inlineVarBindsImpl erls
+  map inlineVarBind erls
 
-inlineVarBindsImpl :: Erl -> Erl
--- inlineVarBindsImpl erl@(EFunctionDef _ _ name args _) | runAtom name /= "match" || length args /= 2 = erl
-inlineVarBindsImpl erl =
-  let (res,state) = runState (collectErl erl) initialDB
-      (res2,state2) = runState (replaceErl erl) (processStack (_stack state))
-  in
-  -- trace (show ("inlineVarBindsImpl", ("rev", reverse $ _stack state), ("processStack", processStack (_stack state)), erl)) $
-  res2
+inlineVarBind :: Erl -> Erl
+inlineVarBind erl =
+  let (res,state) = runState (collectErl erl) initialDB in
+  case (processStack (_stack state)) of
+    Nothing -> erl
+    Just stack ->
+      let
+        (res2,state2) = runState (replaceErl erl) stack
+      in
+      trace (show ("inlineVarBind", ("rev", reverse $ _stack state), ("processStack", processStack (_stack state)), ("erl", erl), ("res2", res2))) $
+      res2
 
 collectErl = everywhereOnErlTopDownLeftToRightM collectOnErl
 
@@ -226,7 +255,8 @@ replaceOnErl e = do
   db <- get
   let goVarExpr var =
         case Map.lookup var db of
-          Nothing -> EVar "missing_dolphin" -- ELet (EVar "goNothing-") (EVar var) -- $  error (show ("InlineLocal.replace.go", ("var", var), ("e", e), ("db", db)))
+          Nothing | var == "_" -> EVar "_"
+          Nothing -> EVar ("missing_dolphin_" <> var) -- ELet (EVar "goNothing-") (EVar var) -- $  error (show ("InlineLocal.replace.go", ("var", var), ("e", e), ("db", db)))
           Just (GoRename want) -> EVar want
           Just (GoLetBind want) -> EVar want
           Just GoSkip -> EVar "_"
@@ -268,6 +298,11 @@ replaceOnErl e = do
 
     EFunctionDef met mss funName args body -> pure $ EFunctionDef met mss funName (map goDef args) body
     EFunFull mFunName binders -> EFunFull (fmap goDef mFunName) <$> mapM (\(b,rhs) -> (,) <$> replaceBinder b <*> pure rhs) binders
+
+    ECaseOf cond binders ->
+      ECaseOf cond <$> mapM (\(EBinder p, rhs) -> do
+        p2 <- replaceErl p
+        pure (EBinder p2, rhs)) binders
 
     EVar v -> pure $ goVarExpr v
     ELet (EBind (EVar v) (EVar v2)) body -> replaceOnErl $ body

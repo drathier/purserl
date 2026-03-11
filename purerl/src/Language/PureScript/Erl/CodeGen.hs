@@ -74,13 +74,7 @@ import Language.PureScript.Erl.Errors.Types
   )
 import Language.PureScript.Erl.Synonyms (replaceAllTypeSynonyms')
 import Language.PureScript.Errors (ErrorMessageHint (..))
-import Language.PureScript.Names
-  ( Ident (Ident, UnusedIdent, InternalIdent),
-    ModuleName (..),
-    ProperName (ProperName),
-    Qualified (..),
-    InternalIdentData (RuntimeLazyFactory, Lazy)
-  )
+import Language.PureScript.Names ( Ident (Ident, UnusedIdent, InternalIdent), ModuleName (..), ProperName (ProperName), Qualified (..), InternalIdentData (RuntimeLazyFactory, Lazy), runModuleName )
 import Language.PureScript.Options (Options)
 import Language.PureScript.Traversals (sndM)
 import Language.PureScript.Types
@@ -434,7 +428,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
           ffiTyEnv = wrapTy . translateType env =<< M.lookup (Qualified (P.ByModuleName mn) ident) types
 
-      args <- replicateM fullArity freshNameErl
+      args <- replicateM fullArity (freshNameErl' (runModuleName mn <> "_v"))
       let body = EApp RegularApp (EAtomLiteral $ qualifiedToErl' mn ForeignModule ident) (take arity $ map EVar args)
           body' = curriedApp (drop arity $ map EVar args) body
           fun = curriedLambda body' args
@@ -556,13 +550,13 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           countAbs _ = 0
 
       let curriedWrappingUncurried arity = do
-            vars <- replicateM arity freshNameErl
+            vars <- replicateM arity (freshNameErl' (runModuleName mn <> "_v"))
             let app = EApp RegularApp (EAtomLiteral ident') (EVar <$> vars)
                 callUncurriedErl = curriedLambda app vars
             pure
               ([(ident', 0)], [EFunctionDef (TFun [] <$> erlangType) ss ident' [] callUncurriedErl])
       let uncurriedWrappingCurried arity = do
-            vars <- replicateM arity freshNameErl
+            vars <- replicateM arity (freshNameErl' (runModuleName mn <> "_v"))
             let callCurriedErl = curriedApp (EVar <$> vars) $ EApp RegularApp (EAtomLiteral ident') []
             pure
               ([(ident', arity)], [EFunctionDef (uncurryType arity =<< erlangType) ss ident' vars callCurriedErl])
@@ -591,12 +585,12 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       -- Apply in CoreFn then translate to take advantage of translation of full/partial application
       (res1, res2) <- case effFnArity qident <|> fnArity qident <|> M.lookup qident arities <|> lazyArity ident of
         Just (EffFnXArity arity) -> do
-          vars <- replicateM arity freshNameErl
+          vars <- replicateM arity (freshNameErl' (runModuleName mn <> "_v"))
           erl' <- valueToErl $ foldl applyStep (mkRunApp effectUncurried (snd C.P_runEffectFn) arity val) vars
           pure $ curried <> ([(ident', arity)], [EFunctionDef (uncurryType arity =<< erlangType) ss ident' vars (outerWrapper (EApp RegularApp erl' []))])
         Just (FnXArity arity) -> do
           -- Same as above
-          vars <- replicateM arity freshNameErl
+          vars <- replicateM arity (freshNameErl' (runModuleName mn <> "_v"))
           erl' <- valueToErl $ foldl applyStep (mkRunApp dataFunctionUncurried (snd C.P_runFn) arity val) vars
           pure $ curried <> ([(ident', arity)], [EFunctionDef (uncurryType arity =<< erlangType) ss ident' vars (outerWrapper erl')])
         Just (Arity (n, m)) | n + m > 0 ->
@@ -605,7 +599,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
             -- experimental split between typeclass & regular arguments
             -- TODO this still duplicates code
-            vars <- replicateM arity freshNameErl
+            vars <- replicateM arity (freshNameErl' (runModuleName mn <> "_v"))
             split <-
               if n == 0 || m == 0
                 then pure ([], [])

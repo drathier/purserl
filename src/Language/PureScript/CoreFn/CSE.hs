@@ -373,7 +373,7 @@ identsFromBinders = foldMap identsFromBinder where
 -- the top level as possible.
 --
 optimizeCommonSubexpressions :: ModuleName -> [Bind Ann] -> Supply [Bind Ann]
--- optimizeCommonSubexpressions mn = pure
+optimizeCommonSubexpressions mn = pure
 optimizeCommonSubexpressions mn
   = fmap (uncurry (flip replaceLocals))
   . runCSEMonad
