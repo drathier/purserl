@@ -389,15 +389,15 @@ optimizeCommonSubexpressions mn
   shouldFloatExpr :: Expr Ann -> Bool
   shouldFloatExpr = \case
     -- INVARIANT[drathier]: this forcefully skips CSE lifting for some type class functions, to allow them to be specialized in the Erl ast later on. See purescript/purerl/src/Language/PureScript/Erl/CodeGen/Optimizer/Inliner.hs:specialize.onErl
-    App3 "Data.Semigroup" _ "Data.Semigroup" _ -> False
-    App3 "Data.Semiring" _ "Data.Semiring" _ -> False
-    App3 "Data.Ring" _ "Data.Ring" _ -> False
-    App3 "Data.EuclideanRing" _ "Data.EuclideanRing" _ -> False
-    App3 "Data.HeytingAlgebra" _ "Data.HeytingAlgebra" _ -> False
-    App3 "Erl.Data.List.Types" _ "Erl.Data.List.Types" _ -> False
-    App3 "Data.Ord" _ "Data.Ord" _ -> False
-    App3 "Data.Eq" _ "Data.Eq" _ -> False
-    App3 "Data.Int" _ "Data.Int" _ -> False
+    -- App3 "Data.Semigroup" _ "Data.Semigroup" _ -> False
+    -- App3 "Data.Semiring" _ "Data.Semiring" _ -> False
+    -- App3 "Data.Ring" _ "Data.Ring" _ -> False
+    -- App3 "Data.EuclideanRing" _ "Data.EuclideanRing" _ -> False
+    -- App3 "Data.HeytingAlgebra" _ "Data.HeytingAlgebra" _ -> False
+    -- App3 "Erl.Data.List.Types" _ "Erl.Data.List.Types" _ -> False
+    -- App3 "Data.Ord" _ "Data.Ord" _ -> False
+    -- App3 "Data.Eq" _ "Data.Eq" _ -> False
+    -- App3 "Data.Int" _ "Data.Int" _ -> False
     App (_, _, Just IsSyntheticApp) e _ -> isSimple e
     _                                   -> False
 
