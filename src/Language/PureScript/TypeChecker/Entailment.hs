@@ -422,10 +422,10 @@ entails SolverOptions{..} constraint context hints =
               -- So pass an empty placeholder (undefined) instead.
               return (useEmptyDict args)
             mkDictionary (IsSymbolInstance sym) _ =
-              let fields = [ ("reflectSymbol", Abs (VarBinder nullSourceSpan UnusedIdent) (Literal nullSourceSpan (StringLiteral sym))) ] in
+              let fields = [ ("reflectSymbol", Literal nullSourceSpan (StringLiteral sym)) ] in
               return $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName <$> C.IsSymbol)) (Literal nullSourceSpan (ObjectLiteral fields))
             mkDictionary (ReflectableInstance ref) _ =
-              let fields = [ ("reflectType", Abs (VarBinder nullSourceSpan UnusedIdent) (asExpression ref)) ] in
+              let fields = [ ("reflectType", asExpression ref) ] in
               pure $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName <$> C.Reflectable)) (Literal nullSourceSpan (ObjectLiteral fields))
 
             unknownsInAllCoveringSets :: (Int -> Text) -> [(Ident, SourceType, Maybe (S.Set (NEL.NonEmpty Int)))] -> [SourceType] -> S.Set (S.Set Int) -> UnknownsHint
