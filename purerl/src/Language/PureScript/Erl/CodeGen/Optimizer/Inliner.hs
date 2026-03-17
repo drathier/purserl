@@ -25,7 +25,7 @@ import qualified Data.Text as T
 import qualified Language.PureScript.Constants.Prim as C
 import qualified Language.PureScript.Constants.Libs as C
 import Language.PureScript.Erl.CodeGen.AST
-import Language.PureScript.Erl.CodeGen.Common (atomPS, runAtom)
+import Language.PureScript.Erl.CodeGen.Common (atomPS, runAtom, freshNameErl')
 import qualified Language.PureScript.Erl.CodeGen.Constants as EC
 import Language.PureScript.Erl.CodeGen.Optimizer.Common
 import Language.PureScript.PSString (PSString, mkString)
@@ -330,10 +330,10 @@ inlineCommonValuesTopDown expander = everywhereOnErlTopDown convert
 
         other -> other
 
-specialize :: Erl -> Erl
-specialize = everywhereOnErl onErl
+specialize :: forall m. MonadSupply m => Erl -> m Erl
+specialize = everywhereOnErlTopDownLeftToRightM onErl
   where
-    onErl :: Erl -> Erl
+    onErl :: Erl -> m Erl
     onErl expr =
       -- Debug.trace (show ("specialize.any", expr)) $
       case expr of
@@ -344,87 +344,94 @@ specialize = everywhereOnErl onErl
         EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) [EStringLiteral fmt,EMapLiteral binds] ->
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
           -- ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
-          ERawErlangSource (fmt & PS.decodeString & fromMaybe "FAILED TO DECODE STRING in CodeGen.erlang") binds
+          pure $ ERawErlangSource (fmt & PS.decodeString & fromMaybe "FAILED TO DECODE STRING in CodeGen.erlang") binds
         EApp RegularApp (EApp RegularApp (EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) []) [EStringLiteral fmt]) [EMapLiteral binds] ->
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
-          ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
+          pure $ ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
 
         -- Int
         -- EApp3 _ (EAtomLiteral (Atom (Just "data_semiring@ps") "add")) (EApp _ (EAtomLiteral (Atom (Just "data_semiring@ps") inst)) []) a b | isInst inst "semiringInt" -> EBinary Add a b
-        EApp1 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> EBinary Add a b
-        EApp2 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> EBinary Add a b
-        EApp3 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> EBinary Add a b
-        EApp1 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> EBinary Multiply a b
-        EApp2 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> EBinary Multiply a b
-        EApp3 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> EBinary Multiply a b
-        EApp1 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringInt" -> EBinary Subtract a b
-        EApp2 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringInt" -> EBinary Subtract a b
-        EApp3 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringInt" -> EBinary Subtract a b
+        EApp1 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> pure $ EBinary Add a b
+        EApp2 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> pure $ EBinary Add a b
+        EApp3 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> pure $ EBinary Add a b
+        EApp1 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> pure $ EBinary Multiply a b
+        EApp2 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> pure $ EBinary Multiply a b
+        EApp3 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringInt" -> pure $ EBinary Multiply a b
+        EApp1 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringInt" -> pure $ EBinary Subtract a b
+        EApp2 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringInt" -> pure $ EBinary Subtract a b
+        EApp3 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringInt" -> pure $ EBinary Subtract a b
+
+        EApp _ (EApp _ (EApp _ (EAtomLiteral (Atom (Just "control_semigroupoid@ps") "composeFlippedF")) []) [a]) [b] -> do
+          var <- freshNameErl' "C"
+          pure $ EFun1 Nothing var (EApp RegularApp b [EApp RegularApp a [EVar var]])
+        EApp _ (EApp _ (EApp _ (EAtomLiteral (Atom (Just "control_semigroupoid@ps") "composeF")) []) [a]) [b] -> do
+          var <- freshNameErl' "C"
+          pure $ EFun1 Nothing var (EApp RegularApp a [EApp RegularApp b [EVar var]])
 
         -- NOTE[drathier]: euclidian int div is not the same as erlang int div. The translation between them is quite complex, see data_euclideanRing@foreign.
-        -- EApp1 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingInt" -> EBinary IDivide a b
-        -- EApp2 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingInt" -> EBinary IDivide a b
-        -- EApp3 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingInt" -> EBinary IDivide a b
-        EApp1 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordInt" -> EBinary LessThan a b
-        EApp2 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordInt" -> EBinary LessThan a b
-        EApp3 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordInt" -> EBinary LessThan a b
-        EApp1 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordInt" -> EBinary LessThanOrEqualTo a b
-        EApp2 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordInt" -> EBinary LessThanOrEqualTo a b
-        EApp3 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordInt" -> EBinary LessThanOrEqualTo a b
-        EApp1 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqInt" -> EBinary EqualTo a b
-        EApp2 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqInt" -> EBinary EqualTo a b
-        EApp3 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqInt" -> EBinary EqualTo a b
-        -- EApp _ (EAtomLiteral (Atom (Just "math@ps") "intRemainder")) [a,b] -> EBinary IRemainder a b
+        -- EApp1 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingInt" -> pure $ EBinary IDivide a b
+        -- EApp2 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingInt" -> pure $ EBinary IDivide a b
+        -- EApp3 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingInt" -> pure $ EBinary IDivide a b
+        EApp1 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordInt" -> pure $ EBinary LessThan a b
+        EApp2 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordInt" -> pure $ EBinary LessThan a b
+        EApp3 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordInt" -> pure $ EBinary LessThan a b
+        EApp1 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordInt" -> pure $ EBinary LessThanOrEqualTo a b
+        EApp2 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordInt" -> pure $ EBinary LessThanOrEqualTo a b
+        EApp3 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordInt" -> pure $ EBinary LessThanOrEqualTo a b
+        EApp1 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqInt" -> pure $ EBinary EqualTo a b
+        EApp2 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqInt" -> pure $ EBinary EqualTo a b
+        EApp3 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqInt" -> pure $ EBinary EqualTo a b
+        -- EApp _ (EAtomLiteral (Atom (Just "math@ps") "intRemainder")) [a,b] -> pure $ EBinary IRemainder a b
 
         -- Number
-        EApp1 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> EBinary Add a b
-        EApp2 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> EBinary Add a b
-        EApp3 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> EBinary Add a b
-        EApp1 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> EBinary Multiply a b
-        EApp2 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> EBinary Multiply a b
-        EApp3 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> EBinary Multiply a b
-        EApp1 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> EBinary Subtract a b
-        EApp2 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> EBinary Subtract a b
-        EApp3 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> EBinary Subtract a b
+        EApp1 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> pure $ EBinary Add a b
+        EApp2 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> pure $ EBinary Add a b
+        EApp3 "data_semiring@ps" "add" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> pure $ EBinary Add a b
+        EApp1 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> pure $ EBinary Multiply a b
+        EApp2 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> pure $ EBinary Multiply a b
+        EApp3 "data_semiring@ps" "mul" "data_semiring@ps" inst a b | isInst inst "semiringNumber" -> pure $ EBinary Multiply a b
+        EApp1 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> pure $ EBinary Subtract a b
+        EApp2 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> pure $ EBinary Subtract a b
+        EApp3 "data_ring@ps" "sub" "data_ring@ps" inst a b | isInst inst "ringNumber" -> pure $ EBinary Subtract a b
         -- [drathier]: euclidian float div is not inlined as `div` because we're using a version that returns 0 on div with 0
-        -- EApp1 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
-        -- EApp2 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
-        -- EApp3 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> EBinary FDivide a b
-        EApp1 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThan a b
-        EApp2 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThan a b
-        EApp3 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThan a b
-        EApp1 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThanOrEqualTo a b
-        EApp2 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThanOrEqualTo a b
-        EApp3 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordNumber" -> EBinary LessThanOrEqualTo a b
-        EApp1 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqNumber" -> EBinary EqualTo a b
-        EApp2 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqNumber" -> EBinary EqualTo a b
-        EApp3 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqNumber" -> EBinary EqualTo a b
-        EApp _ (EAtomLiteral (Atom (Just "math@ps") "remainder")) [a,b] -> EBinary FRemainder a b
+        -- EApp1 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> pure $ EBinary FDivide a b
+        -- EApp2 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> pure $ EBinary FDivide a b
+        -- EApp3 "data_euclideanRing@ps" "div" "data_euclideanRing@ps" inst a b | isInst inst "euclideanRingNumber" -> pure $ EBinary FDivide a b
+        EApp1 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> pure $ EBinary LessThan a b
+        EApp2 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> pure $ EBinary LessThan a b
+        EApp3 "data_ord@ps" "lessThan" "data_ord@ps" inst a b | isInst inst "ordNumber" -> pure $ EBinary LessThan a b
+        EApp1 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordNumber" -> pure $ EBinary LessThanOrEqualTo a b
+        EApp2 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordNumber" -> pure $ EBinary LessThanOrEqualTo a b
+        EApp3 "data_ord@ps" "lessThanOrEq" "data_ord@ps" inst a b | isInst inst "ordNumber" -> pure $ EBinary LessThanOrEqualTo a b
+        EApp1 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqNumber" -> pure $ EBinary EqualTo a b
+        EApp2 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqNumber" -> pure $ EBinary EqualTo a b
+        EApp3 "data_eq@ps" "eq" "data_eq@ps" inst a b | isInst inst "eqNumber" -> pure $ EBinary EqualTo a b
+        EApp _ (EAtomLiteral (Atom (Just "math@ps") "remainder")) [a,b] -> pure $ EBinary FRemainder a b
 
         -- Boolean
-        EApp1 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary AndAlso a b
-        EApp2 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary AndAlso a b
-        EApp3 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary AndAlso a b
-        EApp1 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary OrElse a b
-        EApp2 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary OrElse a b
-        EApp3 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> EBinary OrElse a b
+        EApp1 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> pure $ EBinary AndAlso a b
+        EApp2 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> pure $ EBinary AndAlso a b
+        EApp3 "data_heytingAlgebra@ps" "conj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> pure $ EBinary AndAlso a b
+        EApp1 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> pure $ EBinary OrElse a b
+        EApp2 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> pure $ EBinary OrElse a b
+        EApp3 "data_heytingAlgebra@ps" "disj" "data_heytingAlgebra@ps" inst a b | isInst inst "heytingAlgebraBoolean" -> pure $ EBinary OrElse a b
 
         -- String
-        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> EBinary BinaryConcat a b
-        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> EBinary BinaryConcat a b
-        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> EBinary BinaryConcat a b
+        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> pure $ EBinary BinaryConcat a b
+        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> pure $ EBinary BinaryConcat a b
+        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupString" -> pure $ EBinary BinaryConcat a b
 
         -- Array
-        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> EBinary ArrayConcat a b
-        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> EBinary ArrayConcat a b
-        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> EBinary ArrayConcat a b
+        EApp1 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> pure $ EBinary ArrayConcat a b
+        EApp2 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> pure $ EBinary ArrayConcat a b
+        EApp3 "data_semigroup@ps" "append" "data_semigroup@ps" inst a b | isInst inst "semigroupArray" -> pure $ EBinary ArrayConcat a b
 
         -- List
-        EApp1 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> EBinary ListConcat a b
-        EApp2 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> EBinary ListConcat a b
-        EApp3 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> EBinary ListConcat a b
+        EApp1 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> pure $ EBinary ListConcat a b
+        EApp2 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> pure $ EBinary ListConcat a b
+        EApp3 "data_semigroup@ps" "append" "erl_data_list_types@ps" inst a b | isInst inst "semigroupList" -> pure $ EBinary ListConcat a b
 
-        other -> other
+        other -> pure $ other
 
     fnZero = (EC.dataSemiring, snd $ C.P_zero)
     fnOne = (EC.dataSemiring, snd $ C.P_one)

@@ -58,16 +58,18 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
   -- es6 <- untilFixedPoint (traverse go) es5
   -- let es7 = InlineLocal.inlineVarBinds es6
   -- es8 <- untilFixedPoint (traverse go) es7
-  es
+  es2 <- es
     -- & map (inlineCommonOperators EC.effect EC.effectDictionaries expander)
     -- & map (go)
     & map
       (\b ->
         b
           & inlineCommonOperators EC.effect EC.effectDictionaries id
-          & specialize
-          & untilFix go
       )
+    & pure
+  es2
+    & mapM specialize
+    & fmap (map (untilFix go))
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & Inliner.inline
@@ -75,7 +77,6 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & map addMemoizeAnnotations
-    & pure
   -- pure $ es4
 
   where
