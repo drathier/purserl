@@ -67,9 +67,10 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
           & inlineCommonOperators EC.effect EC.effectDictionaries id
       )
     & pure
-  es2
+  es3 <- es2
     & mapM specialize
     & fmap (map (untilFix go))
+  let es4 = InlineLocal.inlineVarBinds es3
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & Inliner.inline
@@ -77,7 +78,7 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & map addMemoizeAnnotations
-  -- pure $ es4
+  pure $ es4
 
   where
   go erl =
