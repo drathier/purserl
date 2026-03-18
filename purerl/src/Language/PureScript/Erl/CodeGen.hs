@@ -718,8 +718,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     valueToErl'' ann _ (Var _ (Qualified (P.ByModuleName C.M_Prim) (Ident undef)))
       | undef == C.S_undefined =
         return $ EAtomLiteral $ Atom Nothing C.S_undefined
-    valueToErl'' ann _ (Var (_, _, Just (IsConstructor _ [])) (Qualified _ ident)) =
-      return $ constructorLiteral (runIdent' ident) []
+    valueToErl'' ann _ (Var (_, _, Just (IsConstructor _ [])) (Qualified (P.ByModuleName (ModuleName tipeModu)) ident)) =
+      return $ constructorLiteral tipeModu (runIdent' ident) []
     valueToErl'' ann _ (Var _ ident) | isTopLevelBinding ident = pure $
       case M.lookup ident arities of
         Just (Arity (0, 1)) -> EFunRef (qualifiedToErl mn ident) 1
@@ -759,9 +759,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       case f of
         Var (_, _, Just IsNewtype) _ ->
           return $ head args'
-        Var (_, _, Just (IsConstructor _ fields)) (Qualified _ ident)
+        Var (_, _, Just (IsConstructor _ fields)) (Qualified (P.ByModuleName (ModuleName tipeModu)) ident)
           | length args == length fields ->
-            return $ constructorLiteral (runIdent' ident) args'
+            return $ constructorLiteral tipeModu (runIdent' ident) args'
         Var (_, _, Just IsTypeClassConstructor) name -> do
           let res = curriedApp args' $ EApp eMeta (EAtomLiteral $ qualifiedToTypeclassCtor name) []
 
@@ -987,9 +987,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
               NullBinder _ -> pure $ EVar "_"
               VarBinder _ name -> pure $ EVar (identToVar name)
               ConstructorBinder (_, _, Just IsNewtype) _ _ [binder] -> binderToErl binder
-              ConstructorBinder _ _typeName (Qualified _ (ProperName ctorName)) binders -> do
+              ConstructorBinder _ _ (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders -> do
                 binders2 <- mapM binderToErl binders
-                pure (constructorLiteral ctorName binders2)
+                pure (constructorLiteral tipeModu ctorName binders2)
               NamedBinder _ alias binder -> do
                 binder2 <- binderToErl binder
                 pure (EBind (EVar (identToVar alias)) binder2)
@@ -1015,13 +1015,17 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       pure ds3
 
     valueToErl'' ann _ (Constructor (_, _, Just IsNewtype) _ _ _) = error "newtype ctor"
-    valueToErl'' ann _ (Constructor _ _ (ProperName ctor) fields) =
+    valueToErl'' ann _ (Constructor _ (ProperName tipe) (ProperName ctor) fields) =
       let createFn =
-            let body = constructorLiteral ctor ((EVar . identToVar) `map` fields)
+            let body = constructorLiteral tipe ctor ((EVar . identToVar) `map` fields)
              in foldr (EFun1 Nothing . identToVar) body fields
        in pure createFn
 
-    constructorLiteral name args = ETupleLiteral (EAtomLiteral (Atom Nothing (toAtomName name)) : args)
+    constructorLiteral tipeOrModuleName name args =
+      case (tipeOrModuleName, name) of
+        ("List", "Nil") -> EListLiteral []
+        ("List", "Cons") -> let [a,ax] = args in EListCons [a] ax
+        _ -> ETupleLiteral (EAtomLiteral (Atom Nothing (toAtomName name)) : args)
 
     literalToValueErl :: Literal (Expr Ann) -> m Erl
     literalToValueErl = fmap fst . literalToValueErl' EMapLiteral (\x -> (,[]) <$> valueToErl x)
@@ -1159,9 +1163,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       pure (EVar x, (EVarBind var . cas, (var, arr)) : concatMap snd args')
     binderToErl' (LiteralBinder _ lit) = literalToValueErl' EMapPattern binderToErl' lit
     binderToErl' (ConstructorBinder (_, _, Just IsNewtype) _ _ [b]) = binderToErl' b
-    binderToErl' (ConstructorBinder _ _ (Qualified _ (ProperName ctorName)) binders) = do
+    binderToErl' (ConstructorBinder _ _ (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders) = do
         args' <- mapM binderToErl' binders
-        pure (constructorLiteral ctorName (map fst args'), concatMap snd args')
+        pure (constructorLiteral tipeModu ctorName (map fst args'), concatMap snd args')
     binderToErl' (NamedBinder _ ident binder) = do
       (e, xs) <- binderToErl' binder
       pure (EVarBind (identToVar ident) e, xs)

@@ -137,9 +137,19 @@ replaceAppliedFunRefs = everywhereOnErl go
 inlineCommonValuesBottomUp :: (Erl -> Erl) -> Erl -> Erl
 inlineCommonValuesBottomUp expander = everywhereOnErl convert
   where
+    rec = inlineCommonValuesBottomUp expander
     convert :: Erl -> Erl
-    convert expr =
+    convert expr = convert2 $
       case expander expr of
+        -- manually recurse in some places, so we also cover patterns
+        ECaseOf e binds ->
+          let binds2 = map (\(EBinder b, rhs) -> (EBinder (rec b), rhs)) binds
+          in ECaseOf e binds2
+        e -> e
+
+    convert2 :: Erl -> Erl
+    convert2 expr =
+      case expr of
         EApp _ fn [dict]
           | isDict semiringInt dict && isUncurriedFn fnZero fn -> EIntLit 0
           | isDict semiringNumber dict && isUncurriedFn fnZero fn -> ENumericLiteral (Right 0.0)

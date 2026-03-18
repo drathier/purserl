@@ -70,7 +70,12 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
   es3 <- es2
     & mapM specialize
     & fmap (map (untilFix go))
-  let es4 = InlineLocal.inlineVarBinds es3
+  -- let es4 = InlineLocal.inlineVarBinds es3
+  -- es5 <- es4
+  --   & mapM specialize
+  --   & fmap (map (untilFix go))
+  -- let es6 = InlineLocal.inlineVarBinds es5
+
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & Inliner.inline
@@ -78,7 +83,7 @@ optimize exports es = do -- removeUnusedFuns exports <$> do
     -- & Inliner.inline
     -- & map (untilFix go)
     -- & map addMemoizeAnnotations
-  pure $ es4
+  pure $ es3
 
   where
   go erl =
