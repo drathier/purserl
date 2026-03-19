@@ -826,7 +826,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           (DB M.empty [] [] (map fst renamedValues))
       pure
         ( letbindVars ELet renamedValues $
-          letbind (\(k,v) rest -> ELet (EBind (EVar k) (EFun0 (Just k) v)) rest) (reverse (contImpls resDB)) $
+          letbind (\(k,v) rest -> ELet (EBind (EVar k) (EFun0 Nothing v)) rest) (reverse (contImpls resDB)) $
           res
         )
         where
