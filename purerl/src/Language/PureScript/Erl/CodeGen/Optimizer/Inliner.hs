@@ -200,6 +200,16 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
         ECaseOf cond [(EBinder pat, rhs)] ->
           ELet (EBind pat cond) rhs
 
+        ECaseOf cond ((EBinder (EVar "_"), rhs):_) ->
+          rhs
+
+        ECaseOf cond ((EBinder (EVar v), rhs):_) ->
+          ELet (EBind (EVar v) cond) rhs
+
+        -- [fh]: careful, don't want to remove `let _ = spy ...` etc
+        ELet (EBind (EVar "_") (EVar _)) rhs ->
+          rhs
+
         ELet (EBind (ETupleLiteral pats) (ETupleLiteral rhs)) body ->
           letBindPats pats rhs body
 
