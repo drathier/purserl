@@ -105,16 +105,25 @@ literals = mkPattern' match
 
   match (EMapLiteral elts) = do
     ci <- currentIndent' 2
-    elts' <- traverse (\(x,e) -> ((emit (runAtom x) <> emit "=>") <>) <$> prettyPrintErl' e) elts
+    elts' <- traverse (\(x,e) -> do
+      x' <- prettyPrintErl' x
+      e' <- prettyPrintErl' e
+      pure (x' <> emit "=>" <> e')) elts
     return $ emit "#{" <> intercalate (emit ",\n" <> ci) elts' <> emit "}"
 
   match (EMapPattern elts) = do
-    elts' <- traverse (\(x,e) -> ((emit (runAtom x) <> emit ":=") <>) <$> prettyPrintErl' e) elts
+    elts' <- traverse (\(x,e) -> do
+      x' <- prettyPrintErl' x
+      e' <- prettyPrintErl' e
+      pure (x' <> emit ":=" <> e')) elts
     return $ emit "#{" <> intercalate (emit ", ") elts' <> emit "}"
 
   match (EMapUpdate e elts) = do
     e' <- prettyPrintErl' e
-    elts' <- traverse (\(x,ee) -> ((emit (runAtom x) <> emit "=>") <>) <$> prettyPrintErl' ee) elts
+    elts' <- traverse (\(x,ee) -> do
+      x' <- prettyPrintErl' x
+      ee' <- prettyPrintErl' ee
+      pure (x' <> emit "=>" <> ee')) elts
     return $ emit "(" <> e' <> emit ")" <> emit "#{" <> intercalate (emit ", ") elts' <> emit "}"
 
   match (EArrayLiteral es) = mconcat <$> sequence

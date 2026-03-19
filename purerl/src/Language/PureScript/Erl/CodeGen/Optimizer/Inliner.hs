@@ -184,6 +184,8 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
         EBinary ListConcat (EListLiteral xs) (EListLiteral ys) -> EListLiteral (xs <> ys)
         EBinary ListConcat (EListLiteral xs) (EListCons ys z) -> EListCons (xs <> ys) z
 
+        EBlock [a] -> a
+
         ELet (EBind a b) c | a == c -> b
 
         ECaseOf cond [(EBinder pat, rhs)] | pat == rhs ->
@@ -354,10 +356,12 @@ specialize = everywhereOnErlTopDownLeftToRightM onErl
         EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) [EStringLiteral fmt,EMapLiteral binds] ->
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
           -- ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
-          pure $ ERawErlangSource (fmt & PS.decodeString & fromMaybe "FAILED TO DECODE STRING in CodeGen.erlang") binds
+          let binds2 = binds & map (\(EAtomLiteral k,v) -> (k,v)) in
+          pure $ ERawErlangSource (fmt & PS.decodeString & fromMaybe "FAILED TO DECODE STRING in CodeGen.erlang") binds2
         EApp RegularApp (EApp RegularApp (EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) []) [EStringLiteral fmt]) [EMapLiteral binds] ->
+          let binds2 = binds & map (\(EAtomLiteral k,v) -> (k,v)) in
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
-          pure $ ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
+          pure $ ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds2
 
         -- Int
         -- EApp3 _ (EAtomLiteral (Atom (Just "data_semiring@ps") "add")) (EApp _ (EAtomLiteral (Atom (Just "data_semiring@ps") inst)) []) a b | isInst inst "semiringInt" -> EBinary Add a b
@@ -475,7 +479,7 @@ isEAtomLiteral a =
 findKey k fields =
   case fields of
     [] -> Nothing
-    (k2,v):_ | k == runAtom k2 -> Just v
+    (EAtomLiteral k2,v):_ | k == runAtom k2 -> Just v
     _:rest -> findKey k rest
 
 allFieldsAreMapGetSame :: Maybe Erl -> [(Atom, Erl)] -> Maybe Erl

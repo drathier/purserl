@@ -89,13 +89,13 @@ data Erl
 
   | EComment Text
 
-  | EMapLiteral [(Atom, Erl)]
+  | EMapLiteral [(Erl, Erl)]
 
   | EArrayLiteral [Erl]
 
-  | EMapPattern [(Atom, Erl)]
+  | EMapPattern [(Erl, Erl)]
 
-  | EMapUpdate Erl [(Atom,Erl)]
+  | EMapUpdate Erl [(Erl,Erl)]
 
   | EListLiteral [Erl]
   

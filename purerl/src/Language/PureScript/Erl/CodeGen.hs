@@ -749,7 +749,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
     valueToErl'' ann _ (ObjectUpdate _ o _mstring ps) = do
       obj <- valueToErl2 ann Nothing o
       sts <- mapM (sndM (valueToErl2 ann Nothing)) ps
-      return $ EMapUpdate obj (map (first (AtomPS Nothing)) sts)
+      return $ EMapUpdate obj (map (first (EAtomLiteral . AtomPS Nothing)) sts)
     valueToErl'' ann _ e@(App (_, _, meta) _ _) = do
       let (f, args) = unApp e []
           eMeta = case meta of
@@ -863,23 +863,20 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
           pushArrayCont :: P.Text -> [Binder Ann] -> StateT DB m ()
           pushArrayCont var binders = do
             db <- get
-            put (db {arrayConts = (var,binders):arrayConts db})
+            put (db {guardConts = ArrayGuard var binders:guardConts db})
             pure ()
 
-          popArrayCont :: P.Text -> [Binder Ann] -> StateT DB m (Maybe (T.Text, [Binder Ann]))
-          popArrayCont var binders = do
+          pushSimpleGuard :: Erl -> Erl -> StateT DB m ()
+          pushSimpleGuard var binder = do
             db <- get
-            case arrayConts db of
-              [] -> pure Nothing
-              (var, binders):rest -> do
-                put (db {arrayConts = rest})
-                pure (Just (var, binders))
+            put (db {guardConts = SimpleGuard var binder:guardConts db})
+            pure ()
 
-          takeArrayConts :: StateT DB m [(T.Text, [Binder Ann])]
-          takeArrayConts = do
+          takeConts :: StateT DB m [GuardCont]
+          takeConts = do
             db <- get
-            put (db {arrayConts = []})
-            pure (arrayConts db)
+            put (db {guardConts = []})
+            pure (guardConts db)
 
           branchesToErl :: [CaseAlternative Ann] -> StateT DB m [(EBinder, Erl)]
           branchesToErl branches =
@@ -890,14 +887,14 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                 case mguard of
                   Right rhs -> do
                     binders2 <- mapM binderToErl binders
-                    arrayConts <- takeArrayConts
+                    guardConts <- takeConts
                     rhs2 <- lift $ valueToErl2 ann Nothing rhs
-                    case arrayConts of
+                    case guardConts of
                       [] ->
                         ((EBinder (tupleWrap binders2), rhs2):) <$> branchesToErl restBranches
                       _ -> do
                         monGuardFailureCont <- buildCont restBranches
-                        guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts [(ETrue, rhs2)]
+                        guardsToErl2 <- arrayGuardsToErl monGuardFailureCont guardConts [(ETrue, rhs2)]
                         pure $
                           [ (EBinder (tupleWrap binders2), guardsToErl2) ]
                           <>
@@ -910,10 +907,10 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   Left guardedExprs -> do
                     -- we either walk down a nested path of cases to evaluate guards, or we continue down to the next branch
                     binders2 <- mapM binderToErl binders
-                    arrayConts <- takeArrayConts
+                    guardConts <- takeConts
                     guardedExprs2 <- mapM (\(g,h) -> (,) <$> lift (valueToErl2 ann Nothing g) <*> lift (valueToErl2 ann Nothing h)) guardedExprs
                     monGuardFailureCont <- buildCont restBranches
-                    guardsToErl2 <- arrayGuardsToErl monGuardFailureCont arrayConts guardedExprs2
+                    guardsToErl2 <- arrayGuardsToErl monGuardFailureCont guardConts guardedExprs2
                     pure $
                       [(EBinder (tupleWrap binders2), guardsToErl2)]
                       <>
@@ -925,14 +922,14 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                           []
 
 
-          arrayGuardsToErl :: Maybe T.Text -> [(T.Text, [Binder Ann])] -> [(Erl, Erl)]-> StateT DB m Erl
+          arrayGuardsToErl :: Maybe T.Text -> [GuardCont] -> [(Erl, Erl)]-> StateT DB m Erl
           arrayGuardsToErl monGuardFailureCont arrayGuards normalGuards =
             case arrayGuards of
               [] -> guardsToErl monGuardFailureCont normalGuards
-              ((arrayPattern, binders):restGuards) -> do
+              (ArrayGuard arrayPattern binders:restGuards) -> do
                 binders2 <- mapM binderToErl binders
-                arrayConts <- takeArrayConts
-                restGuards2 <- arrayGuardsToErl monGuardFailureCont (arrayConts <> restGuards) normalGuards
+                guardConts <- takeConts
+                restGuards2 <- arrayGuardsToErl monGuardFailureCont (guardConts <> restGuards) normalGuards
                 let contBranch =
                       case monGuardFailureCont of
                         Just onGuardFailureCont ->
@@ -956,6 +953,27 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                       )
                     ]
                     <> contBranch
+                    )
+
+              (SimpleGuard cond binder:restGuards) -> do
+                guardConts <- takeConts
+                restGuards2 <- arrayGuardsToErl monGuardFailureCont (guardConts <> restGuards) normalGuards
+                let contBranch =
+                      case monGuardFailureCont of
+                        Just onGuardFailureCont ->
+                          [ ( EBinder (EVar "_")
+                            , EApp RegularApp (EVar onGuardFailureCont) []
+                            )
+                          ]
+                        Nothing ->
+                          []
+                pure $
+                  ECaseOf cond
+                    ( [ ( EBinder binder
+                        , restGuards2
+                        )
+                      ]
+                      <> contBranch
                     )
 
           guardsToErl :: Maybe T.Text -> [(Erl, Erl)] -> StateT DB m Erl
@@ -987,9 +1005,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
               NullBinder _ -> pure $ EVar "_"
               VarBinder _ name -> pure $ EVar (identToVar name)
               ConstructorBinder (_, _, Just IsNewtype) _ _ [binder] -> binderToErl binder
-              ConstructorBinder _ _ (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders -> do
-                binders2 <- mapM binderToErl binders
-                pure (constructorLiteral tipeModu ctorName binders2)
+              -- ConstructorBinder _ _ (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders -> do
+              ConstructorBinder _ (Qualified _ (ProperName tipeName)) (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders ->
+                handleCtorBinder [] binder
               NamedBinder _ alias binder -> do
                 binder2 <- binderToErl binder
                 pure (EBind (EVar (identToVar alias)) binder2)
@@ -1002,11 +1020,42 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                   BooleanLiteral True -> pure $ ETrue
                   BooleanLiteral False -> pure $ EFalse
                   ObjectLiteral kvPairs ->
-                    EMapPattern <$> mapM (\(k,v) -> (AtomPS Nothing k,) <$> binderToErl v) kvPairs
+                    EMapPattern <$> mapM (\(k,v) -> (EAtomLiteral $ AtomPS Nothing k,) <$> binderToErl v) kvPairs
                   ArrayLiteral items -> do
                     arrayVar <- freshNameErl' "ArrayLiteral"
                     pushArrayCont arrayVar items
                     pure (EVar arrayVar)
+
+          handleCtorBinder acc binder =
+            case binder of
+              NullBinder _ ->
+                -- base case ignoring result
+                pure (EMapPattern (reverse acc))
+
+              ConstructorBinder _ (Qualified _ (ProperName "Map")) (Qualified (P.ByModuleName (ModuleName "Map")) (ProperName "MEmpty")) [] ->
+                -- base case empty result
+                do
+                  mapVar <- freshNameErl' "MapLiteralB"
+                  pushSimpleGuard (EApp RegularApp (EAtomLiteral (Atom (Just "maps") "size")) [EVar mapVar]) (ENumericLiteral (Left (toInteger (length acc))))
+                  pure (EBind (EMapPattern (reverse acc)) (EVar mapVar))
+
+              ConstructorBinder _ (Qualified _ (ProperName "Map")) (Qualified (P.ByModuleName (ModuleName "Map")) (ProperName "MCons")) [k, v, contBinder] ->
+                do
+                  ek <- binderToErl k
+                  ev <- binderToErl v
+                  handleCtorBinder ((ek, ev):acc) contBinder
+
+              ConstructorBinder _ (Qualified _ (ProperName tipeName)) (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders ->
+                do
+                  binders2 <- mapM binderToErl binders
+                  pure (constructorLiteral tipeModu ctorName binders2)
+
+              _ ->
+                do
+                  mapVar <- freshNameErl' "MapLiteralA"
+                  b2 <- binderToErl binder
+                  pushSimpleGuard (EVar mapVar) b2
+                  pure (EBind (EMapPattern (reverse acc)) (EVar mapVar))
 
     valueToErl'' ann _ (Let _ ds val) = do
       ds2 <- mapM bindToErl ds
@@ -1025,12 +1074,20 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       case (tipeOrModuleName, name) of
         ("List", "Nil") -> EListLiteral []
         ("List", "Cons") -> let [a,ax] = args in EListCons [a] ax
+        ("Map", "MEmpty") -> EMapLiteral []
+        ("Map", "MCons") ->
+          case args of
+            [k,v,EMapUpdate base prev] -> EMapUpdate base ((k,v):prev)
+            --
+            [k,v,EMapLiteral prev] -> EMapLiteral ((k,v):prev)
+            [k,v,base] -> EMapUpdate base [(k,v)]
+            _ -> error (show ("args", args))
         _ -> ETupleLiteral (EAtomLiteral (Atom Nothing (toAtomName name)) : args)
 
     literalToValueErl :: Literal (Expr Ann) -> m Erl
     literalToValueErl = fmap fst . literalToValueErl' EMapLiteral (\x -> (,[]) <$> valueToErl x)
 
-    literalToValueErl' :: Show a => ([(Atom, Erl)] -> Erl) -> (a -> m (Erl, [b])) -> Literal a -> m (Erl, [b])
+    literalToValueErl' :: Show a => ([(Erl, Erl)] -> Erl) -> (a -> m (Erl, [b])) -> Literal a -> m (Erl, [b])
     literalToValueErl' _ _ (NumericLiteral n) = pure (ENumericLiteral n, [])
     literalToValueErl' _ _ (StringLiteral s) = pure (EStringLiteral s, [])
     literalToValueErl' _ _ (CharLiteral c) = pure (ECharLiteral c , [])
@@ -1042,7 +1099,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       pure (EArrayLiteral (map fst args), concat binds)
     literalToValueErl' mapLiteral f (ObjectLiteral ps) = do
       pairs <- mapM (sndM f) ps
-      pure (mapLiteral $ map (\(label, (e, _)) -> (AtomPS Nothing label, e)) pairs, concatMap (snd . snd) pairs)
+      pure (mapLiteral $ map (\(label, (e, _)) -> (EAtomLiteral $ AtomPS Nothing label, e)) pairs, concatMap (snd . snd) pairs)
 {-
     bindersToErl :: [Erl] -> [CaseAlternative Ann] -> m ([Erl], [(EFunBinder, Erl)], [Erl])
     bindersToErl vals cases = do
@@ -1276,6 +1333,9 @@ funBinderToBinder = \case
   (EFunBinder es, ee) -> (EBinder (ETupleLiteral es), ee)
   -- (EFunBinder es (Just g), ee) -> (EGuardedBinder (ETupleLiteral es) g, ee)
 
+data GuardCont
+  = ArrayGuard T.Text [Binder Ann]
+  | SimpleGuard Erl Erl
 
 --letbindM :: (Erl -> Bind Ann -> m Erl) -> [Bind Ann] -> Erl -> m Erl
 --letbindM runBind binds innermost =
@@ -1305,6 +1365,6 @@ data DB
   = DB
     { conts :: M.Map [CaseAlternative Ann] T.Text
     , contImpls :: [(T.Text, Erl)]
-    , arrayConts :: [(T.Text, [Binder Ann])]
+    , guardConts :: [GuardCont]
     , topmostValues :: [T.Text]
     }
