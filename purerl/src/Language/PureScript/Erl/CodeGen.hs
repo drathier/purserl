@@ -1218,14 +1218,6 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
       let arr = EListLiteral (map fst args')
       pure (EVar x, (EVarBind var . cas, (var, arr)) : concatMap snd args')
-    binderToErl' (LiteralBinder _ lit) = literalToValueErl' EMapPattern binderToErl' lit
-    binderToErl' (ConstructorBinder (_, _, Just IsNewtype) _ _ [b]) = binderToErl' b
-    binderToErl' (ConstructorBinder _ _ (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders) = do
-        args' <- mapM binderToErl' binders
-        pure (constructorLiteral tipeModu ctorName (map fst args'), concatMap snd args')
-    binderToErl' (NamedBinder _ ident binder) = do
-      (e, xs) <- binderToErl' binder
-      pure (EVarBind (identToVar ident) e, xs)
 
     irrefutable (EFunBinder bindEs) = all isOk bindEs
       where
