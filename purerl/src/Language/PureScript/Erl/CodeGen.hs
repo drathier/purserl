@@ -757,6 +757,8 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
                           _ -> RegularApp
       args' <- mapM (valueToErl2 ann Nothing) args
       case f of
+        Var (_,_,Just (IsConstructor _ _)) (Qualified (P.ByModuleName (ModuleName "Atom")) (Ident "Atom")) | ([arg]) <- args' ->
+          pure $ EApp RegularApp (EAtomLiteral (Atom (Just "erlang") "binary_to_atom")) [arg, EAtomLiteral (Atom Nothing "utf8")]
         Var (_, _, Just IsNewtype) _ ->
           return $ head args'
         Var (_, _, Just (IsConstructor _ fields)) (Qualified (P.ByModuleName (ModuleName tipeModu)) ident)
@@ -1004,6 +1006,16 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
             case binder of
               NullBinder _ -> pure $ EVar "_"
               VarBinder _ name -> pure $ EVar (identToVar name)
+              ConstructorBinder (_, _, Just (IsConstructor _ _)) (Qualified _ (ProperName "Atom")) (Qualified (P.ByModuleName (ModuleName "Atom")) (ProperName "Atom")) [v] ->
+                do
+                  ev <- binderToErl v
+                  case ev of
+                    EStringLiteral s ->
+                      pure (EAtomLiteral (AtomPS Nothing s))
+                    _ -> do
+                      atomVar <- freshNameErl' "AtomLiteral"
+                      pushSimpleGuard (EApp RegularApp (EAtomLiteral (Atom (Just "erlang") "atom_to_binary")) [EVar atomVar, EAtomLiteral (Atom Nothing "utf8")]) ev
+                      pure (EVar atomVar)
               ConstructorBinder (_, _, Just IsNewtype) _ _ [binder] -> binderToErl binder
               -- ConstructorBinder _ _ (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders -> do
               ConstructorBinder _ (Qualified _ (ProperName tipeName)) (Qualified (P.ByModuleName (ModuleName tipeModu)) (ProperName ctorName)) binders ->
@@ -1072,6 +1084,9 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
 
     constructorLiteral tipeOrModuleName name args =
       case (tipeOrModuleName, name) of
+        ("Atom", "Atom") ->
+          case args of
+            [a] -> EApp RegularApp (EAtomLiteral (Atom (Just "erlang") "binary_to_atom")) [a, EAtomLiteral (Atom Nothing "utf8")]
         ("List", "Nil") -> EListLiteral []
         ("List", "Cons") -> let [a,ax] = args in EListCons [a] ax
         ("Map", "MEmpty") -> EMapLiteral []

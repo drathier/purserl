@@ -461,11 +461,11 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
 
 {-
       !_ <-
-        case True of -- runModuleName mn == "Hex" of
+        case runModuleName mn == "Atom" of
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show rawErl)
           False -> pure ()
       !_ <-
-        case True of -- runModuleName mn == "Hex" of
+        case runModuleName mn == "Atom" of
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (T.unpack $ T.replace ",Rec" ",\nRec" $ T.replace ",NonRec" ",\nNonRec" $ T.pack $ show m)
           False -> pure ()
 -}
@@ -473,7 +473,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
       checked <- optimize checkedExports checkedRawErl
 {-
       !_ <-
-        case True of -- runModuleName mn == "Hex" of
+        case runModuleName mn == "Atom" of
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".erlopt.txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show optimized)
           False -> pure ()
 -}
