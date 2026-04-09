@@ -364,14 +364,16 @@ specialize = everywhereOnErlTopDownLeftToRightM onErl
 
         -- CodeGen.erlang magic
         EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) [EStringLiteral fmt,EMapLiteral binds] ->
-          -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
-          -- ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds
           let binds2 = binds & map (\(EAtomLiteral k,v) -> (k,v)) in
-          pure $ ERawErlangSource (fmt & PS.decodeString & fromMaybe "FAILED TO DECODE STRING in CodeGen.erlang") binds2
+          let decoded = fmt & PS.decodeStringWithReplacement & T.pack in
+          let fixed = T.replace "\\n" "\n" decoded in
+          pure $ ERawErlangSource fixed binds2
         EApp RegularApp (EApp RegularApp (EApp RegularApp (EAtomLiteral (Atom (Just "codeGen@ps") "erlang")) []) [EStringLiteral fmt]) [EMapLiteral binds] ->
           let binds2 = binds & map (\(EAtomLiteral k,v) -> (k,v)) in
           -- [drathier]: trimming surrounding quotes. We don't worry about inline quotes, as we only support A-Za-z0-9_.
-          pure $ ERawErlangSource (fmt & PS.decodeStringWithReplacement & T.pack) binds2
+          let decoded = fmt & PS.decodeStringWithReplacement & T.pack in
+          let fixed = T.replace "\\n" "\n" decoded in
+          pure $ ERawErlangSource fixed binds2
 
         -- Int
         -- EApp3 _ (EAtomLiteral (Atom (Just "data_semiring@ps") "add")) (EApp _ (EAtomLiteral (Atom (Just "data_semiring@ps") inst)) []) a b | isInst inst "semiringInt" -> EBinary Add a b
