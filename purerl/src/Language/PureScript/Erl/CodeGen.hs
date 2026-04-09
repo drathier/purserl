@@ -22,9 +22,12 @@ import Data.Either (fromRight)
 import Data.Foldable (find, traverse_, foldl')
 import Data.List (nub)
 import Data.Map (Map)
+import Data.Char (isUpper, toLower)
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Function ((&))
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Traversable (forM)
@@ -363,6 +366,12 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       tell (errorMessage $ UnusedFFIImplementations mn (Ident <$> Set.toAscList unusedFfi), mempty)
 
     let attributes = findAttributes decls
+    let (ifaceWrapperExports, ifaceWrappers) =
+          let both = generateIfaceWrappers decls
+          in
+          ( both & map (\(a,i,_) -> (a,i))
+          , both & map (\(_,_,v) -> v)
+          )
 
     -- safeDecls <- concat <$> traverse (typecheckWrapper mn) erlDecls
     safeDecls <- pure mempty
@@ -381,7 +390,7 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         --       )
         --       arities
         --       -- Var _ qi@(Qualified _ _)
-    return (exports, namedSpecs, foreignSpecs, attributes ++ erlDecls, safeExports, safeDecls)
+    return (ifaceWrapperExports ++ exports, namedSpecs, foreignSpecs, attributes ++ ifaceWrappers ++ erlDecls, safeExports, safeDecls)
   where
     declaredExportsSet = Set.fromList declaredExports
 
@@ -419,6 +428,30 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
         onBind (NonRec _ ident _) = catMaybes [getType ident]
         onBind (Rec vals) = mapMaybe onRecBind vals
 
+    generateIfaceWrappers :: [Bind Ann] -> [(Atom, Int, Erl)]
+    generateIfaceWrappers exprs = concatMap generateIfaceWrapper exprs
+
+    generateIfaceWrapper :: Bind Ann -> [(Atom, Int, Erl)]
+    generateIfaceWrapper expr =
+      let
+        buildWrapper :: (T.Text, Atom, Int) -> (Atom, Int, Erl)
+        buildWrapper (camel, snake, arity) =
+          let vars = ([1..arity] &map (\i -> T.pack ("Iface" <> (show i)))) in
+          ( snake
+          , arity
+            , EFunctionDef Nothing Nothing snake vars
+              ( curriedApp (map EVar vars) (EApp RegularApp (EFunRef (Atom Nothing camel) 0) [])
+              )
+          )
+        findWrapper i =
+          let ident = P.runIdent i in
+          builtinInterfaceAliases & filter (\(camel, snake, arity) -> camel == ident) & map buildWrapper
+      in
+      case expr of
+        Rec vals ->
+          vals & map (\((_, ident), _) -> findWrapper ident) & concat
+        NonRec _ ident _ ->
+          findWrapper ident
 
 
     -- 're-export' foreign imports in the @ps module - also used for internal calls for non-exported foreign imports
@@ -1375,3 +1408,110 @@ data DB
     , guardConts :: [GuardCont]
     , topmostValues :: [T.Text]
     }
+
+
+-- | List of camelCase names which should get snake_case wrappers so we can implement erlang ifaces with camelCase function names in purs
+builtinInterfaceAliases :: [(T.Text, Atom, Int)]
+builtinInterfaceAliases =
+  map (\(a,b,c) -> (a,Atom Nothing b,c)) $
+  filter (\(a,b,c) -> a /= b) $
+  -- sort + nub
+  Set.toList . Set.fromList $
+  [ ("handleInfo", "handle_info", 2)
+  , ("handleCast", "handle_cast", 2)
+  , ("handleCall", "handle_call", 3)
+  , ("handleContinue", "handle_continue", 2)
+  , ("codeChange", "code_change", 3)
+
+  , ("'StateName'", "'StateName'", 3) -- gen_statem
+  , ("callbackMode", "callback_mode", 0) -- gen_statem
+  , ("codeChange", "code_change", 3) -- gen_event
+  , ("codeChange", "code_change", 3) -- gen_server
+  , ("codeChange", "code_change", 4) -- gen_statem
+  , ("configChange", "config_change", 3) -- application
+  , ("formatStatus", "format_status", 1) -- gen_event
+  , ("formatStatus", "format_status", 1) -- gen_server
+  , ("formatStatus", "format_status", 1) -- gen_statem
+  , ("formatStatus", "format_status", 2) -- gen_event
+  , ("formatStatus", "format_status", 2) -- gen_server
+  , ("formatStatus", "format_status", 2) -- gen_statem
+  , ("handleCall", "handle_call", 2) -- gen_event
+  , ("handleCall", "handle_call", 3) -- gen_server
+  , ("handleCast", "handle_cast", 2) -- gen_server
+  , ("handleContinue", "handle_continue", 2) -- gen_server
+  , ("handleEvent", "handle_event", 2) -- gen_event
+  , ("handleEvent", "handle_event", 4) -- gen_statem
+  , ("handleInfo", "handle_info", 2) -- gen_event
+  , ("handleInfo", "handle_info", 2) -- gen_server
+  , ("init", "init", 1) -- gen_event
+  , ("init", "init", 1) -- gen_server
+  , ("init", "init", 1) -- gen_statem
+  , ("init", "init", 1) -- supervisor
+  , ("init", "init", 1) -- supervisor_bridge
+  , ("prepStop", "prep_stop", 1) -- application
+  , ("start", "start", 2) -- application
+  , ("startPhase", "start_phase", 3) -- application
+  , ("stop", "stop", 1) -- application
+  , ("terminate", "terminate", 2) -- gen_event
+  , ("terminate", "terminate", 2) -- gen_server
+  , ("terminate", "terminate", 2) -- supervisor_bridge
+  , ("terminate", "terminate", 3) -- gen_statem
+  ]
+
+
+{- erlang code to (almost) generate the builtinInterfaceAliases list:
+
+list_all_behaviour_callbacks() ->
+    Modules = [M || {M, _} <- code:all_loaded()],
+    lists:foreach(fun process_module/1, Modules).
+
+process_module(Module) ->
+    case catch Module:module_info(attributes) of
+        {'EXIT', _} ->
+            ok;
+        Attrs ->
+            Behaviours =
+                case lists:keyfind(behaviour, 1, Attrs) of
+                    false ->
+                        case lists:keyfind(behavior, 1, Attrs) of
+                            false -> [];
+                            {behavior, Bs} -> Bs
+                        end;
+                    {behaviour, Bs} -> Bs
+                end,
+            lists:foreach(fun(B) -> print_callbacks(Module, B) end, Behaviours)
+    end.
+
+print_callbacks(Module, Behaviour) ->
+    case erlang:function_exported(Behaviour, behaviour_info, 1) of
+        true ->
+            Required = Behaviour:behaviour_info(callbacks),
+            Optional =
+                case catch Behaviour:behaviour_info(optional_callbacks) of
+                    {'EXIT', _} -> [];
+                    OC when is_list(OC) -> OC;
+                    _ -> []
+                end,
+
+            lists:foreach(
+              fun({F, A}) ->
+                  % supervisor implements gen_server: format_status/1 [required]
+                  io:format("  , (\"~p\", \"~p\", ~p) -- ~p~n", [F, F, A, Behaviour])
+                  % io:format("~p implements ~p: ~p/~p [required]~n", [Module, Behaviour, F, A])
+              end,
+              Required),
+
+            lists:foreach(
+              fun({F, A}) ->
+                  % supervisor implements gen_server: handle_info/2 [optional]
+                  io:format("  , (\"~p\", \"~p\", ~p) -- ~p~n", [F, F, A, Behaviour])
+                  % io:format("~p implements ~p: ~p/~p [optional]~n", [Module, Behaviour, F, A])
+              end,
+              Optional);
+        false ->
+            ok
+    end.
+
+list_all_behaviour_callbacks().
+
+-}
