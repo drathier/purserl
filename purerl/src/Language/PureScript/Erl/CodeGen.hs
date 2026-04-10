@@ -436,12 +436,12 @@ moduleToErl' cgEnv@(CodegenEnvironment env explicitArities) (Module _ _ mn _ _ d
       let
         buildWrapper :: (T.Text, Atom, Int) -> (Atom, Int, Erl)
         buildWrapper (camel, snake, arity) =
-          let vars = ([1..arity] &map (\i -> T.pack ("Iface" <> (show i)))) in
+          let vars = ([1..arity] & map (\i -> T.pack ("Iface" <> (show i)))) in
           ( snake
           , arity
-            , EFunctionDef Nothing Nothing snake vars
-              ( curriedApp (map EVar vars) (EApp RegularApp (EFunRef (Atom Nothing camel) 0) [])
-              )
+          , EFunctionDef Nothing Nothing snake vars
+            ( curriedApp (map EVar vars) (EApp RegularApp (EFunRef (Atom Nothing camel) 0) [])
+            )
           )
         findWrapper i =
           let ident = P.runIdent i in
