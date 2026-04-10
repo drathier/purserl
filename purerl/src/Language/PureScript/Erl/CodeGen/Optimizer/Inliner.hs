@@ -160,10 +160,14 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
 
         -- drathier added, functions rather than dicts
         EApp _ fn [a]
-          | isFnName (EC.effect, snd $ C.P_effectPureE) fn -> EFun0 Nothing a
+          | isFnName (EC.effect, snd $ C.P_effectPureE) fn
+          || isFnName ("e@ps", snd $ C.P_ePure) fn
+          -> EFun0 Nothing a
 
         EApp _ fn [a, f]
-          | isFnName (EC.effect, snd $ C.P_effectBindE) fn ->
+          | isFnName (EC.effect, snd $ C.P_effectBindE) fn
+          || isFnName ("e@ps", snd $ C.P_eBind) fn
+          ->
             EFun0 Nothing
               (EApp RegularApp
                 (EApp RegularApp f
@@ -172,6 +176,19 @@ inlineCommonValuesBottomUp expander = everywhereOnErl convert
                 )
                 []
               )
+
+        EApp _ fn [f, a]
+          | isFnName (EC.effect, snd $ C.P_effectMapE) fn
+          || isFnName ("e@ps", snd $ C.P_eMap) fn
+          ->
+            EFun0 Nothing
+              (EApp RegularApp f
+                [ EApp RegularApp a []
+                ]
+              )
+
+        -- TODO startSupervisor
+        -- TODO mapFlipped
 
         EApp app (EFunRef atom i) args | i == length args ->
           EApp app (EAtomLiteral atom) args
@@ -598,6 +615,8 @@ inlineCommonOperators effectModule EC.EffectDictionaries {..} expander =
         inlineErlAtom,
         unaryFn (effectModule, edFunctor) functorVoid id,
         inlineNonClassUnaryFunction (EC.unsafeCoerceMod, EC.unsafeCoerce) id,
+        inlineNonClassUnaryFunction (EC.foreignForeignMod, EC.unsafeToForeign) id,
+        inlineNonClassUnaryFunction (EC.foreignForeignMod, EC.unsafeFromForeign) id,
         inlineNonClassUnaryFunction (EC.dataInt, EC.toNumber) $ \x -> EApp RegularApp erlangFloat [x],
         unaryUndefTCFn (EC.safeCoerceMod, EC.coerce) id,
         unaryUndefTCFn (EC.dataNewtype, EC.unwrap) id,
@@ -605,6 +624,7 @@ inlineCommonOperators effectModule EC.EffectDictionaries {..} expander =
         binaryUndefTC2Fn (EC.dataNewtype, EC.over) $ \_ x -> x,
         binaryUndefTC2Fn (EC.dataNewtype, EC.over2) $ \_ x -> x,
         inlineDiscardUnit,
+        inlineFunctors,
         onNFn expander,
         onTupleN
       ]
@@ -674,11 +694,30 @@ inlineCommonOperators effectModule EC.EffectDictionaries {..} expander =
       where
         go eApp@EApp {} = case eApp of
           (collect 2 . expander -> EApp meta fn [dict1, dict2])
-            | isDict (EC.controlBind, EC.discardUnit) dict1 && isFn (EC.controlBind, snd $ C.P_discard) fn ->
+            | isDict (EC.controlBind, EC.discardUnit) dict1 && isFn (EC.controlBind, snd $ C.P_discard) fn
+            || isDict (EC.controlBind, EC.discardUnit) dict1 && isFn (EC.e, snd $ C.P_discard) fn
+            ->
               EApp meta controlBindBind [dict2]
           _ -> eApp
         go other = other
         controlBindBind = EAtomLiteral (Atom (Just EC.controlBind) C.S_bind)
+
+    inlineFunctors :: Erl -> Erl
+    inlineFunctors = go
+      where
+        go eApp@EApp {} =
+          case collect 3 . expander $ eApp of
+            EApp meta (EAtomLiteral (Atom (Just ma) af)) [dict1, a, f] | isDict ("effect@ps", "functorEffect") dict1 && ma == "data_functor@ps" && af == "mapFlipped" -> mapImpl f a
+            EApp meta (EAtomLiteral (Atom (Just ma) af)) [dict1, f, a] | isDict ("effect@ps", "functorEffect") dict1 && ma == "data_functor@ps" && af == "map" -> mapImpl f a
+
+            _ -> eApp
+        go other = other
+        mapImpl f a =
+          EFun0 Nothing
+            (EApp RegularApp f
+              [ EApp RegularApp a []
+              ]
+            )
 
 binaryOps :: (Erl -> Erl) -> Erl -> Erl
 binaryOps expander = \case

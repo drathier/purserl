@@ -115,7 +115,7 @@ $(TH.declare do
 
   TH.mod "Data.Functor" do
     TH.cls "Functor"
-    TH.asIdent do TH.asString do TH.vars ["map", "functorArray"]
+    TH.asIdent do TH.asPair do TH.asString do TH.vars ["map", "mapFlipped", "functorArray"]
 
   TH.mod "Data.Generic.Rep" do
     TH.cls "Generic" ; TH.asIdent do TH.vars ["from", "to"]
@@ -205,6 +205,7 @@ $(TH.declare do
         TH.asIdent do
           TH.var "bindE"
           TH.var "pureE"
+          TH.var "mapE"
 
   TH.mod "Effect.Uncurried" do
     TH.asPair do TH.vars ["mkEffectFn", "runEffectFn"]
@@ -286,11 +287,12 @@ $(TH.declare do
 
   TH.mod "E" do
     TH.prefixWith "e" do
-      TH.asIdent do
-        TH.var "map"
-        TH.var "bind"
-        TH.var "pure"
-        TH.var "discard"
+      TH.asPair do
+        TH.asIdent do
+          TH.var "map"
+          TH.var "bind"
+          TH.var "pure"
+          TH.var "discard"
 
   -- TH.mod "Effect" do
   --   -- TH.prefixWith "effect" do

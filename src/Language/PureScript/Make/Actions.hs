@@ -459,24 +459,24 @@ buildMakeActions outputDir filePathMap foreigns usePrefix mExternsMemCache =
           f
           (moduleToErl env m foreignExports) -- :: SupplyT Language.PureScript.Erl.Make.Monad.Make
 
-{-
+      optimized <- optimize exports rawErl
+      checked <- optimize checkedExports checkedRawErl
+
+-- {-
+      let astPrintModuleName = "Supervisor"
       !_ <-
-        case runModuleName mn == "Atom" of
+        case runModuleName mn == astPrintModuleName of
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show rawErl)
           False -> pure ()
       !_ <-
-        case runModuleName mn == "Atom" of
+        case runModuleName mn == astPrintModuleName of
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".corefn.txt") (T.unpack $ T.replace ",Rec" ",\nRec" $ T.replace ",NonRec" ",\nNonRec" $ T.pack $ show m)
           False -> pure ()
--}
-      optimized <- optimize exports rawErl
-      checked <- optimize checkedExports checkedRawErl
-{-
       !_ <-
-        case runModuleName mn == "Atom" of
+        case runModuleName mn == astPrintModuleName of
           True -> pure $ unsafePerformIO $ writeFile ("ast/" <> T.unpack (runModuleName mn) <> ".erlopt.txt") (T.unpack $ T.replace "EFunctionDef" "\nEFunctionDef" $ T.pack $ show optimized)
           False -> pure ()
--}
+-- -}
       dir <- lift $ makeIO "get file info: ." getCurrentDirectory
       let makeAbsFile file = dir </> file
       let pretty = prettyPrintErl makeAbsFile optimized

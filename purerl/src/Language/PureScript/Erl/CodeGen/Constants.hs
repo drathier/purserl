@@ -47,6 +47,9 @@ dataArray = "data_array@ps"
 eff :: forall a. (IsString a) => a
 eff = "control_monad_eff@ps"
 
+e :: forall a. (IsString a) => a
+e = "e@ps"
+
 effect :: forall a. (IsString a) => a
 effect = "effect@ps"
 
@@ -122,6 +125,9 @@ erlDataTuple = "erl_data_tuple@ps"
 unsafeCoerceMod :: forall a. (IsString a) => a
 unsafeCoerceMod = "unsafe_coerce@ps"
 
+foreignForeignMod :: forall a. (IsString a) => a
+foreignForeignMod = "foreign_foreign@ps"
+
 safeCoerceMod :: forall a. (IsString a) => a
 safeCoerceMod = "safe_coerce@ps"
 
@@ -172,6 +178,12 @@ singleton = "singleton"
 unsafeCoerce :: forall a. (IsString a) => a
 unsafeCoerce = "unsafeCoerce"
 
+unsafeToForeign :: forall a. (IsString a) => a
+unsafeToForeign = "unsafeToForeign"
+
+unsafeFromForeign :: forall a. (IsString a) => a
+unsafeFromForeign = "unsafeFromForeign"
+
 coerce :: forall a. (IsString a) => a
 coerce = "coerce"
 
@@ -218,3 +230,6 @@ semigroupList = "semigroupList"
 
 discardUnit :: forall a. (IsString a) => a
 discardUnit = "discardUnit"
+
+functorEffect :: forall a. (IsString a) => a
+functorEffect = "functorEffect"
