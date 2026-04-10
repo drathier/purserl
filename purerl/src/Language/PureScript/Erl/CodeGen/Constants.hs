@@ -53,6 +53,9 @@ e = "e@ps"
 effect :: forall a. (IsString a) => a
 effect = "effect@ps"
 
+effectUnsafe :: forall a. (IsString a) => a
+effectUnsafe = "effect_unsafe@ps"
+
 controlApplicative :: forall a. (IsString a) => a
 controlApplicative = "control_applicative@ps"
 
@@ -233,3 +236,6 @@ discardUnit = "discardUnit"
 
 functorEffect :: forall a. (IsString a) => a
 functorEffect = "functorEffect"
+
+unsafePerformEffect :: forall a. (IsString a) => a
+unsafePerformEffect = "unsafePerformEffect"

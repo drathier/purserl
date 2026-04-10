@@ -617,6 +617,7 @@ inlineCommonOperators effectModule EC.EffectDictionaries {..} expander =
         inlineNonClassUnaryFunction (EC.unsafeCoerceMod, EC.unsafeCoerce) id,
         inlineNonClassUnaryFunction (EC.foreignForeignMod, EC.unsafeToForeign) id,
         inlineNonClassUnaryFunction (EC.foreignForeignMod, EC.unsafeFromForeign) id,
+        inlineNonClassUnaryFunction (EC.effectUnsafe, EC.unsafePerformEffect) $ \x -> EApp RegularApp x [],
         inlineNonClassUnaryFunction (EC.dataInt, EC.toNumber) $ \x -> EApp RegularApp erlangFloat [x],
         unaryUndefTCFn (EC.safeCoerceMod, EC.coerce) id,
         unaryUndefTCFn (EC.dataNewtype, EC.unwrap) id,
